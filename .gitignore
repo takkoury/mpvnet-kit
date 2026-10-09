@@ -1,0 +1,9 @@
+# User state and outputs never belong in this source-only candidate.
+*.log
+*.tmp
+__pycache__/
+Capture/
+cache/
+settings.xml
+config/script-opts/mpvnet-local.conf
+script-opts/mpvnet-local.conf

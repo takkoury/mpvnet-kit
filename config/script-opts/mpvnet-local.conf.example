@@ -1,0 +1,7 @@
+# Copy to mpvnet-local.conf only for this machine; keep the real file out of Git/exports.
+# Empty values use public defaults. Nonempty values are absolute executable/directory paths.
+# Local values override the component's script-opts; remove a value to restore that fallback.
+capture_root=
+ffmpeg_path=
+python_path=
+mpv_path=

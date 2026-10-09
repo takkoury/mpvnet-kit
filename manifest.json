@@ -1,0 +1,295 @@
+{
+  "files": [
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": ".gitattributes",
+      "sha256": "72e181efe64cc776cb343736a9548b6008e0dd12def4de76be1801a1c77f017a"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": ".gitignore",
+      "sha256": "44e5e4c0b4bf7cdebc8e03b1edd179fbf2d41260097644630397f16a08e18b1e"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "CHANGELOG.md",
+      "sha256": "cca3ae16267652c3bb13141eebbd1e2da18cf9dd4ca48687f534e0e02dd2e0cd"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "LICENSES.md",
+      "sha256": "36dc6e06030bb082c14f896d7cdf5cfcaa8f8f17e522dfe1f9310c2ee7d07d57"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "README.md",
+      "sha256": "dbff0203749f97c828a6b50777ba4b995a4cffc75ff3f5807600bb9321ecf809"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "config/fonts/modernz-icons.ttf",
+      "sha256": "5033b84d569502538968c6f23b0859bda790eed85c10e419b0759537ec60a016"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/helpers/capture-media.ps1",
+      "sha256": "e8201682b22ee608073aee68ae95a358fbd66e6ba135ca20c7bfc31b9f3c1965"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/helpers/media-info-window.ps1",
+      "sha256": "5ad8a01ac0b3a8d44d6c7a32a9b0f05852a983b29edb67281d1172d87c785089"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/helpers/media-path-action.ps1",
+      "sha256": "fb332683148eddca0ed87bd708d434fdcb3d314d0ccabfe38372e487ee45562b"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/helpers/playlist-window.ps1",
+      "sha256": "4c33dc7d26657036d83a9f0f2ab2a1f675e6328a203f31d8079543110a830537"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/input.conf",
+      "sha256": "27b8e064ca4e7d7262ea34f2edf64b50132c9a05a80f5150b783ea79448f1ea0"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/mpv.conf",
+      "sha256": "2ab62bb78239f9c89561f46919b891e1cfe31c3155c78546fe3658e153133894"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/mpvnet.conf",
+      "sha256": "f3bf48fc0a35d038627ba0730f00f3ff22c0745eeed81e8ba1fff58c2d1a0ea0"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-modules/mpvnet-paths.lua",
+      "sha256": "38eae2f0dedf0ca7c242a6a7a65293af9d8d111cac0e825c224bc019f84ab3e2"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-opts/bilibiliAssert.conf",
+      "sha256": "7dab70f615de950dd11a4a21c6093e97ec9cb376b18d1e20d449b32947599bc7"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-opts/enhancement-controls.conf",
+      "sha256": "a46e0f9d819e06d8d5b0ac077e16b98feff4071c94bc5def217217d1002132ef"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-opts/modernz.conf",
+      "sha256": "4740279e1cc6077fa5d40a24409c09c964ab3a99989caacf571360b59ea6ebc8"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-opts/mpvnet-local.conf.example",
+      "sha256": "42768306a6ee4acb1601c8161543bb308abff8c43054deed4c97616a7eaad5ea"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/script-opts/thumbfast.conf",
+      "sha256": "fb2b2cdd572488d80046b907a921367f88eea10624d279b0fe64e7cc1dda5392"
+    },
+    {
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments",
+      "path": "config/scripts/bilibiliAssert/Danmu2Ass.py",
+      "sha256": "b2a704fd9bc8e41c3be1f0476fb197d52ea35d97b83473a6b449c112f562fa20"
+    },
+    {
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments",
+      "path": "config/scripts/bilibiliAssert/LICENSE",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments",
+      "path": "config/scripts/bilibiliAssert/main.lua",
+      "sha256": "3898596b893aceb0879e2533325fe800ee9013c53189dae12826e0ad82bcb3fc"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/scripts/capture-controls.lua",
+      "sha256": "d417f7402adaf68e0c55df81e0c97be6915cf7a5cd73a4ca54304eee30d6a5f5"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/scripts/enhancement-controls.lua",
+      "sha256": "efb8c1c9dda477e8bc48cbb9c93f0a78e0de3ebb6a498e9eda0e8e86addac1d3"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "config/scripts/modernz.lua",
+      "sha256": "ef04669c2567c4e80fbaa261ed6549b1067fe9986d21ed1e4df7e5453ebe5a2d"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/scripts/playback-feedback.lua",
+      "sha256": "d2b65b917df831577e36214fd9742b9ca544ec75b6936851646e34bce4495470"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/scripts/playlist-controls.lua",
+      "sha256": "798abd5020756a6c3eea6c61d3db59fc235387f922ba0d292fae798f8fc4fdb8"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "config/scripts/subtitle-controls.lua",
+      "sha256": "4c1bb6f47176cf31bb8977a7fe769f74168997f48c724ae7bb42de67c1907ae6"
+    },
+    {
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast",
+      "path": "config/scripts/thumbfast.lua",
+      "sha256": "cf1a4899687b59fbb2cd6a9889b2a2044c21e7c727499cddf7295fe05f6b4d41"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x2.glsl",
+      "sha256": "8c58291740146bd766a4d73f132775a797fe80f7d07919b5d767e27a5dc85656"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x4.glsl",
+      "sha256": "5af62d8cd844916dc1126613e13bad3beab195787f93a71200b47c6ec78f2e41"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
+      "sha256": "a2a9bf7fbc1d75d09660ca2e701e4d7fb0cf5457b94da47e1825032fa2b3671a"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Restore_CNN_Soft_M.glsl",
+      "sha256": "a78a2c76898e08e09e442a9628c64208c26e8e15789649b8755223f009794c02"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Restore_CNN_VL.glsl",
+      "sha256": "35036722733305cd4d4e57660b883bbe2569ba2914033c254327107d7b77e35e"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_M.glsl",
+      "sha256": "716e02098a68f0d648761f2b96b4dd139e1cb09b174bb369fca3aa34328fff7e"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_S.glsl",
+      "sha256": "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "sha256": "5638fe31c37c151a3443fea3451a3ef91af073f4dbb9615f6c0d1e29db11493d"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "docs/customization.md",
+      "sha256": "989da346de993cdb31b785d0f4c18ae5ec098a423605606cde8ca6b45ba1eacc"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "docs/installation.md",
+      "sha256": "039f2ff0671f8c27101dac7727210c4ae98088d5c8a88a37913894c2e17331e2"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "docs/usage.md",
+      "sha256": "3af566e76200492c5acdc672024bfc6cff5a1bf7052fa957fff7871aad00df32"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "licenses/anime4k/LICENSE",
+      "sha256": "5bad448b737378e3d0c977ad0d0521fa37ad279a7e76ea9a31d9257eeb6953f5"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K",
+      "path": "licenses/anime4k/SOURCE.md",
+      "sha256": "74dd0ba3ce0004091cf65821e9af0ec979524404c3354dae09f4a6c8708ee709"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "licenses/modernz/Fluent-MIT.txt",
+      "sha256": "69bc45dc42b9acb96a69823adbc6ae538374e3c0bde169b855b32c48eaaef52f"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "licenses/modernz/LICENSE",
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "licenses/modernz/Material-Symbols-Apache-2.0.txt",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    },
+    {
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ",
+      "path": "licenses/modernz/NOTICE.md",
+      "sha256": "fb1ed65da4da8b9d97a72832e9433ec1f84866673a959c75f335acba10d8b66c"
+    },
+    {
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast",
+      "path": "licenses/thumbfast/LICENSE",
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    },
+    {
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast",
+      "path": "licenses/thumbfast/NOTICE.md",
+      "sha256": "cec75b4b0511efda93cf9059a9d4b5f6f442bc7e306a015fa6d19d8a95573a18"
+    }
+  ],
+  "schema": 1,
+  "status": "local-unpublished-preview",
+  "version": "0.1.0-preview"
+}
