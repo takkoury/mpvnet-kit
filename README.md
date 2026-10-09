@@ -1,4 +1,4 @@
-# mpvnet-custom public candidate
+# mpvnet-kit
 
 版本草稿：0.1.0-preview。这是未发布的本地公开候选；自有独立脚本的分发许可尚待作者选择，见[组件许可](LICENSES.md)。
 
