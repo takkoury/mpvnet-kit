@@ -65,4 +65,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\restore.ps1 -Bac
 
 需要手动部署时，按manifest中的config/运行项去掉config/前缀后逐项复制（排除example）；先记录原存在性/hash并逐项备份。复制后核hash，再设置自己的私有local.conf。手动恢复也必须先核当前部署hash，恢复旧文件或只移除本次新增且匹配的文件；未知或外部修改先暂停。手动路径不产生安装工具receipt，不能让工具替它猜测恢复状态。
 
-候选仍未公开发布，自有脚本许可待作者选定。已有定向验证不代表所有用户机器、GPU、网络、GUI或编码组合均通过。
+候选仍未公开发布；独立自有文件的 MIT 与第三方各自许可见[组件许可](../LICENSES.md)。已有定向验证不代表所有用户机器、GPU、网络、GUI或编码组合均通过。

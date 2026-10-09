@@ -1,6 +1,6 @@
 # mpvnet-kit
 
-版本草稿：0.1.0-preview。这是未发布的本地公开候选；自有独立脚本的分发许可尚待作者选择，见[组件许可](LICENSES.md)。
+版本草稿：0.1.0-preview。这是尚未对外发布的本地候选。独立自有代码采用 MIT；ModernZ、thumbfast、弹幕、Anime4K 与图标保留各自许可，范围及致谢见[组件许可](LICENSES.md)。
 
 Windows mpv.net 操作与 ModernZ 界面配置。兼容证据基线为 mpv.net 7.1.2 / libmpv 0.41；不同版本、GPU、HDR和网络来源需要另行验证。
 

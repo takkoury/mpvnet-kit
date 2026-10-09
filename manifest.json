@@ -2,33 +2,39 @@
   "files": [
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": ".gitattributes",
       "sha256": "72e181efe64cc776cb343736a9548b6008e0dd12def4de76be1801a1c77f017a"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": ".gitignore",
       "sha256": "0ddb7bbfcf210e0f4ec8bbb9ac3b1051a96a0b0c8b6265aa275f0fd10420b4d6"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "CHANGELOG.md",
-      "sha256": "ff2d54d23903cb9f82558e6ab2e1f8f760103982360d15d0a88ac7eda57808bc"
+      "sha256": "c4f28185053c12a80d4e2db0a6e74bc3d777b5959a9e751b72ff4666a64188a7"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
+      "path": "LICENSE",
+      "sha256": "51b2eda35f6de13f92df5f8b9dc78fa07c73694f7cdfe6330d3f515f49d0e6c7"
+    },
+    {
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "LICENSES.md",
-      "sha256": "36dc6e06030bb082c14f896d7cdf5cfcaa8f8f17e522dfe1f9310c2ee7d07d57"
+      "sha256": "325d2579f34ff62eab0b20f0d69481bc75903023bbfa8f7f94bf3932fd1b90df"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "1fe0eb379765c0b1bef54a71f8c496e2a40fffc9cc57c3c594ccf2fc1e743180"
+      "sha256": "9e1e8985c96e95db65097fd403a1495ad027b9c7bd459968c3d77f53ea7c3f5f"
     },
     {
       "component": "modernz",
@@ -38,79 +44,79 @@
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/capture-media.ps1",
       "sha256": "e8201682b22ee608073aee68ae95a358fbd66e6ba135ca20c7bfc31b9f3c1965"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/media-info-window.ps1",
       "sha256": "5ad8a01ac0b3a8d44d6c7a32a9b0f05852a983b29edb67281d1172d87c785089"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/media-path-action.ps1",
       "sha256": "fb332683148eddca0ed87bd708d434fdcb3d314d0ccabfe38372e487ee45562b"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/playlist-window.ps1",
       "sha256": "4c33dc7d26657036d83a9f0f2ab2a1f675e6328a203f31d8079543110a830537"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/input.conf",
       "sha256": "27b8e064ca4e7d7262ea34f2edf64b50132c9a05a80f5150b783ea79448f1ea0"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/mpv.conf",
       "sha256": "2ab62bb78239f9c89561f46919b891e1cfe31c3155c78546fe3658e153133894"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/mpvnet.conf",
       "sha256": "f3bf48fc0a35d038627ba0730f00f3ff22c0745eeed81e8ba1fff58c2d1a0ea0"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-modules/mpvnet-paths.lua",
       "sha256": "38eae2f0dedf0ca7c242a6a7a65293af9d8d111cac0e825c224bc019f84ab3e2"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-opts/bilibiliAssert.conf",
       "sha256": "7dab70f615de950dd11a4a21c6093e97ec9cb376b18d1e20d449b32947599bc7"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-opts/enhancement-controls.conf",
       "sha256": "a46e0f9d819e06d8d5b0ac077e16b98feff4071c94bc5def217217d1002132ef"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-opts/modernz.conf",
       "sha256": "4740279e1cc6077fa5d40a24409c09c964ab3a99989caacf571360b59ea6ebc8"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-opts/mpvnet-local.conf.example",
       "sha256": "42768306a6ee4acb1601c8161543bb308abff8c43054deed4c97616a7eaad5ea"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/script-opts/thumbfast.conf",
       "sha256": "fb2b2cdd572488d80046b907a921367f88eea10624d279b0fe64e7cc1dda5392"
     },
@@ -134,13 +140,13 @@
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/capture-controls.lua",
       "sha256": "d417f7402adaf68e0c55df81e0c97be6915cf7a5cd73a4ca54304eee30d6a5f5"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/enhancement-controls.lua",
       "sha256": "efb8c1c9dda477e8bc48cbb9c93f0a78e0de3ebb6a498e9eda0e8e86addac1d3"
     },
@@ -152,19 +158,19 @@
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/playback-feedback.lua",
       "sha256": "d2b65b917df831577e36214fd9742b9ca544ec75b6936851646e34bce4495470"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/playlist-controls.lua",
       "sha256": "798abd5020756a6c3eea6c61d3db59fc235387f922ba0d292fae798f8fc4fdb8"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/subtitle-controls.lua",
       "sha256": "4c1bb6f47176cf31bb8977a7fe769f74168997f48c724ae7bb42de67c1907ae6"
     },
@@ -224,19 +230,19 @@
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/customization.md",
       "sha256": "802009f5ae28c17f3a82e315f15c6981c88cfc42da4e9ffe300e0fc86f733b8d"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/installation.md",
-      "sha256": "655df1ce90f025f841cd4bd13e9be169e8949d5a098193f563ec9471edd3fb7c"
+      "sha256": "cf0f7b75d2df120c4dfc92e112ae182871bfcd102bae4bc231eddbcdf0986671"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/usage.md",
       "sha256": "3af566e76200492c5acdc672024bfc6cff5a1bf7052fa957fff7871aad00df32"
     },
@@ -250,7 +256,13 @@
       "component": "anime4k",
       "origin": "https://github.com/bloc97/Anime4K",
       "path": "licenses/anime4k/SOURCE.md",
-      "sha256": "74dd0ba3ce0004091cf65821e9af0ec979524404c3354dae09f4a6c8708ee709"
+      "sha256": "1f80c9b790979744ff33112aeb082385c2655c708693f11145441de1f7b96b5d"
+    },
+    {
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K; AutoDownscalePre file-header Unlicense",
+      "path": "licenses/anime4k/UNLICENSE",
+      "sha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e"
     },
     {
       "component": "modernz",
@@ -274,7 +286,7 @@
       "component": "modernz",
       "origin": "https://github.com/Samillion/ModernZ",
       "path": "licenses/modernz/NOTICE.md",
-      "sha256": "fb1ed65da4da8b9d97a72832e9433ec1f84866673a959c75f335acba10d8b66c"
+      "sha256": "e5163206de82d889ef0ac8872e1b0e2c3a2f5ec928194820d64bab0d2e1a3aeb"
     },
     {
       "component": "thumbfast",
@@ -286,29 +298,29 @@
       "component": "thumbfast",
       "origin": "https://github.com/po5/thumbfast",
       "path": "licenses/thumbfast/NOTICE.md",
-      "sha256": "cec75b4b0511efda93cf9059a9d4b5f6f442bc7e306a015fa6d19d8a95573a18"
+      "sha256": "6492d52ab7633130a57b0a459ac3045d5adf4f353b5f8f405ba2bc553b2c7d59"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/check-dependencies.ps1",
       "sha256": "f1fa2b6b1eb452e8b46e6001f07068b13aa6203327b13ce44c0458514371cf91"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/common.psm1",
       "sha256": "59ed4a64d96815547ea04ffac794eadd9147bab38e7e648722d8cca2e247dc7e"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/install.ps1",
       "sha256": "5674d362395ca0ff3f87fc817e6b91ecd2b59367decd533ef3607e950cfbb021"
     },
     {
       "component": "author",
-      "origin": "author-maintained; license pending",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/restore.ps1",
       "sha256": "3a4cc21dca3eb7bf7a545be3ee261e8294003fcb5f9d98f3b72a3a3befd4086c"
     }

@@ -9,3 +9,5 @@
 
 - 加入PowerShell清单安装、恢复及只读依赖检查；默认plan-only，-Apply才执行，逐文件备份及hash保护。
 - 保留未知文件和私有local.conf，恢复只操作本次receipt管理的文件；不下载依赖、不管理播放器进程。
+
+- 独立自有文件采用 MIT，第三方代码及其修改保留原许可；Anime4K 六份 MIT 与两份 Unlicense 按文件声明区分。

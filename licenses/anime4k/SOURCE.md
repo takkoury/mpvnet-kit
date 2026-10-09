@@ -4,7 +4,7 @@ Upstream: https://github.com/bloc97/Anime4K
 Release: v4.0.1 (GLSL stable)
 Commit: 4029bf701ecaa15f163cdc49cffe5501c1acf410
 Instructions: https://github.com/bloc97/Anime4K/blob/4029bf701ecaa15f163cdc49cffe5501c1acf410/GLSL_Instructions.md
-License: MIT; original LICENSE retained in this directory.
+Licenses: six shaders carry MIT notices; the two AutoDownscalePre shaders carry Unlicense/public-domain dedication notices. The upstream project MIT [LICENSE](LICENSE) and the AutoDownscale [Unlicense text](UNLICENSE) are retained; each file header remains authoritative for that file.
 
 Only eight unmodified GLSL text files are vendored; no upstream input.conf or mpv.conf is installed.
 ANIME_LIGHT follows official Mode B (Fast); ANIME_STRONG follows official Mode A (HQ).
