@@ -16,7 +16,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "CHANGELOG.md",
-      "sha256": "c4f28185053c12a80d4e2db0a6e74bc3d777b5959a9e751b72ff4666a64188a7"
+      "sha256": "6e61c300ac313ef8ba9f6144a65a8b43a05c149857799f98b6f78fc276471ff6"
     },
     {
       "component": "author",
@@ -34,7 +34,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "9e1e8985c96e95db65097fd403a1495ad027b9c7bd459968c3d77f53ea7c3f5f"
+      "sha256": "ce87429dbfb58f0653769156bbf81a49ca0a4a2d72ba39485f50eeb099b84436"
     },
     {
       "component": "modernz",
@@ -238,7 +238,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/installation.md",
-      "sha256": "cf0f7b75d2df120c4dfc92e112ae182871bfcd102bae4bc231eddbcdf0986671"
+      "sha256": "e632d48c7b29672c06261fcb9c193c746a276d317d2f8f28e99d2745b4675a32"
     },
     {
       "component": "author",
