@@ -10,13 +10,13 @@
       "component": "author",
       "origin": "author-maintained; license pending",
       "path": ".gitignore",
-      "sha256": "44e5e4c0b4bf7cdebc8e03b1edd179fbf2d41260097644630397f16a08e18b1e"
+      "sha256": "0ddb7bbfcf210e0f4ec8bbb9ac3b1051a96a0b0c8b6265aa275f0fd10420b4d6"
     },
     {
       "component": "author",
       "origin": "author-maintained; license pending",
       "path": "CHANGELOG.md",
-      "sha256": "cca3ae16267652c3bb13141eebbd1e2da18cf9dd4ca48687f534e0e02dd2e0cd"
+      "sha256": "ff2d54d23903cb9f82558e6ab2e1f8f760103982360d15d0a88ac7eda57808bc"
     },
     {
       "component": "author",
@@ -28,7 +28,7 @@
       "component": "author",
       "origin": "author-maintained; license pending",
       "path": "README.md",
-      "sha256": "598075e7987ff1976ee0f64f702dc6a6a8bea88e21f669c70e401e778e064607"
+      "sha256": "1fe0eb379765c0b1bef54a71f8c496e2a40fffc9cc57c3c594ccf2fc1e743180"
     },
     {
       "component": "modernz",
@@ -226,13 +226,13 @@
       "component": "author",
       "origin": "author-maintained; license pending",
       "path": "docs/customization.md",
-      "sha256": "989da346de993cdb31b785d0f4c18ae5ec098a423605606cde8ca6b45ba1eacc"
+      "sha256": "802009f5ae28c17f3a82e315f15c6981c88cfc42da4e9ffe300e0fc86f733b8d"
     },
     {
       "component": "author",
       "origin": "author-maintained; license pending",
       "path": "docs/installation.md",
-      "sha256": "039f2ff0671f8c27101dac7727210c4ae98088d5c8a88a37913894c2e17331e2"
+      "sha256": "655df1ce90f025f841cd4bd13e9be169e8949d5a098193f563ec9471edd3fb7c"
     },
     {
       "component": "author",
@@ -287,6 +287,30 @@
       "origin": "https://github.com/po5/thumbfast",
       "path": "licenses/thumbfast/NOTICE.md",
       "sha256": "cec75b4b0511efda93cf9059a9d4b5f6f442bc7e306a015fa6d19d8a95573a18"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "tools/check-dependencies.ps1",
+      "sha256": "f1fa2b6b1eb452e8b46e6001f07068b13aa6203327b13ce44c0458514371cf91"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "tools/common.psm1",
+      "sha256": "59ed4a64d96815547ea04ffac794eadd9147bab38e7e648722d8cca2e247dc7e"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "tools/install.ps1",
+      "sha256": "5674d362395ca0ff3f87fc817e6b91ecd2b59367decd533ef3607e950cfbb021"
+    },
+    {
+      "component": "author",
+      "origin": "author-maintained; license pending",
+      "path": "tools/restore.ps1",
+      "sha256": "3a4cc21dca3eb7bf7a545be3ee261e8294003fcb5f9d98f3b72a3a3befd4086c"
     }
   ],
   "schema": 1,

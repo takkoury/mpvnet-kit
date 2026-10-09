@@ -7,3 +7,8 @@ cache/
 settings.xml
 config/script-opts/mpvnet-local.conf
 script-opts/mpvnet-local.conf
+
+# Installation receipts and backups stay outside the source package.
+.mpvnet-kit-install.json
+backups/
+test-output/

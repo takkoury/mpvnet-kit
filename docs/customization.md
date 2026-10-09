@@ -20,3 +20,5 @@
 | mpv_path | thumbfast原显式选项，其次frontend/当前播放器进程exe/portable父目录探测 |
 
 只复制example，不公开自己的真实local.conf；路径含空格时仍填写路径数据，不加入启动参数。
+
+安装工具只管理manifest中的运行文件；真实script-opts/mpvnet-local.conf不受管，升级复制不会覆盖它。对受管文件的个人修改会触发安装/恢复的hash保护，应先保存差异再人工决定，不强行覆盖。路径/可执行文件的存在性检查只是元数据检查，不能代替真实导出、弹幕、缩略图或GPU验证。
