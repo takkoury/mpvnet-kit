@@ -40,7 +40,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "aff91f28388fc8aa9a75bdcfb770a2648760b7bc92d9c5db5e5a3a05b8ea8287"
+      "sha256": "2d3a019c3fb75c8600ec2e7fca07308806717ce0b6ebcf4e1d29d97f7644a56e"
     },
     {
       "component": "documentation-media",
@@ -280,7 +280,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/installation.md",
-      "sha256": "c714da67b592230e52619022077f77b58eaa2151c6ef95d534353b317ddc41ac"
+      "sha256": "b2d624e1f1e30f93ffd9bed64e08c225504d12adca8a1327106f0f732aa511e0"
     },
     {
       "component": "anime4k",

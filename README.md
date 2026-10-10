@@ -43,7 +43,7 @@
 
 1. 需要自行安装 [mpv.net](https://github.com/mpvnet-player/mpv.net/releases)。
 2. （**推荐**）安装 [FFmpeg](https://www.ffmpeg.org/download.html) 和 [Python](https://www.python.org/downloads/windows/)，分别用于片段导出和弹幕转换。
-3. 从本仓库 **Code → Download ZIP** 下载完整包并解压到独立目录，退出受影响的播放器。
+3. 从 [v0.1.0 Release](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.1.0) 下载 [mpvnet-kit-0.1.0.zip](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.1.0/mpvnet-kit-0.1.0.zip)，解压到独立目录，退出受影响的播放器。
 4. 如果已有配置或脚本，请先自行备份并处理，安装器不会覆盖或合并它们，播放器状态和缓存可保留。
 5. 双击 `Install.cmd`，点击 “浏览…” 选择 `mpvnet.exe`，等待自动检查，核对目录后点击右下角“确认安装”。完成后自行启动播放器。
 6. （**推荐**）按 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 的说明，自行配置浏览器脚本及配套的 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler)，将播放器路径指向自己的 `mpvnet.exe`，实现网页视频快速调起。

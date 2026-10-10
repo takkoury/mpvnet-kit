@@ -10,7 +10,7 @@ FFmpeg 和 Python 是可选依赖，缺少它们不影响基本安装。
 
 ## 2. 下载与安装前准备
 
-1. 从[公开仓库](https://github.com/Takkoury/mpvnet-kit)下载完整包，例如 Code → Download ZIP。
+1. 从 [v0.1.0 Release](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.1.0) 下载 [mpvnet-kit-0.1.0.zip](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.1.0/mpvnet-kit-0.1.0.zip)。
 2. 完整解压到独立目录，找到 `Install.cmd`。不要直接从 ZIP 中运行，也不要把包解压到播放器配置目录内。
 3. 退出受影响的播放器。已有配置或脚本请先自行备份并处理，安装器不会覆盖或合并它们。
 
