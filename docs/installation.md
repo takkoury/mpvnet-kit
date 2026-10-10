@@ -1,68 +1,95 @@
-# 安装、检查与恢复
+# 安装与个人配置维护
 
-本项目面向Windows mpv.net，兼容证据基线7.1.2 / libmpv 0.41。请使用自己的播放器与配置目录；先关闭受影响播放器。工具不启动、关闭或终止播放器，不提供GUI安装器、不下载依赖、不改系统PATH或协议注册。
+本包是 Windows mpv.net 的配置与脚本包，不包含播放器。选择自己的 `mpvnet.exe` 后，安装器自动检查配置目录，确认后安装。功能见[功能指南](features.md)，个人设置见[配置说明](configuration.md)。
 
-流程为：只读依赖检查 → 安装计划预览 → 明确Apply安装 → 恢复计划预览 → 明确Apply恢复。安装与恢复默认只输出计划，只有传入-Apply才修改目标。
+## 1. 环境与依赖
 
-PlayerPath指定已有播放器exe，默认目标由其所在目录推导为portable_config。ConfigDirectory可覆盖目标目录，但用户须自行保证播放器确实读取它。BackupRoot默认在用户LocalAppData下mpvnet-kit/backups，备份与receipt属于用户状态，不放入源码包；目标sidecar为.mpvnet-kit-install.json，备份manifest记录receipt字节hash和逐文件旧/新状态。
+准备 Windows mpv.net 和系统自带的 Windows PowerShell。已有播放器可继续使用；需要下载时参考 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)及对应版本的运行要求。
 
-## 命令顺序
+FFmpeg 和 Python 是可选依赖，缺少它们不影响基本安装。
 
-在解压后的包根目录打开PowerShell，先关闭受影响播放器。下面示例的播放器路径是通用示例，请替换为自己的已有exe。ExecutionPolicy Bypass仅用于这次PowerShell进程，不修改系统策略。
+## 2. 下载与安装前准备
 
-```powershell
-# 1. 只读依赖检查
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\check-dependencies.ps1 -PlayerPath 'C:\Apps\mpv.net\mpvnet.exe'
+1. 从[公开仓库](https://github.com/Takkoury/mpvnet-kit)下载完整包，例如 Code → Download ZIP。
+2. 完整解压到独立目录，找到 `Install.cmd`。不要直接从 ZIP 中运行，也不要把包解压到播放器配置目录内。
+3. 退出受影响的播放器。已有配置或脚本请先自行备份并处理，安装器不会覆盖或合并它们。
 
-# 2. 安装预览：JSON计划，不写目标
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install.ps1 -PlayerPath 'C:\Apps\mpv.net\mpvnet.exe'
+安装器支持安装版和便携版，无需选择配置目录，按以下优先级自动判断：
 
-# 3. 确认目标与备份路径后执行
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install.ps1 -PlayerPath 'C:\Apps\mpv.net\mpvnet.exe' -Apply
-```
-
-保留安装JSON结果的backupManifest路径。需要恢复时先关闭受影响播放器，将下面通用示例改为该次安装的实际manifest文件路径：
-
-```powershell
-# 4. 恢复预览
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\restore.ps1 -BackupManifest 'C:\Backups\mpvnet-kit\install-backup\manifest.json'
-
-# 5. 确认恢复计划后执行
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\restore.ps1 -BackupManifest 'C:\Backups\mpvnet-kit\install-backup\manifest.json' -Apply
-```
-
-| 工具 | 参数 |
+| 条件 | 安装目录 |
 | --- | --- |
-| install.ps1 | 必需PlayerPath；可选ConfigDirectory、BackupRoot、PackageRoot；Apply执行 |
-| restore.ps1 | 必需BackupManifest；Apply执行 |
-| check-dependencies.ps1 | 必需PlayerPath；可选ConfigDirectory、PackageRoot；始终只读JSON |
+| 当前环境的 `MPVNET_HOME` 指向已有有效目录 | 该目录，启动播放器时需使用相同环境 |
+| 否则，播放器旁已有 `portable_config` | 该便携配置目录 |
+| 否则 | 当前用户的 Roaming AppData 下 `mpv.net`，通常为 `%APPDATA%\mpv.net` |
 
-默认PackageRoot由包位置确定；不要把它指向另一份未核对的包。若覆盖ConfigDirectory，请对检查与安装使用同一个值，并自行确认mpv.net读取它。默认备份位置为用户LocalApplicationData下mpvnet-kit/backups。
+若希望使用便携配置，请在选择播放器前自行创建空的 `portable_config`；目录不存在时会使用 AppData。不存在的 `MPVNET_HOME` 不会被创建，继续按后续条件判断。现存相对路径、卷根和链接目录会被拒绝。
 
-## 清单范围与保护
+播放器状态和缓存可保留；已有自定义配置、脚本或其他未知内容可能阻止安装。需要确认当前目录时，可在播放器右键菜单 **Config → Open Config Folder** 查看后退出。
 
-安装仅复制manifest中31份运行配置；mpvnet-local.conf.example留在包内、不安装。未知文件、真实script-opts/mpvnet-local.conf、settings.xml、缓存、历史和媒体不覆盖。licenses/与用户文档随源码包保留，不部署到播放器配置目录。
+## 3. 图形安装
 
-每次执行先核包文件与目标hash，对原本存在的目标逐项保存备份和旧hash，对原本不存在的目标记录新增所有权。只有运行目标路径集合相同的包支持直接更新；未来版本改变集合时，须先恢复旧部署再安装新包，不能假定任意版本都平滑更新。重复安装及恢复若发现受管目标被外部修改则停止；先保存差异并人工决定，工具没有绕过保护的强制覆盖入口。部署前再次检查目标状态。
+1. 双击解压包根目录的 `Install.cmd`。
+2. 点击“浏览…”，选择名为 `mpvnet.exe` 的播放器程序。
+3. 等待自动检查，核对窗口显示的实际配置目录、来源和检查结果。
+4. 检查通过后，点击右下角“确认安装”，核对弹窗后确认，等待“安装完成”。
 
-恢复按对应receipt逐项核当前部署hash：恢复原来存在的文件；仅删除本次新增且仍匹配hash的受管文件。不删除整个配置目录、Capture输出或未知文件。只允许当前最新receipt恢复，避免乱序覆盖；旧备份保留，不自动清理。
+窗口无需手填目录、命令参数或依赖路径。检查和安装期间请等待完成后再关闭窗口；完成后自行启动播放器。
 
-## 中断与人工恢复边界
+安装器不下载依赖、不运行播放器、FFmpeg 或 Python，也不修改系统 PATH、注册表或协议设置。旧配置的备份与处理由用户负责，窗口没有备份、更新或恢复功能。
 
-多文件安装/恢复不是完整原子事务。执行失败时工具尽力回滚，或在备份目录保留status与备份记录；不能承诺所有故障都自动恢复。看到rollback-incomplete或restore-incomplete时，先检查记录、当前文件hash和备份，必要时按逐文件旧状态人工恢复；不要盲目再次-Apply。
+## 4. 可选组件准备
 
-目标owner receipt引用的备份丢失或不匹配会被拒绝，工具不会自动接管现有部署或猜测旧文件。请保留receipt对应的备份目录和manifest，不能只保存目标sidecar。恢复成功也不自动清理旧备份。
+安装器仅从当前 PATH 查找 FFmpeg 和 Python，未发现仍可继续基本安装。FFmpeg 用于片段导出，Python 用于弹幕转换。优先复用已有程序；需要下载时参考 [FFmpeg 下载页](https://www.ffmpeg.org/download.html)和 [Python Windows 下载页](https://www.python.org/downloads/windows/)。
 
-## 可选依赖与个人配置
+程序不在 PATH 时，可按[本机路径说明](configuration.md#3-本机路径与外部组件)手动配置，之后调整无需重装。
 
-基本UI使用现有mpv.net，Capture片段导出需要FFmpeg，弹幕转换需要Python；缺少这些可选依赖不等于基本UI不可安装。缩略图需要可用播放器worker。依赖检查是只读的路径/文件元数据检查，不启动这些程序，结果不能当作运行功能验收。
+网页调起请按 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 的说明，自行配置浏览器脚本及配套的 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler)，将播放器路径指向自己的 `mpvnet.exe`。已有调用链可继续使用，安装器不注册协议。
 
-完成受管复制后，再按[定制](customization.md)创建或调整私有script-opts/mpvnet-local.conf。capture_root、ffmpeg_path、python_path、mpv_path的非空识别值优先，空值遵循公共自动探测与组件原选项。该私有文件不在manifest清单中，安装不会覆盖它。
+本包已包含基于 [MPV-Play-BiliBili-Comments](https://github.com/itKelis/MPV-Play-BiliBili-Comments) 的兼容弹幕脚本和默认配置，无需另装原版。弹幕转换需要可用 Python 和对应弹幕数据；播放时按 D 控制弹幕显隐，使用条件见[弹幕说明](features.md#bilibili-弹幕)，样式参数见[字幕与弹幕配置](configuration.md#4-播放音频字幕与弹幕)。
 
-独立Info/Playlist侧窗使用Windows PowerShell/WinForms。网页调起复用用户已有外部脚本/handler，不导账号或Cookie；工具不替用户注册协议。默认Original与原帧率，公共target-trc=auto；不同显示器/GPU/HDR/网络源需自行检查。
+## 5. 首次启动检查
 
-## 高级手动部署
+打开一个已知本地视频，简单检查：
 
-需要手动部署时，按manifest中的config/运行项去掉config/前缀后逐项复制（排除example）；先记录原存在性/hash并逐项备份。复制后核hash，再设置自己的私有local.conf。手动恢复也必须先核当前部署hash，恢复旧文件或只移除本次新增且匹配的文件；未知或外部修改先暂停。手动路径不产生安装工具receipt，不能让工具替它猜测恢复状态。
+- 鼠标移到下半区，出现 ModernZ 控制栏，原右键菜单仍可用。
+- Space 可以暂停，P 可以打开 Playlist。
+- Screenshot 可以保存源 PNG。
 
-本预览版本独立自有文件的 MIT 与第三方各自许可见[组件许可](../LICENSES.md)。已有定向验证不代表所有用户机器、GPU、网络、GUI或编码组合均通过。
+更多操作见[功能指南](features.md)，配置生效规则见[配置说明](configuration.md#2-修改方法与生效规则)。
+
+## 6. 重新安装与个人配置维护
+
+图形安装器不升级或覆盖已有配置。更换版本前，先退出播放器，自行备份原实际配置目录和个人修改，再处理旧配置，保留对应空目录（允许的播放器状态和缓存也可保留），然后安装完整新包。
+
+若将 `portable_config` 整个移走或删除，请重新建立空的 `portable_config`，否则安装位置可能改为 AppData。不要为通过检查直接删除未知内容，也不要把旧目录整包覆盖回新配置。
+
+日常参数调整参考[配置说明](configuration.md)，无需重装。恢复旧配置时，退出播放器，用自己保存的备份替换实际配置目录。
+
+安装失败时，先保留现场和日志，确认剩余内容后自行处理，再重新选择播放器检查。需要保存日志时，可选中文字复制。
+
+## 7. 常见安装问题
+
+| 现象 | 处理方式 |
+| --- | --- |
+| Install.cmd 无法打开 | 确认完整解压，`tools/installer.ps1` 和 `tools/clean-install.psm1` 存在，并可使用系统 Windows PowerShell / Windows Forms |
+| “确认安装”按钮灰色 | 选择 mpvnet.exe 后等待自动检查；若未通过，按日志处理后重新选择播放器 |
+| 目录已有内容或路径被拒绝 | 先自行备份处理已有配置；状态缓存可保留，其他未知内容、非空资源目录或资源目录内的空子目录可能被拒绝；使用普通目录，解压包与配置目录应分开 |
+| 未发现 FFmpeg / Python | 继续基本安装，之后按配置说明准备程序和本机路径 |
+| 安装成功但界面未变化 | 核对显示的安装目录与播放器实际读取目录是否一致，并重开播放器 |
+
+<details>
+<summary>高级说明：CLI 与手动安装</summary>
+
+高级工具有独立的备份与状态逻辑，与图形安装不同。**GUI 安装不能用 CLI restore 自动恢复。**
+
+| 工具 | 用途 |
+| --- | --- |
+| [check-dependencies.ps1](../tools/check-dependencies.ps1) | 必需 `PlayerPath`，只读检查依赖 |
+| [install.ps1](../tools/install.ps1) | 必需 `PlayerPath`；默认预览，加 `-Apply` 后写入并备份 |
+| [restore.ps1](../tools/restore.ps1) | 使用安装输出的 `backupManifest` 作为 `-BackupManifest`；默认预览，加 `-Apply` 后恢复 |
+
+在完整包根目录运行工具前，先退出受影响播放器并核对预览。保留 CLI 输出的实际 `backupManifest` 及其整个备份目录，恢复时使用最新有效记录；不要手改凭证或哈希。CLI 的 `ConfigDirectory` 只决定复制位置，需自行确认播放器读取它。
+
+手动安装时，先自行备份，再按 manifest 中 `config/` 开头且非 `.example` 的运行项逐项复制：去掉 `config/` 前缀，保留相对目录结构，不把整个包套进配置目录。手动复制没有 CLI 备份凭证，回退依靠自己的副本；不要覆盖未知内容。
+
+</details>

@@ -9,6 +9,7 @@
 | thumbfast | [MPL-2.0](licenses/thumbfast/LICENSE)及[来源](licenses/thumbfast/NOTICE.md) |
 | Anime4K shader | 六份为 [MIT](licenses/anime4k/LICENSE)，两份 AutoDownscalePre 为 [Unlicense](licenses/anime4k/UNLICENSE)；文件头与[固定来源](licenses/anime4k/SOURCE.md)保留 |
 | Bilibili 弹幕兼容组件 | 原[GPL许可证](config/scripts/bilibiliAssert/LICENSE)及文件头归属保留；本地兼容改动见源码 |
+| 界面演示图片 `assets/screenshots/` | 包含 Ruri no Houseki 影视画面，源媒体权利归原权利人；这些图片不在本项目 MIT 适用清单内 |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
 外部播放器、Python、FFmpeg、网页插件由各自项目分发，本候选不打包这些程序。
@@ -20,6 +21,7 @@
 - `.gitattributes`
 - `.gitignore`
 - `CHANGELOG.md`
+- `Install.cmd`
 - `LICENSE`
 - `LICENSES.md`
 - `README.md`
@@ -41,10 +43,12 @@
 - `config/scripts/playback-feedback.lua`
 - `config/scripts/playlist-controls.lua`
 - `config/scripts/subtitle-controls.lua`
-- `docs/customization.md`
+- `docs/configuration.md`
+- `docs/features.md`
 - `docs/installation.md`
-- `docs/usage.md`
 - `tools/check-dependencies.ps1`
+- `tools/clean-install.psm1`
 - `tools/common.psm1`
 - `tools/install.ps1`
+- `tools/installer.ps1`
 - `tools/restore.ps1`

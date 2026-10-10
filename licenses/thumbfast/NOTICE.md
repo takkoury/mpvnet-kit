@@ -13,4 +13,4 @@ The modified script is provided as source under [MPL-2.0](LICENSE); the original
 
 2026-10-10: explicitly load the configuration path module; discover the Windows worker executable from a private override, component option, frontend path, a single query of the current process ID, or an existing executable beside the configuration directory. Related failures produce a diagnostic. Thumbnail generation and message handling retain the upstream implementation.
 
-Network thumbnails are disabled by the distributed options. See the [customization guide](../../docs/customization.md) for local path overrides. The package manifest records distributed file hashes. The complete modified source accompanies this notice.
+Network thumbnails are disabled by the distributed options. See the [configuration guide](../../docs/configuration.md) for local path overrides. The package manifest records distributed file hashes. The complete modified source accompanies this notice.

@@ -16,7 +16,13 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "CHANGELOG.md",
-      "sha256": "6e61c300ac313ef8ba9f6144a65a8b43a05c149857799f98b6f78fc276471ff6"
+      "sha256": "345f3dd78326cdd47f007f22803d7465d9f038db22a4b1bee879cd3d4ca34866"
+    },
+    {
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
+      "path": "Install.cmd",
+      "sha256": "b85c7c207c5c3fe3a46c0e25aefbf1b6b5f2440c9bcf48996887f3d0e370b88a"
     },
     {
       "component": "author",
@@ -28,13 +34,43 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "LICENSES.md",
-      "sha256": "325d2579f34ff62eab0b20f0d69481bc75903023bbfa8f7f94bf3932fd1b90df"
+      "sha256": "11b23a9f9251698ccfa9920ce4adc39a12e3e71714f05cdb65b105ff995dac9e"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "ce87429dbfb58f0653769156bbf81a49ca0a4a2d72ba39485f50eeb099b84436"
+      "sha256": "aff91f28388fc8aa9a75bdcfb770a2648760b7bc92d9c5db5e5a3a05b8ea8287"
+    },
+    {
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained",
+      "path": "assets/screenshots/capture.webp",
+      "sha256": "da5d2f0d2677486c372d0ea2160bb4bd072d6007f279036ac336aa94076d51f7"
+    },
+    {
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained",
+      "path": "assets/screenshots/controls.png",
+      "sha256": "1bf641b16ef63901c4bed2928d85e6307d3287ae4181bb07ddeef4886e261862"
+    },
+    {
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained",
+      "path": "assets/screenshots/overview.png",
+      "sha256": "afcd8831cfa9dfd40b012bf23e3a356a99c74f7be04ae15b99a5d0e431c94584"
+    },
+    {
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained",
+      "path": "assets/screenshots/playlist.png",
+      "sha256": "6cabf9b236786734f6cbd97b5e45fdf3ab5380a965210b37f1e12cff6d1d7927"
+    },
+    {
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained",
+      "path": "assets/screenshots/subtitle.png",
+      "sha256": "74d3cf6de9d8770ef0fd38068a868b63f88c5d5c5748458c467188124c0e428e"
     },
     {
       "component": "modernz",
@@ -231,20 +267,20 @@
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
-      "path": "docs/customization.md",
-      "sha256": "802009f5ae28c17f3a82e315f15c6981c88cfc42da4e9ffe300e0fc86f733b8d"
+      "path": "docs/configuration.md",
+      "sha256": "42f306b24ae725efcb6229f86a4ff430083f316715aa2301324b3b2b030c2fd4"
+    },
+    {
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
+      "path": "docs/features.md",
+      "sha256": "07f48775ee4c515c98225c7399ee036d5ce75103dd88fc3b6bc0bff6904b6e53"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/installation.md",
-      "sha256": "e632d48c7b29672c06261fcb9c193c746a276d317d2f8f28e99d2745b4675a32"
-    },
-    {
-      "component": "author",
-      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
-      "path": "docs/usage.md",
-      "sha256": "3af566e76200492c5acdc672024bfc6cff5a1bf7052fa957fff7871aad00df32"
+      "sha256": "c714da67b592230e52619022077f77b58eaa2151c6ef95d534353b317ddc41ac"
     },
     {
       "component": "anime4k",
@@ -298,13 +334,19 @@
       "component": "thumbfast",
       "origin": "https://github.com/po5/thumbfast",
       "path": "licenses/thumbfast/NOTICE.md",
-      "sha256": "6492d52ab7633130a57b0a459ac3045d5adf4f353b5f8f405ba2bc553b2c7d59"
+      "sha256": "e733de52dfec506dc56a5e4b9b2d63e8d1bcfc4f560a6e7cc6e288265f14ee64"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/check-dependencies.ps1",
       "sha256": "f1fa2b6b1eb452e8b46e6001f07068b13aa6203327b13ce44c0458514371cf91"
+    },
+    {
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
+      "path": "tools/clean-install.psm1",
+      "sha256": "e051464111aadd61898467c882031630565eca237a837b41fde803f4e35ef17a"
     },
     {
       "component": "author",
@@ -321,11 +363,17 @@
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
+      "path": "tools/installer.ps1",
+      "sha256": "2150bfc91e46272d8be91a10140815433633ba4b72eabb4cef8697725ad2c919"
+    },
+    {
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "tools/restore.ps1",
       "sha256": "3a4cc21dca3eb7bf7a545be3ee261e8294003fcb5f9d98f3b72a3a3befd4086c"
     }
   ],
   "schema": 1,
-  "status": "local-unpublished-preview",
-  "version": "0.1.0-preview"
+  "status": "generated-distribution",
+  "version": "0.1.0"
 }
