@@ -145,19 +145,23 @@ local function action(received_token, operation, id, target_id, side)
     if received_token ~= token or closing then return end
     if operation == 'append' then
         local files = utils.parse_json(id or '')
-        if type(files) ~= 'table' then return end
+        if type(files) ~= 'table' then mp.osd_message('NO SUPPORTED FILES', 1); return end
         local sets = extension_sets()
         local kind = media_kind(mp.get_property('path'), sets)
+        local supported, appended = 0, 0
         for _, file in ipairs(files) do
             if type(file) == 'string' and not file:find('://', 1, true) then
                 local info = utils.file_info(file)
                 local candidate = media_kind(file, sets)
                 if info and info.is_file and candidate and (not kind or kind == candidate) then
                     kind = kind or candidate
-                    mp.commandv('no-osd', 'loadfile', file, 'append')
+                    supported = supported + 1
+                    if mp.commandv('no-osd', 'loadfile', file, 'append') then appended = appended + 1 end
                 end
             end
         end
+        if supported == 0 then mp.osd_message('NO SUPPORTED FILES', 1)
+        elseif appended == 0 then mp.osd_message('PLAYLIST APPEND FAILED', 1) end
         return
     end
     local entries = queue()
@@ -175,25 +179,34 @@ local function action(received_token, operation, id, target_id, side)
     end
 end
 
+local function open_failed(phase, owns_payload)
+    if owns_payload and payload_path then os.remove(payload_path) end
+    payload_path = nil
+    wanted = false
+    publish()
+    mp.msg.warn('Playlist window failed: ' .. phase)
+    mp.osd_message('PLAYLIST OPEN FAILED', 1)
+end
+
 local function start_window()
     local pipe = mp.get_property('options/input-ipc-server', '')
     if pipe == '' then
         pipe = '\\\\.\\pipe\\mpvnet-playlist-' .. token
         local ok = mp.set_property('options/input-ipc-server', pipe)
-        if not ok then mp.msg.warn('Playlist window failed: ipc'); wanted = false; publish(); return end
+        if not ok then open_failed('ipc'); return end
     end
     local temp = os.getenv('TEMP') or os.getenv('TMP')
-    if not temp then wanted = false; publish(); return end
+    if not temp or temp == '' then open_failed('temp'); return end
     payload_path = utils.join_path(temp, 'mpvnet-playlist-' .. token .. '.json')
     local file = io.open(payload_path, 'wb')
-    if not file then wanted = false; publish(); return end
+    if not file then open_failed('payload'); return end
     local written = file:write(utils.format_json({
         parent_pid = mp.get_property_number('pid', 0), pipe = pipe, token = token,
         script = mp.get_script_name(), visible = wanted, working_directory = mp.get_property('working-directory'),
     }))
     local closed = file:close()
     if not written or not closed then
-        os.remove(payload_path); payload_path = nil; wanted = false; publish(); return
+        open_failed('payload', true); return
     end
     running = true
     mp.command_native_async({name = 'subprocess', args = {
@@ -204,6 +217,7 @@ local function start_window()
         running, ready, helper_pid = false, false, nil
         if payload_path then os.remove(payload_path); payload_path = nil end
         if not closing then
+            local show_failure = wanted
             wanted = false
             publish()
             if not ok or not result or result.status ~= 0 then
@@ -233,6 +247,7 @@ local function start_window()
                     .. '/' .. tostring(tonumber(data and data.error_line) or 0)
                     .. '/' .. member_type .. '.' .. member
                     .. ' / parameter=' .. parameter .. ' / callers=' .. table.concat(callers, ','))
+                if show_failure then mp.osd_message('PLAYLIST OPEN FAILED', 1) end
             end
         end
     end)

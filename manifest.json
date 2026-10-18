@@ -10,13 +10,13 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": ".gitignore",
-      "sha256": "0ddb7bbfcf210e0f4ec8bbb9ac3b1051a96a0b0c8b6265aa275f0fd10420b4d6"
+      "sha256": "20b463963dc7bf872a572becea7a2296c40c0f5509d0c7657c3f63f56f9e6ea5"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "CHANGELOG.md",
-      "sha256": "345f3dd78326cdd47f007f22803d7465d9f038db22a4b1bee879cd3d4ca34866"
+      "sha256": "edb4b04cf54c34e7af1aa154b8a5f8e2943cf2034bc9586453b8f7828c7bf810"
     },
     {
       "component": "author",
@@ -34,13 +34,13 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "LICENSES.md",
-      "sha256": "11b23a9f9251698ccfa9920ce4adc39a12e3e71714f05cdb65b105ff995dac9e"
+      "sha256": "bd053c08c2a7d8a861687121f430569d5440346c3962eb048b91b55542c7bb01"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "2d3a019c3fb75c8600ec2e7fca07308806717ce0b6ebcf4e1d29d97f7644a56e"
+      "sha256": "f625c0daa4b311ff1826e988ab86576998f57f17705187865d3dcc5c3818b0a3"
     },
     {
       "component": "documentation-media",
@@ -82,7 +82,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/capture-media.ps1",
-      "sha256": "e8201682b22ee608073aee68ae95a358fbd66e6ba135ca20c7bfc31b9f3c1965"
+      "sha256": "b2d59e6c8b4b73fd76499dc452b34853389d4c9000ef63124987f7df06829927"
     },
     {
       "component": "author",
@@ -100,7 +100,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/helpers/playlist-window.ps1",
-      "sha256": "4c33dc7d26657036d83a9f0f2ab2a1f675e6328a203f31d8079543110a830537"
+      "sha256": "c6cbbf8877fd5d96d7cb7555bf6d0212736f912589d52e1a85eb222572021d27"
     },
     {
       "component": "author",
@@ -160,7 +160,7 @@
       "component": "bilibili",
       "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments",
       "path": "config/scripts/bilibiliAssert/Danmu2Ass.py",
-      "sha256": "b2a704fd9bc8e41c3be1f0476fb197d52ea35d97b83473a6b449c112f562fa20"
+      "sha256": "7dadd920d14e03f03f63374eac3bf1e31f8624bb04121112e7582a46c1810748"
     },
     {
       "component": "bilibili",
@@ -178,7 +178,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/capture-controls.lua",
-      "sha256": "d417f7402adaf68e0c55df81e0c97be6915cf7a5cd73a4ca54304eee30d6a5f5"
+      "sha256": "a8fe3c930379f9107193973449744150efc0cd5d06d51cc8a2dca30d6c7b4782"
     },
     {
       "component": "author",
@@ -190,19 +190,19 @@
       "component": "modernz",
       "origin": "https://github.com/Samillion/ModernZ",
       "path": "config/scripts/modernz.lua",
-      "sha256": "ef04669c2567c4e80fbaa261ed6549b1067fe9986d21ed1e4df7e5453ebe5a2d"
+      "sha256": "cb9b373217c3e0bb7d9422395f19590ba289625f897f7305c3efd37902ed82b2"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/playback-feedback.lua",
-      "sha256": "d2b65b917df831577e36214fd9742b9ca544ec75b6936851646e34bce4495470"
+      "sha256": "38644b7a3645919db707487bf1539dc173255130207758e354f2c043e5a2e084"
     },
     {
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "config/scripts/playlist-controls.lua",
-      "sha256": "798abd5020756a6c3eea6c61d3db59fc235387f922ba0d292fae798f8fc4fdb8"
+      "sha256": "41702d63e9fd6b03b4fe0dfdae04a7956d12fe0902c8352ef0219c2c2d5448d7"
     },
     {
       "component": "author",
@@ -274,7 +274,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/features.md",
-      "sha256": "07f48775ee4c515c98225c7399ee036d5ce75103dd88fc3b6bc0bff6904b6e53"
+      "sha256": "1262260aa091220a6ecc5191461a6dbac404ec355a8912669cf6178638ea6ce4"
     },
     {
       "component": "author",
@@ -322,7 +322,7 @@
       "component": "modernz",
       "origin": "https://github.com/Samillion/ModernZ",
       "path": "licenses/modernz/NOTICE.md",
-      "sha256": "e5163206de82d889ef0ac8872e1b0e2c3a2f5ec928194820d64bab0d2e1a3aeb"
+      "sha256": "fe04f87d5fa9b82459457d11760d510a89dd014cd43b1119b6728f00b50c242a"
     },
     {
       "component": "thumbfast",

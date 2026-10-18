@@ -1,4 +1,4 @@
-# User state and outputs never belong in this source-only candidate.
+# User state and outputs never belong in this source distribution.
 *.log
 *.tmp
 __pycache__/

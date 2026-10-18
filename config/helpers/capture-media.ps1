@@ -25,6 +25,27 @@ function Write-Result($data) {
     $outputWriter.WriteLine(($data | ConvertTo-Json -Compress -Depth 8))
 }
 
+function Get-CaptureFailureReason($Failure, [string]$Phase) {
+    # Return a fixed code only. Exception messages may contain private paths or URLs.
+    $exception = $Failure.Exception
+    if ($exception.Message -eq 'cancelled') { return 'cancelled' }
+    if ($exception.Message -eq 'ffmpeg-missing') { return 'ffmpeg-missing' }
+    if ($exception.Message -eq 'missing') { return 'file-missing' }
+    if ($exception.Message -eq 'range') { return 'invalid-range' }
+    if ($exception.Message -eq 'path-setting') { return 'invalid-path' }
+    if ($exception.GetBaseException() -is [UnauthorizedAccessException]) { return 'access-denied' }
+    switch ($Phase) {
+        'clipboard' { return 'clipboard' }
+        'directory' { return 'directory' }
+        'staging' { return 'temporary-file' }
+        'commit' { return 'save' }
+        'mp4' { return 'encode-mp4' }
+        'webp' { return 'encode-webp' }
+        'gif' { return 'encode-gif' }
+        default { return 'worker' }
+    }
+}
+
 function Check-Cancelled {
     if (($cancelPath -and [IO.File]::Exists($cancelPath)) -or
         ($parentProcess -and $parentProcess.HasExited)) { throw 'cancelled' }
@@ -282,6 +303,7 @@ try {
         }
     }
     if (-not $payload.job_id) { $payload | Add-Member -NotePropertyName job_id -NotePropertyValue ([DateTime]::UtcNow.Ticks.ToString()) }
+    $phase = 'staging'
     $stage = Join-Path ([IO.Path]::GetTempPath()) ('mpvnet-capture-job-' + $payload.job_id)
     [void][IO.Directory]::CreateDirectory($stage)
     $cancelPath = Join-Path $stage 'cancel'
@@ -352,9 +374,11 @@ try {
     if ($payload.action -eq 'clip') { $result.clipboard_format = $clipboardFormat }
     Write-Result $result
 } catch {
+    $failure = $_
     # Delete only final outputs moved by this invocation. Never clear Clipboard.
     foreach ($path in $owned) { if ([IO.File]::Exists($path)) { [IO.File]::Delete($path) } }
-    Write-Result @{ok = $false; phase = $phase; error_class = $_.Exception.GetType().Name}
+    Write-Result @{ok = $false; phase = $phase; error_class = $failure.Exception.GetType().Name;
+        reason = (Get-CaptureFailureReason $failure $phase)}
     exit 1
 } finally {
     if ($tempPng -and [IO.File]::Exists($tempPng)) { [IO.File]::Delete($tempPng) }

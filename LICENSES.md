@@ -12,7 +12,7 @@
 | 界面演示图片 `assets/screenshots/` | 包含 Ruri no Houseki 影视画面，源媒体权利归原权利人；这些图片不在本项目 MIT 适用清单内 |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
-外部播放器、Python、FFmpeg、网页插件由各自项目分发，本候选不打包这些程序。
+外部播放器、Python、FFmpeg、网页插件由各自项目分发，本包不打包这些程序。
 
 ## MIT 适用文件
 

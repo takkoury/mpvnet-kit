@@ -6,6 +6,10 @@ The modified Lua script remains under [LGPL-2.1](LICENSE); its original introduc
 
 ## Local modifications
 
+2026-10-18: keep Previous/Next available at nonempty playlist boundaries and preserve wheel actions on the Speed anchor while its popover is open.
+
+2026-10-18: escape and fit chapter-preview metadata while preserving configured ASS styles, preview ordering and the independent thumbnail anchor.
+
 2026-10-08–2026-10-10: custom control layout; volume, speed, enhancement and screenshot hover controls; playback/window/subtitle feedback; mouse bindings; seek and chapter/time presentation. These are modifications of the upstream script and retain its license. The distributed script SHA256 is recorded in the package manifest.
 
 ## Original inputs and icons

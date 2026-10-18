@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Local change 2026-10-07: optional per-request ASS output path; see LICENSE.
+# Local change 2026-10-18: fix filter combinations and HTTP error handling; see LICENSE.
 # The second author is ZhiyuShang.
 # The original author m13253(github).
 
@@ -19,6 +20,7 @@ import xml.etree.cElementTree as ET
 import ssl
 import zlib
 from urllib import request
+from urllib.error import HTTPError
 import time
 from platform import platform
 
@@ -443,7 +445,7 @@ def getComments(cid,font_size = 25):
         ), context=ssl.create_default_context())
         data = str(zlib.decompress(response.read(), -zlib.MAX_WBITS), "utf-8")
         response.close()
-    except urllib.error.HTTPError as e:
+    except HTTPError as e:
         print(f"HTTP Error occurred: {e}")
         if e.code == 412:
             print("412 Precondition Failed: 服务器上的资源不满足请求中的前提条件。")
@@ -458,7 +460,7 @@ def getComments(cid,font_size = 25):
 def write2file(comments, directory, stage_width, stage_height,reserve_blank=0, font_face=_('(FONT) sans-serif')[7:], font_size=25.0, text_opacity=1.0, duration_marquee=5.0, duration_still=5.0, comment_filter=None, comment_filters_file=None, is_reduce_comments=False, progress_callback=None, output_path=None):
     filters_regex = []
 
-    if comment_filter and ( comment_filters or comment_filters_file):
+    if comment_filter or comment_filters_file:
         comment_filters = [comment_filter]
         if comment_filters_file:
             with open(comment_filters_file, 'r', encoding='utf-8') as f:

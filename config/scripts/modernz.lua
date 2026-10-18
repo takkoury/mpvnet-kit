@@ -14,6 +14,9 @@
 -- Primary subtitle state excludes the plugin's danmaku track; temporary subtitle
 -- adjustment suspends OSC position raising until its media is left.
 -- Based on Samillion/ModernZ commit 579897e8c974c380caa5017dc7b27a69123c1333.
+-- Local interaction maintenance (2026-10-18, mpvnet-kit): retain queue-boundary
+-- replay buttons and Speed anchor wheel input while its popover is open.
+-- Chapter previews escape media text before formatting and fit it to the canvas.
 
 local assdraw = require "mp.assdraw"
 local msg = require "mp.msg"
@@ -789,13 +792,13 @@ end
 
 local text_width_cache = {}
 
-local function estimate_text_width(text, style)
+local function estimate_text_width(text, style, exact)
     if text == nil then return 0 end
     text = tostring(text)
     if #text == 0 then return 0 end
 
-    -- replace digits with '0' for consistency
-    local measure_text = text:gsub("%d", "0")
+    -- Timers normalize digits; formatted chapter styles must keep their numbers.
+    local measure_text = exact and text or text:gsub("%d", "0")
     local cache_key = measure_text .. (style or "")
     local width = 0
 
@@ -819,6 +822,40 @@ local function estimate_text_width(text, style)
 
     text_width_cache[cache_key] = width
     return width
+end
+
+local function chapter_preview_text(title, style, max_width)
+    if max_width <= 0 then return nil, 0 end
+    -- Cut raw UTF-8 text, never an ASS escape or a user-configured format tag.
+    title = tostring(title):gsub("[\r\n]", " ")
+    local function measure(value)
+        local text = string.format(user_opts.chapter_fmt, mp.command_native({"escape-ass", value}))
+        return text, estimate_text_width(text, style, true)
+    end
+    local text, width = measure(title)
+    if width <= max_width then return text, width end
+
+    text, width = measure("…")
+    if width > max_width then return nil, 0 end
+    local char_ends, pos = {}, 1
+    while pos <= #title do
+        local byte = title:byte(pos)
+        local size = byte >= 0xF0 and 4 or byte >= 0xE0 and 3 or byte >= 0xC0 and 2 or 1
+        char_ends[#char_ends + 1] = pos + size - 1
+        pos = pos + size
+    end
+    local low, high = 1, #char_ends - 1
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local candidate, candidate_width = measure(title:sub(1, char_ends[mid]) .. "…")
+        if candidate_width <= max_width then
+            text, width = candidate, candidate_width
+            low = mid + 1
+        else
+            high = mid - 1
+        end
+    end
+    return text, width
 end
 
 -- width of the time codes element
@@ -1787,8 +1824,11 @@ local function render_elements(master_ass, osc_vis, wc_vis)
                                 if dur > 0 then
                                     local ch = get_chapter(sliderpos * dur / 100)
                                     if ch and ch.title and ch.title ~= "" then
-                                        chapter_text = string.format(user_opts.chapter_fmt, ch.title)
-                                        chapter_width = estimate_text_width(chapter_text, slider_lo.tooltip_style)
+                                        local available = math.max(0, osc_param.playresx - 20 * r_w)
+                                        if available >= user_opts.tooltip_font_size + 16 then
+                                            chapter_text, chapter_width = chapter_preview_text(ch.title,
+                                                slider_lo.tooltip_style, available - 10)
+                                        end
                                     end
                                 end
                             end
@@ -1804,7 +1844,8 @@ local function render_elements(master_ass, osc_vis, wc_vis)
                                 local half_width = max_text_width / 2
                                 local min_x = margin + half_width
                                 local max_x = osc_param.playresx - margin - half_width
-                                tx = math.min(max_x, math.max(min_x, tx))
+                                tx = min_x <= max_x and math.min(max_x, math.max(min_x, tx))
+                                    or osc_param.playresx / 2
                             end
                         end
 
@@ -3460,13 +3501,13 @@ local function osc_init()
     -- prev
     ne = new_element("playlist_prev", "button")
     ne.content = icons.previous
-    ne.enabled = (pl_pos > 1) or (loop ~= "no") or contains(user_opts.buttons_always_active, "playlist_prev")
+    ne.enabled = pl_count > 0 -- Queue actions replay the current item at either boundary.
     bind_buttons("playlist_prev")
 
     --next
     ne = new_element("playlist_next", "button")
     ne.content = icons.next
-    ne.enabled = (have_pl and (pl_pos < pl_count)) or (loop ~= "no") or contains(user_opts.buttons_always_active, "playlist_next")
+    ne.enabled = pl_count > 0
     bind_buttons("playlist_next")
 
     --play control buttons
@@ -4110,9 +4151,13 @@ local function refresh_input_area()
     -- While open, capture an outside click only to dismiss a click menu.
     if state.popover == "speed" or state.popover == "copy_clip" or state.popover == "enhancement" then
         set_virt_mouse_area(0, 0, osc_param.playresx, osc_param.playresy, "input")
-        set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
         local popup = state.local_popovers and state.local_popovers[state.popover]
         local anchor = popup and popup.anchor
+        if anchor and has_wheel_action(anchor) then
+            set_virt_mouse_area(anchor.hitbox.x1, anchor.hitbox.y1, anchor.hitbox.x2, anchor.hitbox.y2, "input_wheel")
+        else
+            set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
+        end
         if anchor and has_mid_action(anchor) then
             set_virt_mouse_area(anchor.hitbox.x1, anchor.hitbox.y1, anchor.hitbox.x2, anchor.hitbox.y2, "input_mid")
         else

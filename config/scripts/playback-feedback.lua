@@ -317,11 +317,11 @@ end)
 mp.add_key_binding(nil, "clipboard-url", function()
     -- Read only on this explicit action; reject local paths and multiple clipboard lines.
     local text = mp.get_property("clipboard/text")
-    if not text then return end
+    if not text or text:match("^%s*$") then mp.osd_message("NO URL IN CLIPBOARD", 1); return end
     text = text:match("^%s*(.-)%s*$")
-    if text:find("%s") or text:find("%c") then return end
+    if text:find("%s") or text:find("%c") then mp.osd_message("INVALID URL", 1); return end
     local scheme, authority = text:match("^([%a][%w+.-]*)://([^/?#]+)")
-    if not scheme or not authority or (scheme:lower() ~= "http" and scheme:lower() ~= "https") then return end
+    if not scheme or not authority or (scheme:lower() ~= "http" and scheme:lower() ~= "https") then mp.osd_message("INVALID URL", 1); return end
     mp.commandv("no-osd", "loadfile", text, "replace")
 end)
 mp.add_key_binding(nil, "save-mark", function()

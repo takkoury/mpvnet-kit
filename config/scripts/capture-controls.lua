@@ -20,6 +20,27 @@ local function feedback(text)
     if not shutting_down then mp.osd_message(text, 1) end
 end
 
+local failure_reasons = {
+    ['ffmpeg-missing'] = 'FFMPEG NOT FOUND', ['file-missing'] = 'FILE NOT FOUND',
+    ['invalid-range'] = 'INVALID RANGE', ['invalid-path'] = 'INVALID PATH',
+    ['access-denied'] = 'ACCESS DENIED', ['clipboard'] = 'CLIPBOARD FAILED',
+    ['directory'] = 'FOLDER UNAVAILABLE', ['temporary-file'] = 'TEMP UNAVAILABLE',
+    ['save'] = 'CANNOT SAVE FILE', ['encode-mp4'] = 'MP4 ENCODING FAILED',
+    ['encode-webp'] = 'WEBP ENCODING FAILED', ['encode-gif'] = 'GIF ENCODING FAILED',
+    ['cancelled'] = 'CANCELLED',
+}
+local legacy_phases = {ffmpeg = 'ffmpeg-missing', clipboard = 'clipboard', directory = 'directory',
+    staging = 'temporary-file', commit = 'save', mp4 = 'encode-mp4', webp = 'encode-webp', gif = 'encode-gif'}
+
+local function report_failure(fallback, data)
+    data = type(data) == 'table' and data or {}
+    local reason = data.reason or legacy_phases[data.phase]
+    local detail = failure_reasons[reason]
+    -- Log only our allowlisted codes, not helper text, paths or signed media URLs.
+    mp.msg.warn('Capture failed: ' .. (detail and reason or 'worker'))
+    feedback(detail and (fallback .. ' · ' .. detail) or fallback)
+end
+
 local function clock(value)
     local ms = math.floor(value * 1000 + 0.5)
     return string.format('%02d:%02d:%02d.%03d', math.floor(ms / 3600000),
@@ -67,7 +88,7 @@ local function run(payload, success, failure, done)
         if pending_png then os.remove(pending_png) end
         pending_png, pending_job = nil, nil
         publish()
-        feedback(failure)
+        report_failure(failure, {reason = 'temporary-file'})
         return
     end
     mp.command_native_async({name = 'subprocess', args = {
@@ -77,14 +98,12 @@ local function run(payload, success, failure, done)
         capture_stderr = false, playback_only = false}, function(ok, result)
         busy = false
         local data = result and utils.parse_json(result.stdout or '')
+        data = type(data) == 'table' and data or nil
         if ok and result and result.status == 0 and data and data.ok then
             if done then done(data) end
             feedback(success)
         else
-            -- The helper reports phase codes only, never input URLs or headers.
-            mp.msg.warn('Capture failed: ' .. tostring(data and data.phase or 'worker'))
-            feedback(payload.action == 'clip' and data and data.phase == 'ffmpeg'
-                and 'CLIP FAILED · FFMPEG NOT FOUND' or failure)
+            report_failure(failure, data)
         end
         if pending_png then os.remove(pending_png) end
         if pending_payload then os.remove(pending_payload) end
@@ -96,15 +115,16 @@ end
 -- Directory opening owns its payload and never participates in the export job state.
 local function open_folder()
     local payload_path = write_payload({action = 'open-directory'})
-    if not payload_path then feedback('CAPTURE FOLDER FAILED'); return end
+    if not payload_path then report_failure('CAPTURE FOLDER FAILED', {reason = 'temporary-file'}); return end
     mp.command_native_async({name = 'subprocess', args = {
         powershell, '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', helper,
         '-PayloadPath', payload_path,
     }, capture_stdout = true, capture_stderr = false, playback_only = false}, function(ok, result)
         os.remove(payload_path)
         local data = result and utils.parse_json(result.stdout or '')
+        data = type(data) == 'table' and data or nil
         if not (ok and result and result.status == 0 and data and data.ok) then
-            feedback('CAPTURE FOLDER FAILED')
+            report_failure('CAPTURE FOLDER FAILED', data)
         end
     end)
 end

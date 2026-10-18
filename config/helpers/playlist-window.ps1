@@ -211,6 +211,7 @@ public class PlaylistForm : Form {
             Marshal.StructureToPtr(bounds, m.LParam, false); m.Result = new IntPtr(1); return;
         }
         base.WndProc(ref m);
+        if ((m.Msg == 0x2E0 || m.Msg == 0x31E) && Follower != null) Follower.RefreshFrame();
         if (m.Msg == 0x84) {
             int hit = m.Result.ToInt32();
             if (hit == 13 || hit == 16) m.Result = new IntPtr(10);
@@ -406,6 +407,17 @@ public static class PlaylistNative {
     [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out Rect value, int size);
+    public static Rect VisibleBounds(Rect outer, Rect frame, bool available) {
+        return available && frame.Right > frame.Left && frame.Bottom > frame.Top ? frame : outer;
+    }
+    public static Rect GetVisibleBounds(IntPtr hwnd, out Rect outer) {
+        GetWindowRect(hwnd,out outer);
+        Rect frame = new Rect(); bool available = false;
+        try { available = DwmGetWindowAttribute(hwnd,9,out frame,Marshal.SizeOf(typeof(Rect))) == 0; }
+        catch (DllNotFoundException) {} catch (EntryPointNotFoundException) {}
+        return VisibleBounds(outer,frame,available);
+    }
     public static IntPtr FindParent(uint pid, IntPtr preferred) {
         uint preferredPid;
         if (preferred != IntPtr.Zero && IsWindowVisible(preferred) && GetWindow(preferred, 4) == IntPtr.Zero) {
@@ -457,6 +469,7 @@ public sealed class PlaylistFollower : IDisposable {
         posted = true;
         form.BeginInvoke(new Action(delegate { posted = false; if (!disposed) { if (discover) { discover=false;RefreshParent(IntPtr.Zero); } else Follow(); } }));
     }
+    public void RefreshFrame() { Schedule(); }
     public void RefreshParent(IntPtr preferred) {
         if (disposed) return;
         IntPtr found = PlaylistNative.FindParent(pid,preferred);
@@ -473,12 +486,23 @@ public sealed class PlaylistFollower : IDisposable {
         result.Top = parent.Top; result.Right = result.Left+width; result.Bottom = parent.Bottom;
         return result;
     }
+    public static PlaylistNative.Rect FrameLayout(PlaylistNative.Rect parent, PlaylistNative.Rect area,
+        PlaylistNative.Rect outer, PlaylistNative.Rect visible, int width, bool overlay) {
+        // Keep the remembered outer width; align the visible edges on both windows.
+        int left = Math.Max(0,visible.Left-outer.Left), top = Math.Max(0,visible.Top-outer.Top);
+        int right = Math.Max(0,outer.Right-visible.Right), bottom = Math.Max(0,outer.Bottom-visible.Bottom);
+        PlaylistNative.Rect result = Layout(parent,area,Math.Max(1,width-left-right),overlay);
+        result.Left-=left;result.Top-=top;result.Right+=right;result.Bottom+=bottom;
+        return result;
+    }
     public PlaylistNative.Rect GetBounds() {
-        PlaylistNative.Rect parent; PlaylistNative.GetWindowRect(Parent,out parent);
+        PlaylistNative.Rect parentOuter, sideOuter;
+        PlaylistNative.Rect parent = PlaylistNative.GetVisibleBounds(Parent,out parentOuter);
+        PlaylistNative.Rect side = PlaylistNative.GetVisibleBounds(form.Handle,out sideOuter);
         Screen screen = Screen.FromHandle(Parent); Rectangle area = fullscreen ? screen.Bounds : screen.WorkingArea;
         PlaylistNative.Rect nativeArea = new PlaylistNative.Rect();
         nativeArea.Left=area.Left;nativeArea.Top=area.Top;nativeArea.Right=area.Right;nativeArea.Bottom=area.Bottom;
-        return Layout(parent,nativeArea,(int)Math.Round(UserWidth*Dpi/96.0),fullscreen || PlaylistNative.IsZoomed(Parent));
+        return FrameLayout(parent,nativeArea,sideOuter,side,(int)Math.Round(UserWidth*Dpi/96.0),fullscreen || PlaylistNative.IsZoomed(Parent));
     }
     public void Follow() {
         if (disposed || !IsWindow(Parent)) return;
@@ -494,6 +518,8 @@ public sealed class PlaylistFollower : IDisposable {
             PlaylistNative.SetWindowPos(form.Handle,IntPtr.Zero,target.Left,target.Top,target.Right-target.Left,target.Bottom-target.Top,0x14);
         if (!form.Visible) {
             form.Show(new PlaylistOwner(Parent));
+            // A newly shown/moved window can acquire its DWM frame and monitor DPI now.
+            Schedule();
         }
     }
     public void Dispose() { if (disposed) return; disposed=true; foreach (IntPtr hook in hooks) UnhookWinEvent(hook); hooks.Clear(); form.Follower=null; }
