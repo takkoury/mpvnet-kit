@@ -16,7 +16,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "CHANGELOG.md",
-      "sha256": "edb4b04cf54c34e7af1aa154b8a5f8e2943cf2034bc9586453b8f7828c7bf810"
+      "sha256": "adb0f16791b96bd92665d2357dde0ef082a5730f925312270a968569684edf29"
     },
     {
       "component": "author",
@@ -40,7 +40,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "README.md",
-      "sha256": "f625c0daa4b311ff1826e988ab86576998f57f17705187865d3dcc5c3818b0a3"
+      "sha256": "d677749dd6d1abd1d0dc99251f2300b32014ba21708a72ae3632a492779e5bc4"
     },
     {
       "component": "documentation-media",
@@ -280,7 +280,7 @@
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md",
       "path": "docs/installation.md",
-      "sha256": "b2d624e1f1e30f93ffd9bed64e08c225504d12adca8a1327106f0f732aa511e0"
+      "sha256": "d8c7bfcd48919beb12cf139843a452e0c956db116166e1ca5bd69c4c6aa5948a"
     },
     {
       "component": "anime4k",
@@ -375,5 +375,5 @@
   ],
   "schema": 1,
   "status": "generated-distribution",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
