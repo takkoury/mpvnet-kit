@@ -85,27 +85,8 @@ local function show_adjustment()
         mp.get_property_number("sub-scale", 1)), 1)
 end
 
-local function adjust_position(amount)
-    if not adjusting then return end
-    set_position(position + amount)
-    show_adjustment()
-end
-
-local function adjust_scale(amount)
-    if not adjusting then return end
-    -- Native ASS danmaku with secondary-sub-ass-override=no does not apply sub-scale.
-    mp.set_property_number("sub-scale", math.max(0.05, math.min(100,
-        mp.get_property_number("sub-scale", 1) + amount)))
-    show_adjustment()
-end
-
-local function toggle_adjustment()
-    if adjusting then
-        exit_mode()
-        mp.osd_message("SUB ADJUST: OFF", 1)
-        return
-    end
-    if not primary_track() then no_subtitle(); return end
+local function prepare_adjustment()
+    if not primary_track() then no_subtitle(); return false end
     if not saved_adjustment then
         saved_adjustment = {
             pos = mp.get_property_number("user-data/mpvnet/subtitle-base-pos",
@@ -117,6 +98,34 @@ local function toggle_adjustment()
         -- An external adjustment while the mode is off becomes the new working position.
         position = mp.get_property_number("sub-pos", position)
     end
+    return true
+end
+
+local function adjust_position(amount, single)
+    if not adjusting and not single then return end
+    set_position(position + amount)
+    show_adjustment()
+end
+
+local function adjust_scale(amount, single)
+    if not adjusting and not single then return end
+    -- Native ASS danmaku with secondary-sub-ass-override=no does not apply sub-scale.
+    mp.set_property_number("sub-scale", math.max(0.05, math.min(100,
+        mp.get_property_number("sub-scale", 1) + amount)))
+    show_adjustment()
+end
+
+local function adjust_once(action, amount)
+    if prepare_adjustment() then action(amount, true) end
+end
+
+local function toggle_adjustment()
+    if adjusting then
+        exit_mode()
+        mp.osd_message("SUB ADJUST: OFF", 1)
+        return
+    end
+    if not prepare_adjustment() then return end
     adjusting = true
     mp.add_forced_key_binding("UP", "adjust-up", function() adjust_position(-position_step) end, {repeatable = true})
     mp.add_forced_key_binding("DOWN", "adjust-down", function() adjust_position(position_step) end, {repeatable = true})
@@ -133,6 +142,12 @@ local function reset_for_file()
         mp.set_property_number("sub-scale", saved_adjustment.scale)
     end
     saved_adjustment, position = nil, nil
+end
+
+local function reset_adjustment()
+    local had_adjustment = saved_adjustment ~= nil
+    reset_for_file()
+    mp.osd_message(had_adjustment and "SUB ADJUST: RESET" or "SUB ADJUST: NO CHANGES", 1)
 end
 
 local function delay(amount)
@@ -156,6 +171,11 @@ mp.add_key_binding(nil, "delay-down", function() delay(-delay_step) end, {repeat
 mp.add_key_binding(nil, "delay-up", function() delay(delay_step) end, {repeatable = true})
 mp.add_key_binding(nil, "delay-reset", function() delay() end)
 mp.add_key_binding(nil, "adjust-mode", toggle_adjustment)
+mp.add_key_binding(nil, "reset-adjustment", reset_adjustment)
+mp.add_key_binding(nil, "position-up", function() adjust_once(adjust_position, -position_step) end)
+mp.add_key_binding(nil, "position-down", function() adjust_once(adjust_position, position_step) end)
+mp.add_key_binding(nil, "size-up", function() adjust_once(adjust_scale, scale_step) end)
+mp.add_key_binding(nil, "size-down", function() adjust_once(adjust_scale, -scale_step) end)
 mp.add_key_binding(nil, "copy", function()
     local text = primary_track() and mp.get_property("sub-text")
     if not text or not text:match("%S") then no_subtitle(); return end

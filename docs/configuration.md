@@ -346,7 +346,9 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 | `screenshot_mbtn_right_command` | `script-binding capture_controls/clip-point` | 截图按钮；例如 `screenshot_mbtn_right_command=ignore` 可禁用该动作 |
 | `screenshot_mbtn_mid_command` | `script-binding capture_controls/open-folder` | 截图按钮；例如 `screenshot_mbtn_mid_command=ignore` 可禁用该动作 |
 
-`_` 是宿主菜单占位，配置末尾及 playback-feedback 强制空动作会阻止它作为播放器快捷键；Audio Only 从原菜单调用。
+`_` 是宿主菜单占位，配置末尾及 playback-feedback 强制空动作会阻止它作为播放器快捷键；仅音频从“音频 > 仅音频／恢复视频”调用。
+
+`input.conf`末段用`#menu:`维护完整中文菜单，菜单独立项不分配物理键；不要把它改成只追加到Custom的`#custom-menu:`。完整定义不会自动合并上游后续新增菜单，升级宿主时需核对原生功能。mpv.conf中的`input-default-bindings= no`有意保留等号后空格，语义仍为no；它避开mpv.net 7.1.2旧迁移逻辑错误覆盖mpvnet.conf的问题，不要仅为格式统一改写。`mpvnet.conf`固定`language=chinese-china`，同时影响宿主对话框语言；“近期文件／标题／章节／轨道／配置文件／音频设备”是宿主动态查找的中文名称，随意改名或单独更换宿主语言会使这些子菜单无法填充。
 
 `mbtn_left/right/mid` 分别是左/右/中键；`wheel_up/down` 为滚轮方向。保留完整命令才能保留本版字幕、截图、队列或反馈逻辑。音量条左键拖动由组件实现，不能凭空新增 `volumebar_mbtn_left_command`。
 
@@ -373,8 +375,8 @@ ModernZ 还支持以下未显式写入的常用参数，可按上一节相同方
 | 行为/实现项 | 当前值 | 用户可否直接配置 | 生效与边界 |
 | --- | --- | --- | --- |
 | Screenshot 左键 | 源 PNG 并复制图像 | 可改按钮命令；源截图格式在实现中固定 | 本次截图；不是控制栏合成图 |
-| Screenshot 右键 | A/B 源时间线，输出 MP4、WebP、GIF | 可改按钮命令；编码值没有 conf 字段 | B 点冻结当前任务的复制格式 |
-| 下次复制格式 | 新实例 `webp` | 通过 hover 选择 WebP/GIF/MP4 | 只保留当前实例；切媒体保留，重开恢复 |
+| Screenshot 右键 | A/B 源时间线，仅输出所选 MP4/WebP/GIF | 可改按钮命令；编码值没有 conf 字段 | B 点冻结当前任务的导出格式 |
+| 下次导出格式 | 新实例 `webp` | 通过 hover 选择 WebP/GIF/MP4 | 只保留当前实例；切媒体保留，重开恢复 |
 | MP4 视频编码 | libx264、CRF 18、preset fast、yuv420p，宽高补偶数；有音轨时 AAC 192k | 源码常量，不是现成参数 | helper 每次导出使用 |
 | WebP | 最高 20fps，边界框 960×960，质量 75，compression_level 4 | 源码常量 | 保持比例、不放大；循环输出 |
 | GIF | 最高 12fps，边界框 640×640，128 色，Bayer 抖动 | 源码常量 | 保持比例、不放大；循环输出 |

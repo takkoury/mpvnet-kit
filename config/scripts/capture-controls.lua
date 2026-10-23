@@ -4,6 +4,9 @@ local mp = require('mp')
 local utils = require('mp.utils')
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local a, busy, latest, sequence = nil, false, nil, 0
+local media_generation, pending_clip = 0, nil
+-- The existing message/property name is retained; this now selects the only
+-- exported format as well as the file copied after success.
 local clipboard_format = 'webp'
 local shutting_down = false
 local helper = mp.command_native({'expand-path', '~~/helpers/capture-media.ps1'})
@@ -13,6 +16,8 @@ local pending_png, pending_job, pending_payload
 local function publish()
     mp.set_property_native('user-data/mpvnet/capture', {
         busy = busy, a = a, has_clip = latest ~= nil, clipboard_format = clipboard_format,
+        latest_format = latest and latest.format or nil,
+        media_generation = media_generation, pending_clip = pending_clip,
     })
 end
 
@@ -85,6 +90,7 @@ local function run(payload, success, failure, done)
     pending_payload = write_payload(payload)
     if not pending_payload then
         busy = false
+        pending_clip = nil
         if pending_png then os.remove(pending_png) end
         pending_png, pending_job = nil, nil
         publish()
@@ -97,6 +103,7 @@ local function run(payload, success, failure, done)
     }, capture_stdout = true,
         capture_stderr = false, playback_only = false}, function(ok, result)
         busy = false
+        pending_clip = nil
         local data = result and utils.parse_json(result.stdout or '')
         data = type(data) == 'table' and data or nil
         if ok and result and result.status == 0 and data and data.ok then
@@ -186,9 +193,12 @@ local function clip_point()
         video = video, audio = audio, audio_delay = mp.get_property_number('audio-delay', 0),
         headers = mp.get_property_native('http-header-fields', {}),
         user_agent = mp.get_property('user-agent'), referrer = mp.get_property('referrer')}
+    pending_clip = {start = a, finish = pos, media_generation = media_generation}
     a = nil
     feedback('CLIP EXPORTING')
-    run(payload, 'CLIP SAVED · ' .. format:upper() .. ' COPIED', 'CLIP FAILED', function(data) latest = data.files end)
+    run(payload, 'CLIP SAVED · ' .. format:upper() .. ' COPIED', 'CLIP FAILED', function(data)
+        latest = {format = format, file = data.files[format]}
+    end)
 end
 
 mp.register_script_message('set-default-format', function(format)
@@ -197,21 +207,23 @@ mp.register_script_message('set-default-format', function(format)
     publish()
 end)
 
-local function copy(kind)
+local function copy_latest()
     if busy then feedback('CAPTURE BUSY'); return end
-    if not latest or not latest[kind] then feedback('NO CLIP'); return end
-    run({action = 'copy', file = latest[kind]}, kind:upper() .. ' COPIED', 'CLIP FAILED')
+    if not latest or not latest.file then feedback('NO CLIP'); return end
+    run({action = 'copy', file = latest.file}, latest.format:upper() .. ' COPIED', 'CLIP FAILED')
 end
 
 mp.add_key_binding(nil, 'screenshot', screenshot)
 mp.add_key_binding(nil, 'open-folder', open_folder)
 mp.add_key_binding(nil, 'clip-point', clip_point)
-for _, kind in ipairs({'webp', 'gif', 'mp4'}) do
-    local format = kind
-    mp.add_key_binding(nil, 'copy-' .. kind, function() copy(format) end)
+mp.add_key_binding(nil, 'copy-latest', copy_latest)
+local function clear_media_range()
+    media_generation = media_generation + 1
+    a, pending_clip = nil, nil
+    publish()
 end
-mp.register_event('start-file', function() a = nil; publish() end)
-mp.register_event('end-file', function() a = nil; publish() end)
+mp.register_event('start-file', clear_media_range)
+mp.register_event('end-file', clear_media_range)
 mp.register_event('shutdown', function()
     shutting_down = true
     -- Allow the worker to stop its own FFmpeg and remove staging before mpv

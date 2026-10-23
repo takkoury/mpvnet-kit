@@ -20,6 +20,14 @@ local labels = {OFF = 'ORIGINAL', QUALITY = 'SCALING', SMOOTH = 'DEBAND', ANIME_
     ANIME_STRONG = 'ANIME4K-S'}
 local desired, applied, baseline = 'OFF', 'OFF', nil
 local ready, last_error, shutting_down = false, nil, false
+local error_reason, error_preset = nil, nil
+local reason_text = {
+    initializing = 'INITIALIZING', no_video = 'NO VIDEO', renderer_unsupported = 'RENDERER UNSUPPORTED',
+    hdr_source = 'HDR SOURCE', metadata_unknown = 'SOURCE METADATA UNKNOWN',
+    anime_unverified = 'ANIME VALIDATION NOT ENABLED', shader_missing = 'SHADER MISSING',
+    settings_failed = 'SETTINGS FAILED', rollback_failed = 'ROLLBACK FAILED',
+    renderer_error = 'RENDERER ERROR', unavailable = 'UNAVAILABLE',
+}
 
 local function clone(value)
     if type(value) ~= 'table' then return value end
@@ -59,15 +67,36 @@ local function availability()
     local sdr = type(params) == 'table' and gamma ~= '' and gamma ~= 'auto'
         and gamma ~= 'pq' and gamma ~= 'hlg' and gamma ~= 'st2084'
         and (sigpeak == nil or sigpeak <= 1)
-    return {OFF = ready and baseline ~= nil, QUALITY = renderer == true, SMOOTH = renderer == true,
+    local available = {OFF = ready and baseline ~= nil, QUALITY = renderer == true, SMOOTH = renderer == true,
         ANIME_LIGHT = renderer == true and sdr and opts.anime_verified and shader_paths('ANIME_LIGHT') ~= nil,
         ANIME_STRONG = renderer == true and sdr and opts.anime_verified and shader_paths('ANIME_STRONG') ~= nil}
+    -- Reasons describe the existing gates; they do not change which presets can be selected.
+    local vid = mp.get_property_native('vid')
+    local no_video = vid == false or vid == 'no' or mp.get_property_native('idle-active') == true
+        or (ready and type(params) ~= 'table')
+    local base_reason = not available.OFF and (error_reason == 'settings_failed' and error_reason
+        or (no_video and 'no_video' or 'initializing')) or nil
+    local renderer_reason = base_reason or (not renderer and (no_video and 'no_video' or 'renderer_unsupported')) or nil
+    local anime_reason = renderer_reason
+    if not anime_reason then
+        if gamma == 'pq' or gamma == 'hlg' or gamma == 'st2084' or (sigpeak and sigpeak > 1) then
+            anime_reason = 'hdr_source'
+        elseif not sdr then anime_reason = no_video and 'no_video' or 'metadata_unknown'
+        elseif not opts.anime_verified then anime_reason = 'anime_unverified' end
+    end
+    local reasons = {OFF = base_reason, QUALITY = renderer_reason, SMOOTH = renderer_reason}
+    for _, name in ipairs({'ANIME_LIGHT', 'ANIME_STRONG'}) do
+        if not available[name] then reasons[name] = anime_reason or 'shader_missing' end
+    end
+    return available, reasons
 end
 
 local function publish()
+    local available, reasons = availability()
     mp.set_property_native('user-data/mpvnet/enhancement', {
         desired = desired, applied = applied, applied_scope = 'options',
-        ready = ready, available = availability(), error = last_error,
+        ready = ready, available = available, unavailable_reasons = reasons, error = last_error,
+        error_reason = error_reason, error_preset = error_preset,
         anime_verified = opts.anime_verified,
     })
 end
@@ -107,17 +136,20 @@ local function write_group(values)
 end
 
 local function apply(name, quiet, remember)
-    if not availability()[name] then
+    local available, reasons = availability()
+    if not available[name] then
         last_error = 'Preset unavailable: ' .. tostring(name)
+        error_reason, error_preset = reasons[name] or 'unavailable', name
         publish()
-        if not quiet then feedback('UNAVAILABLE') end
+        if not quiet then feedback(reason_text[error_reason]) end
         return false
     end
     local previous, err = snapshot()
     if not previous then
         last_error = err
+        error_reason, error_preset = 'settings_failed', name
         publish()
-        if not quiet then feedback('FAILED') end
+        if not quiet then feedback(reason_text[error_reason]) end
         return false
     end
     local ok
@@ -126,15 +158,17 @@ local function apply(name, quiet, remember)
         local restored, restore_error = write_group(previous)
         if not restored then applied = nil end
         last_error = err .. (restored and '' or '; rollback: ' .. tostring(restore_error))
+        error_reason, error_preset = restored and 'settings_failed' or 'rollback_failed', name
         msg.error(last_error)
         publish()
-        if not quiet then feedback('FAILED') end
+        if not quiet then feedback(reason_text[error_reason]) end
         return false
     end
     applied, last_error = name, nil
+    error_reason, error_preset = nil, nil
     if remember then desired = name end
     publish()
-    if not quiet then feedback(labels[name]) end
+    if not quiet then feedback(labels[name] .. ' SETTINGS APPLIED') end
     return true
 end
 
@@ -146,10 +180,12 @@ end)
 
 mp.register_event('start-file', function()
     baseline, ready, applied, last_error = nil, false, nil, nil
+    error_reason, error_preset = nil, nil
     publish()
 end)
 mp.add_hook('on_preloaded', 100, function()
     baseline, last_error = snapshot()
+    error_reason = not baseline and 'settings_failed' or nil
     publish()
 end)
 mp.register_event('file-loaded', function()
@@ -160,10 +196,13 @@ mp.register_event('file-loaded', function()
     if ready and desired ~= 'OFF' then apply(desired, true, false) else publish() end
 end)
 local function refresh_availability()
-    if ready and applied and applied ~= 'OFF' and not availability()[applied] then
+    local available, reasons = availability()
+    if ready and applied and applied ~= 'OFF' and not available[applied] then
+        local previous = applied
         local restored, err = write_group(baseline)
         applied = restored and 'OFF' or nil
-        last_error = restored and 'GPU renderer unavailable' or tostring(err)
+        error_reason, error_preset = restored and reasons[previous] or 'rollback_failed', previous
+        last_error = restored and reason_text[error_reason] or tostring(err)
         publish()
     elseif ready and desired ~= 'OFF' and applied == 'OFF' and availability()[desired] then
         apply(desired, true, false)
@@ -179,13 +218,15 @@ mp.register_event('log-message', function(event)
     if not ready or not chains[applied] or event.level ~= 'error' then return end
     local prefix = tostring(event.prefix or '')
     if not prefix:find('vo/gpu', 1, true) and not prefix:find('libplacebo', 1, true) then return end
+    local previous = applied
     desired, applied = 'OFF', nil
     local restored, err = write_group(baseline)
     if restored then applied = 'OFF' end
     last_error = 'GPU renderer error: ' .. tostring(event.text or '')
         .. (restored and '' or '; rollback: ' .. tostring(err))
+    error_reason, error_preset = restored and 'renderer_error' or 'rollback_failed', previous
     publish()
-    feedback('FAILED')
+    feedback(reason_text[error_reason])
 end)
 mp.register_event('end-file', function()
     baseline, ready, applied = nil, false, nil

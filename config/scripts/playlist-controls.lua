@@ -165,6 +165,14 @@ local function action(received_token, operation, id, target_id, side)
         return
     end
     local entries = queue()
+    if operation == 'locate' then
+        local position = mp.get_property_number('playlist-pos', -1)
+        local current = position >= 0 and position == math.floor(position) and entries[position + 1]
+        if current and current.id ~= nil then
+            mp.commandv('script-message', 'mpvnet-playlist-locate', token, tostring(current.id))
+        end
+        return
+    end
     local source = find_id(entries, id)
     if source == nil then return end -- A stale or filtered view cannot target another item.
     if operation == 'play' then

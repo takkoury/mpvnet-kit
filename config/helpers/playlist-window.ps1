@@ -93,6 +93,7 @@ function Render-Queue {
     foreach ($row in $rows) { $rowsById[$row.id] = $row }
     $signature = (@($rows | ForEach-Object { $_.id + ':' + $_.label }) -join "`n")
     $counter.Text = if ($script:playlist.Count -eq 0) { '0 / 0' } elseif ($script:searching) { '{0} / {1}' -f $rows.Count, $script:playlist.Count } else { '{0:00} / {1:00}' -f ([Math]::Max(0, $script:playlistPosition + 1)), $script:playlist.Count }
+    $counter.Enabled = $script:playlistPosition -ge 0 -and $script:playlistPosition -lt $script:playlist.Count
     $script:rendering = $true
     try {
         if ($signature -ne $script:lastSignature) {
@@ -140,16 +141,33 @@ function Hide-Window {
     }
 }
 
-function Set-SearchMode([bool]$enabled) {
+function Set-SearchMode([bool]$enabled, [bool]$focusControl = $true) {
     if ($keyFilter) { $keyFilter.ReleaseAll(); $keyFilter.SearchActive = $enabled }
     $script:searching = $enabled
     $filter.Visible = $enabled
     $counter.Dock = if ($enabled) { 'Right' } else { 'Fill' }
     $counter.TextAlign = if ($enabled) { 'MiddleRight' } else { 'MiddleCenter' }
     $counter.ForeColor = if ($enabled) { [Drawing.Color]::FromArgb(18, 135, 187) } else { [Drawing.Color]::FromArgb(155, 163, 177) }
-    if ($enabled) { $counter.Width = 90; [void]$filter.Focus() }
-    else { $filter.Text = ''; [void]$list.Focus() }
+    if ($enabled) { $counter.Width = 90; if ($focusControl) { [void]$filter.Focus() } }
+    else { $filter.Text = ''; if ($focusControl) { [void]$list.Focus() } }
     Render-Queue
+}
+
+function Locate-Entry([string]$id) {
+    # The player resolves its current ID when requested. A changed/removed ID
+    # must never fall back to a cached position or a filtered row index.
+    if (-not $id -or -not @($script:playlist | Where-Object { [string]$_.id -eq $id }).Count) { return }
+    $hadFocus = $form.ContainsFocus
+    Set-SearchMode $false $hadFocus
+    foreach ($item in $list.Items) {
+        $item.Selected = [string]$item.Tag.id -eq $id
+        if ($item.Selected) {
+            $item.Focused = $true
+            $item.EnsureVisible()
+        }
+    }
+    $list.FitTitleColumn()
+    $list.Invalidate()
 }
 
 function Tooltip-Text($entry) {
@@ -237,6 +255,9 @@ public sealed class PlaylistList : ListView {
             uint dpi=PlaylistNative.GetDpiForWindow(Handle);if(dpi==0)dpi=96;
             SmallImageList.ImageSize=new Size(1,(int)Math.Round(32*dpi/96.0));
         }
+        // Initial rendering can precede handle creation. Resolve the native
+        // viewport/DPI now so the first search does not resize the list.
+        FitTitleColumn();
     }
     public void FitTitleColumn() {
         if (fitting || !IsHandleCreated || Columns.Count < 2) return;
@@ -657,10 +678,18 @@ public sealed class PlaylistTip : Form {
     $filter.BackColor = [Drawing.Color]::FromArgb(27, 27, 27)
     $filter.ForeColor = $form.ForeColor
     $filter.BorderStyle = 'FixedSingle'
-    $counter = New-Object Windows.Forms.Label
+    $counter = New-Object Windows.Forms.Button
     $counter.Dock = 'Fill'
     $counter.TextAlign = 'MiddleCenter'
     $counter.ForeColor = [Drawing.Color]::FromArgb(155, 163, 177)
+    $counter.BackColor = $footer.BackColor
+    $counter.FlatStyle = 'Flat'
+    $counter.FlatAppearance.BorderSize = 0
+    $counter.FlatAppearance.MouseOverBackColor = [Drawing.Color]::FromArgb(27, 27, 27)
+    $counter.FlatAppearance.MouseDownBackColor = [Drawing.Color]::FromArgb(38, 38, 38)
+    $counter.Cursor = [Windows.Forms.Cursors]::Hand
+    $counter.AccessibleName = 'Locate current'
+    $counter.TabStop = $false
     $list = New-Object PlaylistList
     $list.Dock = 'Fill'
     $list.View = 'Details'
@@ -696,6 +725,9 @@ public sealed class PlaylistTip : Form {
     })
     $form.Add_VisibleChanged({ if (-not $form.Visible) { if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } } })
     $form.Add_Deactivate({ if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } })
+    $counter.Add_Click({ $tip.Hide(); Send-Action 'locate' })
+    $counter.Add_MouseEnter({ $tip.ShowContent('Locate current', $counter, (New-Object Drawing.Point(12, ($counter.Height + 4)))) })
+    $counter.Add_MouseLeave({ $tip.Hide() })
     $list.Add_DrawColumnHeader({ param($sender, $eventArgs) $eventArgs.DrawDefault = $true })
     $list.Add_DrawSubItem({
         param($sender, $eventArgs)
@@ -809,6 +841,7 @@ public sealed class PlaylistTip : Form {
     try { $caption = 0x111111; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 35, [ref]$caption, 4) } catch {}
 
     if ($ValidateOnly) {
+        $foregroundBefore = [PlaylistNative]::GetForegroundWindow()
         $script:playlist = @(if ($null -ne $payload.playlist) { $payload.playlist })
         $script:playlistPosition = [int]$payload.position
         if ($payload.filter) { Set-SearchMode $true; $filter.Text = [string]$payload.filter }
@@ -820,10 +853,26 @@ public sealed class PlaylistTip : Form {
         if ($payload.hover_id) { $script:hoverId = [string]$payload.hover_id }
         $normalCount = $counter.Text
         $beforeBounds = $list.Bounds
+        $beforeFooterBounds = $footer.Bounds
+        $initialSearch = $script:searching
+        $initialFilter = $filter.Text
         Set-SearchMode $true
+        $searchBounds = $list.Bounds
+        $searchFooterBounds = $footer.Bounds
         $searchBoundsStable = $list.Bounds -eq $beforeBounds
         Set-SearchMode $false
+        $restoredBounds = $list.Bounds
+        $restoredFooterBounds = $footer.Bounds
         $restoredBoundsStable = $list.Bounds -eq $beforeBounds
+        if ($initialSearch) { Set-SearchMode $true; $filter.Text = $initialFilter }
+        if ($payload.click_counter -and $counter.Enabled) {
+            $clickMethod = $counter.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
+            [void]$clickMethod.Invoke($counter, @([EventArgs]::Empty))
+        }
+        if ($null -ne $payload.PSObject.Properties['locate_id']) { Locate-Entry ([string]$payload.locate_id) }
+        $located = @($list.SelectedItems | ForEach-Object { [string]$_.Tag.id })
+        $selectedVisible = $list.SelectedItems.Count -eq 1 -and $list.SelectedItems[0].Bounds.Top -ge 0 -and
+            $list.SelectedItems[0].Bounds.Bottom -le $list.ClientSize.Height
         $parentRect = New-Object PlaylistNative+Rect
         $parentRect.Left = 120; $parentRect.Top = -180; $parentRect.Right = 700; $parentRect.Bottom = 900
         $areaRect = New-Object PlaylistNative+Rect
@@ -846,7 +895,15 @@ public sealed class PlaylistTip : Form {
             } finally { $canvas.Dispose() }
         }
         $outputWriter.WriteLine((@{ok = $true; rows = $rows; count = $normalCount; shown = $form.Visible;
-            footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable; caption_empty = $form.Text -eq '';
+            footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable -and $beforeFooterBounds -eq $searchFooterBounds -and $beforeFooterBounds -eq $restoredFooterBounds;
+            layout_bounds = @{normal = $beforeBounds.ToString(); search = $searchBounds.ToString(); restored = $restoredBounds.ToString();
+                footer_normal = $beforeFooterBounds.ToString(); footer_search = $searchFooterBounds.ToString(); footer_restored = $restoredFooterBounds.ToString()};
+            locate = @{selected_ids = $located; selected_visible = $selectedVisible; top_index = $list.TopIndex;
+                focused_id = if ($list.FocusedItem) { [string]$list.FocusedItem.Tag.id } else { '' };
+                searching = $script:searching; filter = $filter.Text; counter_enabled = $counter.Enabled;
+                counter_name = $counter.AccessibleName; counter_hand = $counter.Cursor -eq [Windows.Forms.Cursors]::Hand;
+                focus_preserved = [PlaylistNative]::GetForegroundWindow() -eq $foregroundBefore};
+            actions = $script:validationActions.ToArray(); caption_empty = $form.Text -eq '';
             no_minmax = -not $form.MinimizeBox -and -not $form.MaximizeBox;
             layout_top = $layout.Top; layout_height = $layout.Bottom-$layout.Top; layout_right = $layout.Right;
             tooltip_width = $tipSize.Width; tooltip_height = $tipSize.Height; painted = $painted} | ConvertTo-Json -Compress -Depth 8))
@@ -894,6 +951,9 @@ public sealed class PlaylistTip : Form {
                             if ($playlistEvent.data.token -eq $payload.token) { $script:desiredVisible = [bool]$playlistEvent.data.visible }
                         }
                     }
+                } elseif ($playlistEvent.event -eq 'client-message' -and $playlistEvent.args.Count -ge 3 -and
+                    $playlistEvent.args[0] -eq 'mpvnet-playlist-locate' -and $playlistEvent.args[1] -eq $payload.token) {
+                    Locate-Entry ([string]$playlistEvent.args[2])
                 } elseif ($playlistEvent.event -eq 'client-message' -and $playlistEvent.args.Count -ge 2 -and
                     $playlistEvent.args[0] -eq 'mpvnet-playlist-close' -and $playlistEvent.args[1] -eq $payload.token) {
                     Exit-Window; return

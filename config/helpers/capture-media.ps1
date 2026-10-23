@@ -282,7 +282,9 @@ try {
         Write-Result @{ok = $true}
         exit 0
     }
-    $extensions = if ($payload.action -eq 'screenshot') { @('png') } else { @('mp4', 'webp', 'gif') }
+    # Only the chosen format is a final output. Animated formats keep the same
+    # temporary MP4 conversion path, which is removed with this job's staging.
+    $extensions = if ($payload.action -eq 'screenshot') { @('png') } else { @($clipboardFormat) }
     $plan = New-OutputPlan ([string]$payload.title) $extensions
     if ($ValidateOnly) {
         $result = @{ok = $true; files = $plan.files}
@@ -310,6 +312,9 @@ try {
     Check-Cancelled
     $staged = @{}
     foreach ($extension in $extensions) { $staged[$extension] = Join-Path $stage ('capture.' + $extension) }
+    if ($payload.action -eq 'clip' -and -not $staged.ContainsKey('mp4')) {
+        $staged.mp4 = Join-Path $stage 'intermediate.mp4'
+    }
     if ($payload.action -eq 'screenshot') {
         $phase = 'screenshot'
         $candidatePng = [string]$payload.temp_png
@@ -346,13 +351,16 @@ try {
         $phase = 'mp4'
         Run-FFmpeg $arguments
         # First-version cost defaults: no upscaling and no raised source FPS.
-        $webpFilter = "fps=fps='min(source_fps,20)',scale=w='min(960,iw)':h='min(960,ih)':force_original_aspect_ratio=decrease"
-        $phase = 'webp'
-        Run-FFmpeg @('-i', $staged.mp4, '-an', '-vf', $webpFilter, '-c:v', 'libwebp_anim',
-            '-quality', '75', '-compression_level', '4', '-loop', '0', $staged.webp)
-        $gifFilter = "fps=fps='min(source_fps,12)',scale=w='min(640,iw)':h='min(640,ih)':force_original_aspect_ratio=decrease,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
-        $phase = 'gif'
-        Run-FFmpeg @('-i', $staged.mp4, '-an', '-filter_complex', $gifFilter, '-loop', '0', $staged.gif)
+        if ($clipboardFormat -eq 'webp') {
+            $webpFilter = "fps=fps='min(source_fps,20)',scale=w='min(960,iw)':h='min(960,ih)':force_original_aspect_ratio=decrease"
+            $phase = 'webp'
+            Run-FFmpeg @('-i', $staged.mp4, '-an', '-vf', $webpFilter, '-c:v', 'libwebp_anim',
+                '-quality', '75', '-compression_level', '4', '-loop', '0', $staged.webp)
+        } elseif ($clipboardFormat -eq 'gif') {
+            $gifFilter = "fps=fps='min(source_fps,12)',scale=w='min(640,iw)':h='min(640,ih)':force_original_aspect_ratio=decrease,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
+            $phase = 'gif'
+            Run-FFmpeg @('-i', $staged.mp4, '-an', '-filter_complex', $gifFilter, '-loop', '0', $staged.gif)
+        }
     }
     $phase = 'commit'
     Check-Cancelled
