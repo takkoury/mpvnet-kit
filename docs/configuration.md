@@ -1,12 +1,14 @@
 # 配置说明
 
+版本范围：本文适用于 0.3.0；旧版用户请使用随包指南。版本变化见[变更记录](../CHANGELOG.md)。
+
 本文说明随包配置实际写入的值，以及当前脚本已提供的可调选项。操作说明见[功能与操作](features.md)，安装、更新和恢复见[安装](installation.md)。下面路径均相对于**播放器实际加载的配置目录**，例如 `C:\Apps\mpv.net\portable_config`；不要只改下载包里的文件而忘记实际配置。
 
 “显式”表示发行包已经写入；“脚本默认”表示配置文件未写该项，脚本初始化时采用的值；“未指定”表示本包未设置播放器选项，实际值由播放器版本、启动参数、媒体或其他配置决定。本文不把未指定值猜作固定默认。
 
 本页示例路径是通用示例，应换成自己机器上的路径。修改后保留自己的差异与备份；原始 manifest 只校验原发行文件。
 
-快速定位：改输出目录与程序路径看第 3 节，调整界面看第 5 节，修改键位看第 6 节。
+快速定位：改输出目录与程序路径看第 3 节，调整界面看第 5 节，修改键位优先使用“工具与设置 > 用户快捷键”，说明见第 6 节；v0.2.0使用原生编辑入口或下文input.conf高级说明，不具备独立覆盖保证。
 
 - [1. 配置文件与目录速查](#1-配置文件与目录速查)
 - [2. 修改方法与生效规则](#2-修改方法与生效规则)
@@ -24,7 +26,8 @@
 | --- | --- | --- |
 | [mpv.conf](../config/mpv.conf) | mpv 播放、渲染、OSD、目录队列 | 每行 `参数=值` |
 | [mpvnet.conf](../config/mpvnet.conf) | mpv.net 宿主进程行为 | 每行 `参数=值` |
-| [input.conf](../config/input.conf) | 键盘、视频区鼠标与禁用键 | 每行 `键 命令` |
+| `mpvnet-user.json` | 用户快捷键覆盖；运行时创建，不随包提供 | 从“用户快捷键”窗口保存，不纳入受管安装清单 |
+| [input.conf](../config/input.conf) | 项目默认键盘、视频区鼠标与禁用键 | 高级修改；每行 `键 命令` |
 | [modernz.conf](../config/script-opts/modernz.conf) | 控制栏外观、按钮、鼠标命令 | 不带 `modernz-` 前缀的选项名 |
 | [thumbfast.conf](../config/script-opts/thumbfast.conf) | 缩略图子播放器 | 不带脚本前缀的选项名 |
 | [bilibiliAssert.conf](../config/script-opts/bilibiliAssert.conf) | 弹幕显示与转换器 | 注意大小写和文件名 |
@@ -43,6 +46,8 @@
 3. 一次修改一个模块，重开播放器，用一个已知本地媒体观察结果。
 4. 无效时核对文件位置、参数拼写、启动参数与日志，恢复备份后再继续。
 
+“用户快捷键”的保存并应用立即生效，同一配置目录下其他实例通常约1秒内同步；新实例自动读取。这个行为只针对独立用户JSON，以下手工脚本配置仍遵从重启规则。
+
 为避免混淆，下文脚本表统一以**重启播放器**为文件修改的生效时机。多数脚本在初始化时 `read_options`；ModernZ 虽有选项更新回调，直接保存文件不等于它自动监视并重读磁盘。Ctrl+R 重新加载媒体也不等于重新加载脚本配置。
 
 播放器选项可以在命令行、配置及运行时被覆盖；运行时菜单、键位或控制台改变属性通常只影响当前实例。脚本还会主动写入部分属性，不能假定删除一行即可恢复全部行为。例如 playback-feedback 启动时会再次关闭 `input-default-bindings`、清空 `osd-playing-msg`。
@@ -51,7 +56,7 @@
 
 脚本配置的布尔值使用 `yes` / `no`。表中数字例子是保守起点；除明确标出的边界外，不表示脚本验证了所有数值范围。字符串不应包上额外命令参数；路径选项只填路径。
 
-默认图形安装器用于干净安装，可保留播放器状态和缓存，但不覆盖已有配置，也不自动更新或恢复；目录识别与保留条件见[安装指南](installation.md)。高级命令行安装/恢复工具另有逐文件哈希保护：修改 `mpv.conf`、`input.conf` 或脚本配置后，继续部署可能因差异拒绝；先保存自己的改动，再决定怎样合并。真实 `mpvnet-local.conf` 属于个人配置。
+已发行v0.2.0的图形安装器用于干净安装，不升级或恢复已有配置。本版支持安全安装、更新及最近一步还原，冲突时保留现场并停止；目录识别与保留条件见[安装指南](installation.md)。高级命令行安装/恢复工具另有逐文件哈希保护：修改 `mpv.conf`、`input.conf` 或脚本配置后，继续部署可能因差异拒绝；先保存自己的改动，再决定怎样合并。真实 `mpvnet-local.conf` 属于个人配置。
 
 ## 3. 本机路径与外部组件
 
@@ -284,7 +289,27 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 
 ## 6. 快捷键与鼠标动作
 
-### input.conf
+### 用户快捷键
+
+以下快捷键窗口及独立用户配置机制自 0.3.0 提供。
+
+右键“工具与设置 > 用户快捷键”打开独立窗口。左侧按功能分类浏览，上方可筛选全部、已绑定、未绑定和已修改；搜索可匹配操作名称、分组或按键。“已修改”表示与默认键位不同，不等于尚未保存。
+
+点击行内键帽或“录入”设置按键，使用“添加”按钮添加第二个按键；每项最多两个。点击独立的“详情”按钮可查看默认键、用途说明、移除按键或恢复此项，再点“收起”折叠。默认键位以只读键帽显示，名称与当前键位一致；只有偏离默认时才显示“恢复此项”。录入时可按键帽旁提示用 Esc 取消。移除全部按键只取消快捷键，不关闭该功能；切换分类、搜索或筛选会取消正在进行的录入。
+
+存在冲突时先修改另一项或恢复默认，不自动抢占其它动作。底部显示本次未保存的修改数量，“撤销未保存更改”回到最近载入/保存的状态；点击保存后才生效并持久保留。恢复全部默认键位需要确认，也必须保存后才生效；关闭未保存草稿时会确认。
+
+默认键来自受管input.conf，窗口只保存差异到实际配置目录的mpvnet-user.json。没有该文件等同全部默认；“恢复此项/恢复全部”修改草稿，保存后只清理对应的已知快捷键覆盖，保留其它用户字段。若其他实例已保存，旧草稿必须重新载入，避免覆盖较新的修改。新版本默认键与既有用户键发生冲突时，继续使用上一组有效绑定，窗口可修改冲突项或恢复默认后保存；JSON损坏、不支持的schema等情况则保留原文件、不写回。
+
+动作目录合并mpv.net原生快捷键编辑器与本项目的功能项，包括音量、画面调整、增强预设、截图/片段等尚未绑定的功能。同等功能优先当前定制实现；新项默认未绑定，不恢复原生默认键，因此不改变现有习惯。分隔线与没有执行命令的动态菜单容器不列为动作，已有轨道/章节等选择器保留。
+
+“打开右键菜单”沿用宿主行为：鼠标在控制栏区域时不会打开，请先将鼠标移开。配置方案、近期文件等动态菜单内容仍由宿主生成，不会把具体文件或方案名称固化为通用快捷键动作。
+
+保留鼠标、Esc、上下方向键、Delete、Ctrl+F、Alt+F4和界面占用键；不录入任意mpv命令，不改变系统快捷键。普通ASCII字母/数字/常见标点、功能键及组合键可用；特殊键盘布局和跨DPI仍需实际体验。Playlist读取同一映射，搜索框文字输入、搜索和删除等局部用途保持优先。
+
+高级CLI升级/回退只处理受管文件，不覆盖或删除mpvnet-user.json；退回不支持该功能的版本时文件仍保留，但旧版不会应用这些设置。图形安装器仍不自动升级已有配置，清理旧运行文件后重装时可以保留用户JSON。原生快捷键编辑器（高级）仍可访问，但它修改受管input.conf，不具备这套用户配置保留机制。
+
+### input.conf（高级）
 
 完整绑定及已禁用的宿主键位以 [input.conf](../config/input.conf) 为准，日常速查见[功能与操作](features.md#全部40个全局键盘映射)。每行左边是键名，右边是命令，**没有等号**。以下是修改真实现有绑定的例子。
 
@@ -301,7 +326,7 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 
 修改 input.conf 后重启播放器。字母大小写有区别：`m` 是保存标记，`M` 是 Shift+M 跳回标记。不要把文档显示的大写键名全部照抄成配置大写。
 
-独立 Playlist 的按键转发有自己的映射与焦点规则；任意改 input.conf 不保证侧窗同步得到同样行为。搜索文本框中的文字编辑、Ctrl+F、Escape 和 Delete 有专用处理，不应拿播放器绑定推断所有焦点下的结果。
+用户快捷键窗口保存的已支持动作会同步到Playlist；高级手改input.conf添加任意命令仍不保证侧窗同步得到同样行为。搜索文本框中的文字编辑、Ctrl+F、Escape 和 Delete 有专用处理，不应拿播放器绑定推断所有焦点下的结果。
 
 ### ModernZ 鼠标命令
 
@@ -312,8 +337,8 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 | `seekbar_wheel_up_command` | `script-message-to playback_feedback seek -10 relative+exact` | 进度条；例如 `seekbar_wheel_up_command=ignore` 可禁用该动作 |
 | `seekbar_wheel_down_command` | `script-message-to playback_feedback seek 10 relative+exact` | 进度条；例如 `seekbar_wheel_down_command=ignore` 可禁用该动作 |
 | `sub_track_mbtn_left_command` | `script-binding subtitle_controls/toggle` | 字幕按钮；例如 `sub_track_mbtn_left_command=ignore` 可禁用该动作 |
-| `sub_track_mbtn_right_command` | `script-binding subtitle_controls/select` | 字幕按钮；例如 `sub_track_mbtn_right_command=ignore` 可禁用该动作 |
-| `sub_track_mbtn_mid_command` | `ignore` | 字幕按钮；例如 `sub_track_mbtn_mid_command=ignore` 可禁用该动作 |
+| `sub_track_mbtn_right_command` | `script-binding subtitle_controls/adjust-mode` | 字幕调整模式；v0.2.0为`script-binding subtitle_controls/select`；可设`ignore`禁用 |
+| `sub_track_mbtn_mid_command` | `script-binding subtitle_controls/select` | 选择普通字幕轨；v0.2.0为`ignore`；可设`ignore`禁用 |
 | `sub_track_wheel_up_command` | `ignore` | 字幕按钮；例如 `sub_track_wheel_up_command=ignore` 可禁用该动作 |
 | `sub_track_wheel_down_command` | `ignore` | 字幕按钮；例如 `sub_track_wheel_down_command=ignore` 可禁用该动作 |
 | `speed_mbtn_left_command` | `ignore` | 速度按钮；例如 `speed_mbtn_left_command=ignore` 可禁用该动作 |

@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'common.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'common.psm1')
 
 function Assert-CleanNoReparse([string]$Path) {
     $current = [IO.Path]::GetFullPath($Path)
@@ -15,40 +15,18 @@ function Assert-CleanNoReparse([string]$Path) {
         $current = $parent.FullName
     }
 }
-function Get-CleanRoamingRoot {
-    return [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
-}
 function Get-CleanPlayer([string]$PlayerPath) {
     $player = Get-KitPlayer $PlayerPath
     if ([IO.Path]::GetFileName($player) -ine 'mpvnet.exe') { throw '请选择名为 mpvnet.exe 的 mpv.net 播放器程序。' }
     return $player
 }
 function Resolve-CleanTarget([string]$Player) {
-    $home = [Environment]::GetEnvironmentVariable('MPVNET_HOME', [EnvironmentVariableTarget]::Process)
-    $portable = Join-Path ([IO.Path]::GetDirectoryName($Player)) 'portable_config'
-    $portableExists = [IO.Directory]::Exists($portable)
-    # Match mpv.net's priority: only an existing HOME directory takes precedence.
-    if ($home -and [IO.Directory]::Exists($home)) {
-        try { $target = Get-KitRoot $home }
-        catch { throw '现存 MPVNET_HOME 不是可安全确定的绝对路径；请在明确的启动环境中重试。安装器不会猜测相对目录。' }
-        $source = 'environment'; $sourceLabel = '当前进程的 MPVNET_HOME'
-    } elseif ($portableExists) {
-        $target = Get-KitRoot $portable; $source = 'portable'; $sourceLabel = '播放器旁已有 portable_config（便携模式）'
-    } else {
-        $roaming = Get-CleanRoamingRoot
-        if (-not $roaming) { throw '无法取得当前用户的 Roaming AppData，无法安全自动选择配置目录。' }
-        $target = Get-KitRoot (Join-Path (Get-KitRoot $roaming) 'mpv.net')
-        $source = 'appdata'; $sourceLabel = '当前用户 Roaming AppData（安装模式）'
-    }
-    if ($target.TrimEnd('\', '/') -ieq ([IO.Path]::GetPathRoot($target)).TrimEnd('\', '/')) { throw '卷根或 UNC 共享根不适合作为配置安装目录。' }
-    Assert-CleanNoReparse $target
-    return [pscustomobject]@{ target = $target; source = $source; sourceLabel = $sourceLabel;
-        environmentHome = $home; portableExists = $portableExists }
+    return Get-KitTargetContext -PlayerPath $Player
 }
 function Test-CleanStateEntry([string]$Relative, [bool]$Directory) {
     $parts = $Relative.Split('/')
     if ($parts[0] -iin @('cache', 'watch_later')) { return ($Directory -or $parts.Count -gt 1) }
-    return (-not $Directory -and $Relative -iin @('settings.xml', 'desktop.ini'))
+    return (-not $Directory -and $Relative -iin @('settings.xml', 'desktop.ini', 'mpvnet-user.json'))
 }
 function Get-CleanTargetState([string]$Target, $RuntimePaths, $RuntimeDirectories, $OwnedFiles = @{}, $OwnedDirectories = $null, $BaselineEntries = @{}) {
     Assert-CleanNoReparse $Target
@@ -98,14 +76,7 @@ function Get-CleanOptionalTool([string]$Name, [string]$Label) {
     return [pscustomobject]@{ name = $Label; path = $path; found = $found }
 }
 function Get-CleanTargetIdentity([string]$Target) {
-    if (-not [IO.Directory]::Exists($Target)) { return '' }
-    Initialize-CleanNative
-    $handle = Lock-CleanDirectory $Target
-    try {
-        $identity = [MpvnetCleanNative]::GetIdentity($handle)
-        if (-not $identity) { throw '无法取得实际配置目录的身份，请重新选择播放器。' }
-        return $identity
-    } finally { $handle.Dispose() }
+    return Get-KitDirectoryIdentity $Target
 }
 function Get-CleanInstallPlan {
     [CmdletBinding()]
@@ -130,74 +101,23 @@ function Get-CleanInstallPlan {
         }
     }
     foreach ($relative in $directories.Keys) { if ($seen.ContainsKey($relative)) { throw "安装文件与子目录发生冲突：$relative" } }
-    $identity = Get-CleanTargetIdentity $target
+    $identity = $resolved.targetIdentity
     $baseline = Get-CleanTargetState $target $seen $directories
-    if ((Get-CleanTargetIdentity $target) -cne $identity) { throw '检查过程中配置目录身份发生变化，请重新选择播放器。' }
+    if ((Get-KitTargetContext -PlayerPath $player).contextToken -cne $resolved.contextToken) { throw '检查过程中配置目录来源、身份或父目录发生变化，请重新选择播放器。' }
     $tools = @((Get-CleanOptionalTool 'ffmpeg.exe' 'FFmpeg'), (Get-CleanOptionalTool 'python.exe' 'Python'))
     $warnings = @()
     foreach ($tool in $tools) { if (-not $tool.found) { $warnings += "未在 PATH 中发现 $($tool.name)，相关功能需另行准备依赖；不影响基本安装。" } }
     if ($resolved.source -eq 'environment') { $warnings += '目录按安装器当前进程的 MPVNET_HOME 判断。请确保您启动播放器时使用相同环境；安装器不会修改环境变量。' }
     return [pscustomobject]@{ player = $player; target = $target; targetSource = $resolved.source; targetSourceLabel = $resolved.sourceLabel;
-        environmentHome = $resolved.environmentHome; portableExists = $resolved.portableExists; targetIdentity = $identity;
+        environmentHome = $resolved.environmentHome; portableExists = $resolved.portableExists; targetIdentity = $identity; targetExists = $resolved.targetExists;
+        targetContext = $resolved; nearestExistingParent = $resolved.nearestExistingParent; nearestExistingParentIdentity = $resolved.nearestExistingParentIdentity;
         packageRoot = $package.root; packageVersion = $package.version; manifestSha256 = $package.manifestSha256;
         verifiedPackageFiles = $package.verifiedFileCount; files = $files.ToArray(); runtimePaths = $seen; runtimeDirectories = $directories;
         baseline = $baseline; tools = $tools; warnings = $warnings }
 }
-function Initialize-CleanNative {
-    if (-not ('MpvnetCleanNative' -as [type])) {
-        Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-public static class MpvnetCleanNative {
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-    public static extern bool CreateDirectory(string path, IntPtr security);
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-    public static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint mode, uint flags, IntPtr template);
-    [StructLayout(LayoutKind.Sequential)] public struct Disposition { public byte Delete; }
-    [StructLayout(LayoutKind.Sequential)] public struct AttributeTag { public uint Attributes; public uint ReparseTag; }
-    [StructLayout(LayoutKind.Sequential)] public struct EntryInfo {
-        public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
-        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
-    }
-    [DllImport("kernel32.dll", SetLastError=true)]
-    private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out EntryInfo value);
-    public static string GetIdentity(SafeFileHandle handle) {
-        EntryInfo value;
-        if (!GetFileInformationByHandle(handle, out value)) return null;
-        return value.Volume.ToString("x8") + ":" + value.IndexHigh.ToString("x8") + value.IndexLow.ToString("x8");
-    }
-    public static bool IsPlainDirectory(SafeFileHandle handle) {
-        AttributeTag value;
-        return GetFileInformationByHandleEx(handle, 9, out value, 8) && (value.Attributes & 0x410) == 0x10;
-    }
-    [DllImport("kernel32.dll", SetLastError=true)]
-    private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int type, out AttributeTag value, uint size);
-    public static bool IsPlainFile(SafeFileHandle handle) {
-        AttributeTag value;
-        return GetFileInformationByHandleEx(handle, 9, out value, 8) && (value.Attributes & 0x410) == 0;
-    }
-    [DllImport("kernel32.dll", SetLastError=true)]
-    private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int type, ref Disposition value, uint size);
-    public static bool RemoveOwnedDirectory(SafeFileHandle handle) {
-        Disposition value = new Disposition { Delete = 1 };
-        return SetFileInformationByHandle(handle, 4, ref value, 1);
-    }
-}
-'@
-    }
-}
+function Initialize-CleanNative { Initialize-KitNative }
 function Lock-CleanDirectory([string]$Path, [bool]$Owned = $false) {
-    Assert-CleanNoReparse $Path
-    # No delete sharing: another process cannot replace a checked directory while it is used.
-    $access = if ($Owned) { 0x00010000 } else { 0 }
-    $handle = [MpvnetCleanNative]::CreateFile($Path, $access, 3, [IntPtr]::Zero, 3, 0x02200000, [IntPtr]::Zero)
-    if ($handle.IsInvalid) { $handle.Dispose(); throw "无法锁定安装目录：$Path" }
-    try {
-        if (-not [MpvnetCleanNative]::IsPlainDirectory($handle)) { throw "安装目录不是普通目录：$Path" }
-        Assert-CleanNoReparse $Path
-    } catch { $handle.Dispose(); throw }
-    return $handle
+    return Lock-KitDirectory $Path $Owned
 }
 function New-CleanDirectory([string]$Path, $OwnedDirectories, $Locks) {
     Assert-CleanNoReparse $Path
@@ -209,7 +129,7 @@ function New-CleanDirectory([string]$Path, $OwnedDirectories, $Locks) {
     $parent = [IO.Path]::GetDirectoryName($Path)
     if ($parent) { New-CleanDirectory $parent $OwnedDirectories $Locks }
     Assert-CleanNoReparse $Path
-    if (-not [MpvnetCleanNative]::CreateDirectory($Path, [IntPtr]::Zero)) { throw "目录在检查后改变，或无法创建：$Path" }
+    if (-not [MpvnetKitNative]::CreateDirectory($Path, [IntPtr]::Zero)) { throw "目录在检查后改变，或无法创建：$Path" }
     $OwnedDirectories.Add($Path)
     $Locks[$Path] = Lock-CleanDirectory $Path $true
 }
@@ -234,18 +154,18 @@ function Write-CleanFile($Item, $OwnedFiles) {
 function Remove-CleanOwnedFile([string]$Path, [string]$ExpectedHash) {
     Assert-CleanNoReparse $Path
     if (-not [IO.File]::Exists($Path)) { return }
-    $handle = [MpvnetCleanNative]::CreateFile($Path, 2147549184, 1, [IntPtr]::Zero, 3, 0x00200000, [IntPtr]::Zero)
+    $handle = [MpvnetKitNative]::CreateFile($Path, 2147549184, 1, [IntPtr]::Zero, 3, 0x00200000, [IntPtr]::Zero)
     if ($handle.IsInvalid) { $handle.Dispose(); throw '无法取得清理文件的独占访问。' }
     $stream = $null
     try {
         # OPEN_REPARSE_POINT opens the entry itself; validate this handle before reading or deleting.
-        if (-not [MpvnetCleanNative]::IsPlainFile($handle)) { throw '清理路径不是普通文件，保留该路径。' }
+        if (-not [MpvnetKitNative]::IsPlainFile($handle)) { throw '清理路径不是普通文件，保留该路径。' }
         $stream = New-Object IO.FileStream($handle, [IO.FileAccess]::Read)
         $sha = [Security.Cryptography.SHA256]::Create()
         try { $actual = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
         finally { $sha.Dispose() }
         if ($actual -cne $ExpectedHash) { throw '文件字节已变化，保留文件。' }
-        if (-not [MpvnetCleanNative]::RemoveOwnedDirectory($handle)) { throw '无法删除本次创建的文件。' }
+        if (-not [MpvnetKitNative]::RemoveOwnedDirectory($handle)) { throw '无法删除本次创建的文件。' }
     } finally { if ($stream) { $stream.Dispose() } else { $handle.Dispose() } }
 }
 function Invoke-CleanInstall {
@@ -253,18 +173,27 @@ function Invoke-CleanInstall {
     param([Parameter(Mandatory=$true)]$Plan)
     # Resolve again: no fallback to another directory after the user confirms a plan.
     $current = Get-CleanInstallPlan -PlayerPath $Plan.player -PackageRoot $Plan.packageRoot
-    if ($current.target -ine $Plan.target -or $current.targetSource -cne $Plan.targetSource -or
-        $current.environmentHome -cne $Plan.environmentHome -or $current.portableExists -ne $Plan.portableExists -or
-        $current.targetIdentity -cne $Plan.targetIdentity) { throw '配置目录来源、位置或身份在检查后变化，请重新选择播放器并确认。' }
+    if ($current.targetContext.contextToken -cne $Plan.targetContext.contextToken) { throw '配置目录来源、位置、身份或现存父目录在检查后变化，请重新选择播放器并确认。' }
     if ($current.manifestSha256 -cne $Plan.manifestSha256) { throw '配置包在检查后变化，请重新选择播放器。' }
     Initialize-CleanNative
     $ownedFiles = @{}; $locks = @{}
     $ownedDirectories = New-Object 'System.Collections.Generic.List[string]'
     $cleanupNotes = New-Object 'System.Collections.Generic.List[string]'
     try {
+        # Lock every existing parent before creating anything, then re-read context and package.
+        Add-KitExistingDirectoryLocks $current.target $locks
+        Add-KitExistingDirectoryLocks $current.packageRoot $locks
+        foreach ($item in $current.files) {
+            Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName($item.target)) $locks
+            Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName((Get-KitPath $current.packageRoot ('config/' + $item.path)))) $locks
+        }
+        $locked = Get-CleanInstallPlan -PlayerPath $Plan.player -PackageRoot $Plan.packageRoot
+        if ($locked.targetContext.contextToken -cne $Plan.targetContext.contextToken) { throw '锁定目录后发现目录上下文变化，请重新选择播放器并确认。' }
+        if ($locked.manifestSha256 -cne $Plan.manifestSha256) { throw '锁定目录后发现配置包变化，请重新选择播放器。' }
+        $current = $locked
         New-CleanDirectory $current.target $ownedDirectories $locks
         if (-not $current.targetIdentity -and -not $ownedDirectories.Contains($current.target)) { throw '原本不存在的配置目录在检查后被创建，请重新选择播放器。' }
-        if ($current.targetIdentity -and [MpvnetCleanNative]::GetIdentity($locks[$current.target]) -cne $current.targetIdentity) { throw '配置目录在开始安装前被替换，请重新选择播放器。' }
+        if ($current.targetIdentity -and [MpvnetKitNative]::GetIdentity($locks[$current.target]) -cne $current.targetIdentity) { throw '配置目录在开始安装前被替换，请重新选择播放器。' }
         Assert-CleanOwnedTree $current $ownedFiles $ownedDirectories
         foreach ($item in $current.files) {
             Assert-CleanOwnedTree $current $ownedFiles $ownedDirectories
@@ -287,7 +216,7 @@ function Invoke-CleanInstall {
             try {
                 if ($locks.ContainsKey($path)) {
                     $handle = $locks[$path]
-                    if (@([IO.Directory]::EnumerateFileSystemEntries($path)).Count -eq 0 -and -not [MpvnetCleanNative]::RemoveOwnedDirectory($handle)) {
+                    if (@([IO.Directory]::EnumerateFileSystemEntries($path)).Count -eq 0 -and -not [MpvnetKitNative]::RemoveOwnedDirectory($handle)) {
                         $cleanupNotes.Add("未能清理本次创建的空目录：$path")
                     }
                     $handle.Dispose(); $locks.Remove($path)

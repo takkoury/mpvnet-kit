@@ -239,8 +239,14 @@ function Danmaku_process(cid)
 			load_danmu(danmu_file)
 		else
 			os.remove(output_path)
-			log("DANMAKU LOAD FAILED: " .. tostring(err or (val and val.status)))
-			mp.osd_message("DANMAKU LOAD FAILED", 1)
+			-- Only mpv's explicit spawn failure identifies an unavailable Python
+			-- process. HTTP/conversion exits and command errors are not that case.
+			local start_failed = val and val.error_string == "init"
+			local message = start_failed
+				and "DANMAKU LOAD FAILED · PYTHON CANNOT START · CHECK PYTHON PATH"
+				or "DANMAKU LOAD FAILED"
+			log(start_failed and "DANMAKU LOAD FAILED: python-start" or "DANMAKU LOAD FAILED: worker")
+			mp.osd_message(message, 1)
 		end
 	end)
 end

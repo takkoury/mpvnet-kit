@@ -213,7 +213,7 @@ try {
     $phase = 'window'
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    Add-Type -TypeDefinition @'
+    Add-Type -TypeDefinition (@'
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -555,12 +555,14 @@ public sealed class PlaylistKeys : IMessageFilter, IDisposable {
     public event Action<string,string> Transmit;
     public PlaylistKeys(PlaylistForm window) { form=window;Application.AddMessageFilter(this); }
     public static string Canonical(int vk, Keys modifiers) {
-        bool ctrl=(modifiers & Keys.Control)!=0,alt=(modifiers & Keys.Alt)!=0,shift=(modifiers & Keys.Shift)!=0;
-        string key=null;
-        if(vk>=65 && vk<=90) key=((char)(!ctrl && !alt && shift ? vk : vk+32)).ToString();
-        else switch(vk) {case 32:key="Space";break;case 37:key="Left";break;case 39:key="Right";break;case 8:key="BS";break;case 33:key="PGUP";break;case 34:key="PGDWN";break;case 36:key="Home";break;case 35:key="End";break;case 13:key="Enter";break;case 9:key="Tab";break;case 48:key="0";break;case 188:key=",";break;case 190:key=".";break;case 219:key="[";break;case 221:key="]";break;case 192:key="`";break;}
-        if(key==null)return null;
-        return (ctrl?"Ctrl+":"")+(alt?"Alt+":"")+(shift && (ctrl || alt || vk<65 || vk>90)?"Shift+":"")+key;
+        return ShortcutKeyNames.FromVirtualKey(vk, (modifiers & Keys.Control)!=0,
+            (modifiers & Keys.Alt)!=0, (modifiers & Keys.Shift)!=0);
+    }
+    public void UpdateBindings(string[] keys, string[] uiKeys) {
+        keys=keys ?? new string[0];uiKeys=uiKeys ?? new string[0];
+        if(allowed.SetEquals(keys) && opening.SetEquals(uiKeys))return;
+        ReleaseAll();allowed.Clear();opening.Clear();
+        allowed.UnionWith(keys);opening.UnionWith(uiKeys);
     }
     void Send(string phase,string key) { if(Transmit!=null)Transmit(phase,key); }
     public void ReleaseAll() { held.Clear();Send("release",""); }
@@ -607,7 +609,7 @@ public sealed class PlaylistTip : Form {
         using(Brush brush=new SolidBrush(Color.FromArgb(225,229,234)))e.Graphics.DrawString(content,Font,brush,new RectangleF(pad,pad,Width-pad*2,Height-pad*2),StringFormat.GenericDefault);
     }
 }
-'@ -ReferencedAssemblies System.Windows.Forms,System.Drawing
+'@ + "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'shortcut-key-names.cs'), $utf8)) -ReferencedAssemblies System.Windows.Forms,System.Drawing
     # One DPI coordinate system for native rectangles, Screen and Form bounds.
     try { [void][PlaylistNative]::SetThreadDpiAwarenessContext([IntPtr](-4)) } catch {}
     [Windows.Forms.Application]::SetUnhandledExceptionMode([Windows.Forms.UnhandledExceptionMode]::CatchException)
@@ -923,6 +925,7 @@ public sealed class PlaylistTip : Form {
     Send-Command @('observe_property', 2, 'playlist-pos')
     Send-Command @('observe_property', 3, 'fullscreen')
     Send-Command @('observe_property', 4, 'user-data/mpvnet/playlist-window')
+    Send-Command @('observe_property', 5, 'user-data/mpvnet/shortcuts')
     Send-Command @('enable_event', 'client-message')
     $phase = 'session'
     $context = New-Object Windows.Forms.ApplicationContext
@@ -947,6 +950,12 @@ public sealed class PlaylistTip : Form {
                         }
                         'playlist-pos' { $script:playlistPosition = [int]$playlistEvent.data; Render-Queue }
                         'fullscreen' { $script:fullscreen = [bool]$playlistEvent.data }
+                        'user-data/mpvnet/shortcuts' {
+                            if ($null -ne $playlistEvent.data -and $playlistEvent.data.schema -eq 1 -and
+                                $null -ne $playlistEvent.data.forward_keys -and $null -ne $playlistEvent.data.opening_keys) {
+                                $keyFilter.UpdateBindings([string[]]@($playlistEvent.data.forward_keys), [string[]]@($playlistEvent.data.opening_keys))
+                            }
+                        }
                         'user-data/mpvnet/playlist-window' {
                             if ($playlistEvent.data.token -eq $payload.token) { $script:desiredVisible = [bool]$playlistEvent.data.visible }
                         }

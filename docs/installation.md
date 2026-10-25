@@ -1,95 +1,111 @@
 # 安装与个人配置维护
 
-本包是 Windows mpv.net 的配置与脚本包，不包含播放器。选择自己的 `mpvnet.exe` 后，安装器自动检查配置目录，确认后安装。功能见[功能指南](features.md)，个人设置见[配置说明](configuration.md)。
+mpvnet-kit 是面向 Windows mpv.net 的配置与脚本包，不包含播放器。功能操作见[功能指南](features.md)，参数调整见[配置说明](configuration.md)。
+
+**版本说明：**本文适用于 0.3.0。旧版用户请使用随包指南；v0.2.0 的图形安装器仅支持首次安装。
 
 ## 1. 环境与依赖
 
-准备 Windows mpv.net 和系统自带的 Windows PowerShell。已有播放器可继续使用；需要下载时参考 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)及对应版本的运行要求。
+准备 Windows mpv.net 和系统自带的 Windows PowerShell。播放器可从 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)获取。当前已验证的播放器基线为 mpv.net 7.1.2 / libmpv 0.41；其他版本尚未完成验证。
 
-FFmpeg 和 Python 是可选依赖，缺少它们不影响基本安装。
+FFmpeg 用于片段导出，Python 用于弹幕转换。两者均为可选依赖，缺少时不影响基本安装和本地播放。
 
 ## 2. 下载与安装前准备
 
-1. 从 [v0.2.0 Release](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.2.0) 下载 [mpvnet-kit-0.2.0.zip](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.2.0/mpvnet-kit-0.2.0.zip)。
-2. 完整解压到独立目录，找到 `Install.cmd`。不要直接从 ZIP 中运行，也不要把包解压到播放器配置目录内。
-3. 退出受影响的播放器。已有配置或脚本请先自行备份并处理，安装器不会覆盖或合并它们。
+1. 从 [v0.3.0 Release](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.3.0) 下载 [mpvnet-kit-0.3.0.zip](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.3.0/mpvnet-kit-0.3.0.zip)。
+2. 完整解压到独立目录。不要直接从 ZIP 中运行，也不要将安装包解压到播放器的配置目录内。
+3. 退出所有 mpv.net 实例。已有配置无需预先清空；不要为通过检查直接删除文件。
 
-安装器支持安装版和便携版，无需选择配置目录，按以下优先级自动判断：
+安装器只需选择 `mpvnet.exe`，随后按以下顺序确定配置目录：
 
-| 条件 | 安装目录 |
+| 条件 | 使用的目录 |
 | --- | --- |
-| 当前环境的 `MPVNET_HOME` 指向已有有效目录 | 该目录，启动播放器时需使用相同环境 |
-| 否则，播放器旁已有 `portable_config` | 该便携配置目录 |
-| 否则 | 当前用户的 Roaming AppData 下 `mpv.net`，通常为 `%APPDATA%\mpv.net` |
+| 当前环境的 `MPVNET_HOME` 指向已有有效目录 | 使用该目录；启动播放器时应保持相同环境 |
+| 否则，播放器旁已有 `portable_config` | 使用该便携配置目录 |
+| 否则 | 使用当前用户 Roaming AppData 下的 `mpv.net`，通常为 `%APPDATA%\mpv.net` |
 
-若希望使用便携配置，请在选择播放器前自行创建空的 `portable_config`；目录不存在时会使用 AppData。不存在的 `MPVNET_HOME` 不会被创建，继续按后续条件判断。现存相对路径、卷根和链接目录会被拒绝。
-
-播放器状态和缓存可保留；已有自定义配置、脚本或其他未知内容可能阻止安装。需要确认当前目录时，可在播放器右键菜单 **Config → Open Config Folder** 查看后退出。
+若希望使用便携配置，请在选择播放器前创建空的 `portable_config`。不存在的 `MPVNET_HOME` 不会被创建；无效路径、链接目录等会被拒绝。可通过播放器的配置菜单打开配置目录，核对后退出播放器。
 
 ## 3. 图形安装
 
-1. 双击解压包根目录的 `Install.cmd`。
-2. 点击“浏览…”，选择名为 `mpvnet.exe` 的播放器程序。
-3. 等待自动检查，核对窗口显示的实际配置目录、来源和检查结果。
-4. 检查通过后，点击右下角“确认安装”，核对弹窗后确认，等待“安装完成”。
+双击安装包中的 `Install.cmd`，点击“浏览…”选择 `mpvnet.exe`。选择播放器后，窗口会显示配置目录、安装包版本、文件变更和备份位置。
 
-窗口无需手填目录、命令参数或依赖路径。检查和安装期间请等待完成后再关闭窗口；完成后自行启动播放器。
+| 检查结果 | 可执行的操作 |
+| --- | --- |
+| 符合首次安装条件 | 开始安装 |
+| 能够识别且可以安全更新的旧配置 | 开始更新 |
+| 配置内容与安装包一致 | 无需更新 |
+| 文件被修改、缺失或存在同名文件 | 停止操作，显示具体原因 |
 
-安装器不下载依赖、不运行播放器、FFmpeg 或 Python，也不修改系统 PATH、注册表或协议设置。旧配置的备份与处理由用户负责，窗口没有备份、更新或恢复功能。
+执行前请退出所有 mpv.net 实例。更新前会自动备份相关文件，备份校验通过后才开始写入；安装器不会自动关闭或启动播放器。完成后请保留备份目录，并重新启动 mpv.net。
+
+如需撤回最近一次更新，选择“还原更新前配置”，核对范围后确认。首次安装对应的操作是“撤销本次安装”。每次只还原最近一步；完成后重新检查，可继续还原更早的操作。
+
+独立保存的快捷键设置、本机路径配置、观看记录和其他个人文件保持不变。直接修改配置包中的文件，例如 `mpv.conf`，会阻止自动更新；本版不合并这些修改。备份包含配置包涉及的文件和安装记录，**不等于整个配置目录的完整副本**。
+
+若提示上次操作未完成，可选择“恢复操作前配置”。更新失败时恢复更新前的配置；还原失败时恢复还原开始前的配置。无法确认的文件变化会阻止恢复，请保留现有配置与备份，不要清空目录重新安装。
 
 ## 4. 可选组件准备
 
-安装器仅从当前 PATH 查找 FFmpeg 和 Python，未发现仍可继续基本安装。FFmpeg 用于片段导出，Python 用于弹幕转换。优先复用已有程序；需要下载时参考 [FFmpeg 下载页](https://www.ffmpeg.org/download.html)和 [Python Windows 下载页](https://www.python.org/downloads/windows/)。
+安装器只检查 FFmpeg 和 Python 是否能从当前 PATH 找到，不执行或下载程序。需要安装时，可参考 [FFmpeg 下载页](https://www.ffmpeg.org/download.html)和 [Python Windows 下载页](https://www.python.org/downloads/windows/)。程序不在 PATH 时，可按[本机路径说明](configuration.md#3-本机路径与外部组件)配置。
 
-程序不在 PATH 时，可按[本机路径说明](configuration.md#3-本机路径与外部组件)手动配置，之后调整无需重装。
-
-网页调起请按 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 的说明，自行配置浏览器脚本及配套的 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler)，将播放器路径指向自己的 `mpvnet.exe`。已有调用链可继续使用，安装器不注册协议。
-
-本包已包含基于 [MPV-Play-BiliBili-Comments](https://github.com/itKelis/MPV-Play-BiliBili-Comments) 的兼容弹幕脚本和默认配置，无需另装原版。弹幕转换需要可用 Python 和对应弹幕数据；播放时按 D 控制弹幕显隐，使用条件见[弹幕说明](features.md#bilibili-弹幕)，样式参数见[字幕与弹幕配置](configuration.md#4-播放音频字幕与弹幕)。
+网页调起可配合 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 和 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler) 使用，由用户按各自说明配置，安装器不注册协议。随包弹幕组件的使用条件见[弹幕说明](features.md#bilibili-弹幕)。
 
 ## 5. 首次启动检查
 
-打开一个已知本地视频，简单检查：
-
-- 鼠标移到下半区，出现 ModernZ 控制栏，原右键菜单仍可用。
-- Space 可以暂停，P 可以打开 Playlist。
-- Screenshot 可以保存源 PNG。
-
-更多操作见[功能指南](features.md)，配置生效规则见[配置说明](configuration.md#2-修改方法与生效规则)。
+打开一个本地视频，确认控制栏、右键菜单、暂停、播放列表和截图能够正常使用。具体操作见[功能指南](features.md)，配置生效方式见[配置说明](configuration.md#2-修改方法与生效规则)。
 
 ## 6. 重新安装与个人配置维护
 
-图形安装器不升级或覆盖已有配置。更换版本前，先退出播放器，自行备份原实际配置目录和个人修改，再处理旧配置，保留对应空目录（允许的播放器状态和缓存也可保留），然后安装完整新包。
+优先使用窗口提供的更新或还原操作，无需清空配置目录。v0.2.0 没有这些功能，恢复旧配置需使用此前自行保存的备份。
 
-若将 `portable_config` 整个移走或删除，请重新建立空的 `portable_config`，否则安装位置可能改为 AppData。不要为通过检查直接删除未知内容，也不要把旧目录整包覆盖回新配置。
+不要将旧目录整包覆盖到新配置，也不要删除备份来消除提示。若移走了整个 `portable_config`，安装器可能转而选择 AppData；再次操作前应核对窗口显示的目录。
 
-日常参数调整参考[配置说明](configuration.md)，无需重装。恢复旧配置时，退出播放器，用自己保存的备份替换实际配置目录。
-
-安装失败时，先保留现场和日志，确认剩余内容后自行处理，再重新选择播放器检查。需要保存日志时，可选中文字复制。
+日常参数调整无需重装。直接修改配置包文件前，建议保存副本，并留意这类修改可能影响后续更新。
 
 ## 7. 常见安装问题
 
 | 现象 | 处理方式 |
 | --- | --- |
-| Install.cmd 无法打开 | 确认完整解压，`tools/installer.ps1` 和 `tools/clean-install.psm1` 存在，并可使用系统 Windows PowerShell / Windows Forms |
-| “确认安装”按钮灰色 | 选择 mpvnet.exe 后等待自动检查；若未通过，按日志处理后重新选择播放器 |
-| 目录已有内容或路径被拒绝 | 先自行备份处理已有配置；状态缓存可保留，其他未知内容、非空资源目录或资源目录内的空子目录可能被拒绝；使用普通目录，解压包与配置目录应分开 |
-| 未发现 FFmpeg / Python | 继续基本安装，之后按配置说明准备程序和本机路径 |
-| 安装成功但界面未变化 | 核对显示的安装目录与播放器实际读取目录是否一致，并重开播放器 |
+| `Install.cmd` 无法打开 | 确认安装包已完整解压，并可使用系统 Windows PowerShell 与 Windows Forms |
+| 操作按钮不可用 | 等待检查结束，查看具体原因；处理后可点击“重新检查” |
+| 提示播放器仍在运行 | 退出所有 mpv.net 实例后重新检查 |
+| 提示文件被修改或存在同名文件 | 先保存个人修改并核对差异；本版不会自动合并或覆盖，不确定时请保留原文件 |
+| 未发现 FFmpeg 或 Python | 可继续基本安装；需要相应功能时再准备依赖 |
+| 安装后界面未变化 | 核对安装目录是否为播放器实际读取的目录，并重新启动播放器 |
+| 更新或还原未完成 | 保留配置和备份，按窗口提供的恢复操作处理；发现额外修改时会停止，不强行覆盖 |
 
 <details>
-<summary>高级说明：CLI 与手动安装</summary>
+<summary>高级说明：命令行与手动安装</summary>
 
-高级工具有独立的备份与状态逻辑，与图形安装不同。**GUI 安装不能用 CLI restore 自动恢复。**
+建议使用与图形窗口共用逻辑的 [maintain.ps1](../tools/maintain.ps1)。默认 `Inspect` 只读检查，`-OutputFormat Text` 显示中文摘要，`-Details` 显示文件明细。
 
-| 工具 | 用途 |
+```powershell
+.\tools\maintain.ps1 -PlayerPath 'C:\Players\mpv.net\mpvnet.exe' -OutputFormat Text
+```
+
+所有写入操作都需要本次检查返回的校验值：安装或更新使用 `Apply` 和 `planToken`；还原使用 `Restore` 和 `restorePlanToken`；恢复未完成操作使用 `Recover` 和该恢复计划的 `planToken`。执行时保持检查所用的目录和安装包参数不变；环境或文件发生变化后，请重新检查。
+
+```powershell
+$plan = .\tools\maintain.ps1 -PlayerPath 'C:\Players\mpv.net\mpvnet.exe' | ConvertFrom-Json
+# 审阅 $plan 并退出所有 mpv.net 实例后，再执行：
+.\tools\maintain.ps1 -PlayerPath 'C:\Players\mpv.net\mpvnet.exe' -Operation Apply -ExpectedPlanToken $plan.planToken -OutputFormat Text
+```
+
+`ConfigDirectory` 可显式指定目标，但不会改变播放器实际读取的配置位置。`BackupRoot` 可指定独立备份位置，后续维护应使用同一备份根目录。校验值用于确认计划未变化，不是签名或密码。
+
+| 工具 | 用途与边界 |
 | --- | --- |
-| [check-dependencies.ps1](../tools/check-dependencies.ps1) | 必需 `PlayerPath`，只读检查依赖 |
-| [install.ps1](../tools/install.ps1) | 必需 `PlayerPath`；默认预览，加 `-Apply` 后写入并备份 |
-| [restore.ps1](../tools/restore.ps1) | 使用安装输出的 `backupManifest` 作为 `-BackupManifest`；默认预览，加 `-Apply` 后恢复 |
+| [maintain.ps1](../tools/maintain.ps1) | 统一维护入口，提供运行检查及未完成操作恢复 |
+| [check-dependencies.ps1](../tools/check-dependencies.ps1) | 本地只读依赖检查，结果可能包含完整路径 |
+| [prepare-legacy.ps1](../tools/prepare-legacy.ps1) | 识别无安装记录的旧配置并备份，不执行更新 |
+| [install.ps1](../tools/install.ps1) | 保留的高级安装接口，默认预览，`-Apply` 写入；不替代统一维护入口 |
+| [restore.ps1](../tools/restore.ps1) | 按对应安装记录还原，默认预览，`-Apply` 执行 |
 
-在完整包根目录运行工具前，先退出受影响播放器并核对预览。保留 CLI 输出的实际 `backupManifest` 及其整个备份目录，恢复时使用最新有效记录；不要手改凭证或哈希。CLI 的 `ConfigDirectory` 只决定复制位置，需自行确认播放器读取它。
+旧配置准备工具仅接受完整匹配 v0.1.0、v0.1.1 或 v0.2.0 且无新增路径碰撞的内容，备份现场全部31份配置包文件。其 `legacy-snapshot` 清单只能用 `prepare-legacy.ps1 -SnapshotManifest` 校验，不能直接传给 `restore.ps1`。本版图形更新会另外创建实际更新记录；v0.2.0 的旧GUI安装没有这类记录，仍需依靠自己的备份。
 
-手动安装时，先自行备份，再按 manifest 中 `config/` 开头且非 `.example` 的运行项逐项复制：去掉 `config/` 前缀，保留相对目录结构，不把整个包套进配置目录。手动复制没有 CLI 备份凭证，回退依靠自己的副本；不要覆盖未知内容。
+旧 `install.ps1` 自动选择目录时，`-Apply` 须携带 `-ExpectedPlanToken`；显式目录保留直接执行的旧接口，使用前须自行核对。原 `restore.ps1` 只接受最新有效的安装备份记录。请保留工具输出的清单及整个备份目录，不手工修改记录或哈希。
+
+手动安装请先备份，再按清单逐项复制配置包文件。不要整目录覆盖；手动复制不会生成自动还原记录。
 
 </details>

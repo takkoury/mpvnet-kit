@@ -406,41 +406,41 @@ end
 --- localization
 local language = {
     ["default"] = {
-        idle = "Drop files or URLs here to play",
-        na = "Not available",
-        unknown = "Unknown",
-        video = "Video",
-        audio = "Audio",
-        subtitle = "Subtitle",
-        no_subs = "No subtitles",
-        no_audio = "No audio tracks",
-        volume = "Volume",
-        muted = "Muted",
-        playlist = "Playlist",
-        no_playlist = "Playlist empty",
-        chapter = "Chapter",
-        fullscreen = "Fullscreen",
-        fullscreen_exit = "Exit fullscreen",
-        ontop = "Pin window",
-        ontop_disable = "Unpin window",
-        file_loop_enable = "Loop file on",
-        file_loop_disable = "Loop file off",
-        playlist_loop_enable = "Loop playlist on",
-        playlist_loop_disable = "Loop playlist off",
+        idle = "拖入文件或网址播放\\N右键菜单 → 文件 → 打开文件",
+        na = "不可用",
+        unknown = "未知",
+        video = "视频",
+        audio = "音轨",
+        subtitle = "字幕",
+        no_subs = "无字幕",
+        no_audio = "无音轨",
+        volume = "音量",
+        muted = "静音",
+        playlist = "播放列表",
+        no_playlist = "播放列表为空",
+        chapter = "章节",
+        fullscreen = "全屏",
+        fullscreen_exit = "退出全屏",
+        ontop = "窗口置顶",
+        ontop_disable = "取消置顶",
+        file_loop_enable = "单文件循环已开启",
+        file_loop_disable = "单文件循环已关闭",
+        playlist_loop_enable = "列表循环已开启",
+        playlist_loop_disable = "列表循环已关闭",
         shuffle = "Shuffle playlist on",
         unshuffle = "Shuffle playlist off",
-        speed_control = "Playback speed",
-        screenshot = "Screenshot",
-        stats_info = "Statistics",
-        cache = "Cache",
-        buffering = "Buffering",
-        zoom_in = "Zoom in",
-        zoom_out = "Zoom out",
+        speed_control = "播放倍速",
+        screenshot = "截图与片段",
+        stats_info = "媒体信息",
+        cache = "缓存",
+        buffering = "缓冲中",
+        zoom_in = "放大画面",
+        zoom_out = "缩小画面",
         download = "Download",
         download_in_progress = "Download in progress",
         downloading = "Downloading",
         downloaded = "Already downloaded",
-        menu = "Menu",
+        menu = "菜单",
     },
 }
 
@@ -1025,6 +1025,149 @@ local function draw_tooltip(ass, tx, ty, width, style, label, alpha, fade_backgr
     ass:append(label)
 end
 
+-- Button hints use a small self-drawn mouse, without a font/icon dependency.
+-- Keep seek/chapter tooltips on their existing text-only rendering path.
+local button_tooltip = {}
+
+function button_tooltip.entries(label)
+    local entries, start = {}, 1
+    if type(label) ~= "string" or label == "" then return entries end
+    while start <= #label do
+        local divider = label:find(" · ", start, true)
+        local text = label:sub(start, divider and divider - 1 or #label)
+        local mouse
+        for _, prefix in ipairs({{"中键", "middle"}, {"右键", "right"}, {"滚轮", "wheel"}, {"左键", "left"}}) do
+            if text:sub(1, #prefix[1]) == prefix[1] and #text > #prefix[1] then
+                mouse, text = prefix[2], text:sub(#prefix[1] + 1)
+                break
+            end
+        end
+        if text ~= "" then entries[#entries + 1] = {mouse = mouse, text = text} end
+        if not divider then break end
+        start = divider + #" · "
+    end
+    return entries
+end
+
+function button_tooltip.layout(label, style, tx, ty, margin, rendered_elements)
+    local entries = button_tooltip.entries(label)
+    if #entries == 0 then return nil end
+    local fs, ph, pv = user_opts.tooltip_font_size, 5, 3
+    local icon_size, icon_gap = fs * 1.4, fs * 0.28
+    local width, content_h = 0, fs
+    local separator = " · "
+    local separator_w = #entries > 1 and estimate_text_width(separator, style, true) or 0
+    for _, entry in ipairs(entries) do
+        -- Escape only the action text; unrecognized labels keep their full text.
+        entry.text = mp.command_native({"escape-ass", (entry.text:gsub("[\r\n]", " "))})
+        entry.width = estimate_text_width(entry.text, style, true)
+        if not entry.width or entry.width <= 0 then return nil end
+        entry.offset = width
+        if entry.mouse then
+            -- Wheel arrows extend beyond the 24-unit mouse frame.
+            entry.icon_width = icon_size * (entry.mouse == "wheel" and 28 / 24 or 1)
+            width = width + entry.icon_width + icon_gap
+            content_h = math.max(content_h, icon_size)
+        end
+        width = width + entry.width + separator_w
+    end
+    width = width - separator_w
+    local box_w, box_h = math.max(width + ph * 2, fs + pv * 2 + ph * 2), content_h + pv * 2
+    margin = margin or 10
+    local y2 = ty + pv
+    -- prepare_elements replaces the name table with an array. Use the actual
+    -- rendered elements so hidden titles and stale source hitboxes reserve no room.
+    for _, element in pairs(rendered_elements or {}) do
+        local hb = element.hitbox
+        if (element.name == "title" or element.name == "chapter_title") and element.visible and hb
+            and type(hb.x1) == "number" and type(hb.x2) == "number" and hb.x2 > hb.x1
+            and type(hb.y1) == "number" and type(hb.y2) == "number" and hb.y2 > hb.y1 then
+            y2 = math.min(y2, hb.y1 - 8)
+        end
+    end
+    if box_w > osc_param.playresx - margin * 2 or y2 - box_h < 8 or y2 > osc_param.playresy - 8 then return nil end
+    tx = math.max(margin + box_w / 2, math.min(osc_param.playresx - margin - box_w / 2, tx))
+    local x1 = tx - box_w / 2
+    return {entries = entries, x1 = x1, x2 = x1 + box_w, y1 = y2 - box_h, y2 = y2,
+        width = box_w, height = box_h, text_x = x1 + (box_w - width) / 2,
+        cy = y2 - box_h / 2, icon_size = icon_size, icon_gap = icon_gap,
+        separator = separator, separator_w = separator_w}
+end
+
+function button_tooltip.mouse(ass, kind, x, y, size, alpha, animation)
+    local scale = size / 24
+    local function shape(path, color)
+        local index, min_x, min_y = 0, math.huge, math.huge
+        path:gsub("%-?[%d.]+", function(value)
+            index = index + 1
+            if index % 2 == 1 then min_x = math.min(min_x, tonumber(value))
+            else min_y = math.min(min_y, tonumber(value)) end
+        end)
+        -- Every contour shares the same 24-unit design transform. Normalize each
+        -- independent event to zero-based bounds so ASS alignment cannot shift it.
+        index = 0
+        path = path:gsub("%-?[%d.]+", function(value)
+            index = index + 1
+            return string.format("%.3f", (tonumber(value) - (index % 2 == 1 and min_x or min_y)) * scale)
+        end)
+        ass:new_event()
+        ass:append("{\\rDefault\\bord0\\shad0\\blur0\\fscx100\\fscy100\\pbo0\\1c&H" .. color .. "&}")
+        ass:pos(x + min_x * scale, y + min_y * scale)
+        ass:an(7)
+        ass_append_alpha(ass, alpha, 0, nil, animation)
+        -- Raw path numbers are logical units. mp.assdraw's draw_start always
+        -- emits p4; only its geometry helpers compensate for that scale.
+        ass:append("{\\p1}" .. path .. "{\\p0}")
+    end
+    local outline = "m 12 1 b 17.2 1 20 4.5 20 9 l 20 15 b 20 20 17 23 12 23 b 7 23 4 20 4 15 l 4 9 b 4 4.5 6.8 1 12 1 "
+        .. "m 12 2.2 b 7.5 2.2 5.2 5.2 5.2 9 l 5.2 15 b 5.2 19.4 7.7 21.8 12 21.8 b 16.3 21.8 18.8 19.4 18.8 15 l 18.8 9 b 18.8 5.2 16.5 2.2 12 2.2 "
+        .. "m 11.45 2 l 12.55 2 12.55 11.5 11.45 11.5 m 5 10.8 l 19 10.8 19 12 5 12"
+    shape(outline, "DADADA")
+    if kind == "right" or kind == "left" then
+        -- The blue area may cover the centre spine, extending one logical unit
+        -- toward the other button, independent of tooltip/font scaling.
+        local inward = math.min(6.8, 1 / scale)
+        if kind == "right" then
+            local edge = 12 - inward
+            shape(string.format("m %.5f 2.2 l 12 2.2 b 16.5 2.2 18.8 5.2 18.8 9 l 18.8 10.8 %.5f 10.8", edge, edge), "BB8712")
+        else
+            local edge = 12 + inward
+            shape(string.format("m %.5f 2.2 l %.5f 10.8 5.2 10.8 5.2 9 b 5.2 5.2 7.5 2.2 12 2.2", edge, edge), "BB8712")
+        end
+    end
+    local wheel = "m 12 2.9 b 13.6 2.9 14.5 3.8 14.5 5.4 l 14.5 8.4 b 14.5 10 13.6 10.9 12 10.9 b 10.4 10.9 9.5 10 9.5 8.4 l 9.5 5.4 b 9.5 3.8 10.4 2.9 12 2.9"
+    -- Right-click fill intentionally covers the centre spine. A grey wheel
+    -- painted afterwards would hide that inward extension again.
+    if kind ~= "right" then shape(wheel, (kind == "middle" or kind == "wheel") and "BB8712" or "DADADA") end
+    if kind == "wheel" then
+        shape("m 25 2 l 28 6 26 6 26 10 24 10 24 6 22 6 "
+            .. "m 24 14 l 26 14 26 18 28 18 25 22 22 18 24 18", "DADADA")
+    end
+end
+
+function button_tooltip.render(ass, layout, style, alpha, animation)
+    alpha = alpha or {0, 255, 255, 255}
+    ass:new_event(); ass:append("{\\rDefault\\bord0\\shad0}")
+    ass:pos(layout.x1, layout.y1); ass:an(7); ass:append(osc_styles.tooltip_box)
+    ass_append_alpha(ass, {77, 255, 255, 255}, alpha[1], nil, animation)
+    ass:draw_start(); ass:round_rect_cw(0, 0, layout.width, layout.height, layout.height / 2); ass:draw_stop()
+    local function text(value, x)
+        ass:new_event(); ass:append("{\\rDefault}")
+        ass:pos(x, layout.cy); ass:an(4); ass:append(style)
+        ass_append_alpha(ass, alpha, 0, nil, animation)
+        ass:append(bidi.fsi .. value .. bidi.pdi)
+    end
+    for index, entry in ipairs(layout.entries) do
+        local x = layout.text_x + entry.offset
+        if entry.mouse then
+            button_tooltip.mouse(ass, entry.mouse, x, layout.cy - layout.icon_size / 2, layout.icon_size, alpha, animation)
+            x = x + entry.icon_width + layout.icon_gap
+        end
+        text(entry.text, x)
+        if index < #layout.entries then text(layout.separator, x + entry.width) end
+    end
+end
+
 local function ass_draw_cir_cw(ass, x, y, r)
     ass:round_rect_cw(x-r, y-r, x+r, y+r, r)
 end
@@ -1459,8 +1602,8 @@ local function prepare_elements()
         local hitbox_h = elem_geo.h + ((element.name == "volumebar" or element.name == "zoom_control" or element.more_volume) and 14 or 0)
         local bX1, bY1, bX2, bY2 = get_hitbox_coords(elem_geo.x, elem_geo.y, elem_geo.an, hitbox_w, hitbox_h)
         if element.type == "volume_popup" then
-            bX1, bY1 = elem_geo.x + elem_geo.w / 2 - 18, elem_geo.y + 26
-            bX2, bY2 = elem_geo.x + elem_geo.w / 2 + 18, elem_geo.y + elem_geo.h - 8
+            bX1, bY1 = elem_geo.x + 6, elem_geo.y + 29
+            bX2, bY2 = elem_geo.x + elem_geo.w - 6, elem_geo.y + elem_geo.h - 8
         end
         element.hitbox = {x1 = bX1, y1 = bY1, x2 = bX2, y2 = bY2}
 
@@ -2200,7 +2343,7 @@ local function render_elements(master_ass, osc_vis, wc_vis)
             end
         elseif element.type == "volume_popup" then
             local g = element.layout.geometry
-            local top, bottom = 32, g.h - 14
+            local top, bottom = 36, g.h - 16
             local value = state.volume or 0
             local pos = user_opts.volume_control_type == "logarithmic" and math.sqrt(value * 100) or value
             local y = bottom - limit_range(0, 1, pos / element.volume_max) * (bottom - top)
@@ -2220,11 +2363,11 @@ local function render_elements(master_ass, osc_vis, wc_vis)
             if y < bottom then
                 draw_shape(x - 2, y, 4, bottom - y, math.min(2, (bottom - y) / 2), user_opts.seekbarfg_color)
             end
-            draw_shape(x - 4, y - 4, 8, 8, 4, user_opts.seekbarfg_color)
+            draw_shape(x - 7, y - 7, 14, 14, 7, user_opts.seekbarfg_color)
             elem_ass:new_event()
             elem_ass:pos(g.x + x, g.y + 8)
             elem_ass:an(8)
-            elem_ass:append(osc_styles.time)
+            elem_ass:append(osc_styles.time .. "{\\fs18}")
             ass_append_alpha(elem_ass, element.layout.alpha, 0, nil, anim_override)
             elem_ass:append(string.format("%.0f%%", value))
         elseif element.type == "button" then
@@ -2263,37 +2406,30 @@ local function render_elements(master_ass, osc_vis, wc_vis)
 
             local active_popup = state.local_popovers and state.local_popovers[state.popover]
             local is_popover_anchor = active_popup and active_popup.anchor == element
-            if element.tooltipF ~= nil and (element.enabled or element.name == "sub_track" or element.popover == "more") and not seeking_with_force_tooltip and user_opts.tooltip_hints and not is_popover_anchor then
+            if element.tooltipF ~= nil and element.enabled and not seeking_with_force_tooltip and user_opts.tooltip_hints and (not is_popover_anchor or element.popover_hint) then
                 local hb = element.hover_box
                 if (hb and mouse_hit_coords(hb.x1, hb.y1, hb.x2, hb.y2) or mouse_hit(element)) then
                     local tooltiplabel
 
                     -- tooltip label
-                    if element.enabled then
-                        if type(element.tooltipF) == "function" then
-                            tooltiplabel = element.tooltipF()
-                        else
-                            tooltiplabel = element.tooltipF
-                        end
+                    if type(element.tooltipF) == "function" then
+                        tooltiplabel = element.tooltipF()
                     else
-                        tooltiplabel = element.nothingavailable
+                        tooltiplabel = element.tooltipF
                     end
 
-                    local tx = hb and (hb.x1 + hb.x2) / 2 or (element.hitbox.x1 + element.hitbox.x2) / 2
-                    local seekbar_ref = (state.seekbar_element and state.seekbar_element.hitbox) and state.seekbar_element or element
-                    local image_mode_offset = (seekbar_ref == element) and 10 or 0
-                    local ty = seekbar_ref.hitbox.y1 - user_opts.tooltip_height_offset - image_mode_offset
+                    if tooltiplabel and tooltiplabel ~= "" then
+                        local tx = hb and (hb.x1 + hb.x2) / 2 or (element.hitbox.x1 + element.hitbox.x2) / 2
+                        local seekbar_ref = (state.seekbar_element and state.seekbar_element.hitbox) and state.seekbar_element or element
+                        local image_mode_offset = (seekbar_ref == element) and 10 or 0
+                        local ty = seekbar_ref.hitbox.y1 - user_opts.tooltip_height_offset - image_mode_offset
+                        -- Explain hidden anchor actions above the existing panel, without
+                        -- changing its geometry, mouse region or format/volume controls.
+                        if is_popover_anchor then ty = math.min(ty, active_popup.body.y1 - 8) end
 
-                    local osd_w = mp.get_property_number("osd-width")
-                    local r_w = get_virt_scale_factor()
-                    local tooltip_width = estimate_text_width(tooltiplabel, element.tooltip_style)
-                    if osd_w and r_w > 0 then
-                        local margin = 10 * r_w
-                        tx = math.min(osc_param.playresx - margin - tooltip_width / 2, math.max(margin + tooltip_width / 2, tx))
-                    end
-
-                    if tooltiplabel then
-                        draw_tooltip(elem_ass, tx, ty, tooltip_width, element.tooltip_style, bidi.fsi .. tooltiplabel .. bidi.pdi)
+                        local r_w = get_virt_scale_factor()
+                        local hint = button_tooltip.layout(tooltiplabel, element.tooltip_style, tx, ty, math.max(8, 10 * r_w), elements)
+                        if hint then button_tooltip.render(elem_ass, hint, element.tooltip_style, element.layout and element.layout.alpha, anim_override) end
                     end
                 end
             end
@@ -2533,7 +2669,8 @@ function responsive_osc.entries(page)
         action("Volume −5", "vol_ctrl", "wheel_down_press", true)
     elseif page == "sub_track" then
         action("Toggle subtitles", "sub_track", "mbtn_left_up", true)
-        action("Select subtitles", "sub_track", "mbtn_right_up")
+        action("Select subtitles", "sub_track", "shift+mbtn_left_down")
+        action("Adjust subtitles", "sub_track", "mbtn_right_up")
     elseif page == "screenshot" then
         action("Screenshot PNG", "screenshot", "mbtn_left_up")
         action(state.capture.a and "Set B / export clip" or "Set clip A", "screenshot", "mbtn_right_up")
@@ -2724,9 +2861,14 @@ function responsive_osc.setup_more()
             return (entry.enabled == false and "{\\1c&H888888&}" or entry.selected and "{\\1c&HBB8712&}" or "") .. label
         end
         row.tooltipF = function()
-            if state.more_page == "enhancement" then return nil end
+            if state.more_page ~= "root" then return nil end
             local entry = row.more_entry
-            return entry and (entry.enabled == false and entry.reason or entry.label)
+            local source = entry and entry.source
+            if not entry or entry.enabled == false or not source or not source.enabled then return nil end
+            local hint = source.tooltipF
+            -- The root forwards right/middle clicks; its wheel scrolls the list.
+            if type(hint) == "function" then return hint(true) end
+            return hint
         end
         row.eventresponder.mbtn_left_up = function()
             local entry = row.more_entry
@@ -2782,7 +2924,7 @@ local function setup_local_popovers()
         lo.style = "{\\bord0\\blur0\\1c&H" .. osc_color_convert(user_opts.thumbnail_box_color) .. "&}"
         return popup, x, y, width, height
     end
-    local popup, x, y, width, height = panel("volume", "vol_ctrl", 52, 178)
+    local popup, x, y, width, height = panel("volume", "vol_ctrl", 60, 186)
     if popup then
         local ne = new_element("popover_volume", "volume_popup")
         ne.popover = "volume"
@@ -2794,7 +2936,7 @@ local function setup_local_popovers()
         local function set_from_mouse(element)
             local _, mouse_y = get_virt_mouse_pos()
             local g = element.layout.geometry
-            local pos = limit_range(0, 1, (g.y + g.h - 14 - mouse_y) / (g.h - 46)) * element.volume_max
+            local pos = limit_range(0, 1, (g.y + g.h - 16 - mouse_y) / (g.h - 52)) * element.volume_max
             mp.commandv("no-osd", "set", "volume", set_volume(pos))
         end
         ne.eventresponder.mbtn_left_down = function(element)
@@ -3148,7 +3290,7 @@ layouts["default"] = function ()
     if #r.overflow > 0 then
         local more = new_element("more", "button")
         r.sources.more = more
-        more.content, more.tooltipF = icons.menu, "More"
+        more.content = icons.menu
         more.eventresponder.mbtn_left_up = function()
             if state.popover == "more" then close_popover() else responsive_osc.open("root") end
         end
@@ -3813,6 +3955,48 @@ local function bind_buttons(element_name, use_down)
     end
 end
 
+-- Describe only recognized extra mouse actions; names and live status already
+-- belong to the controls. Unknown replacements produce no tooltip.
+local function control_tooltip(name, omit_wheel)
+    local parts = {}
+    local function matches(action, expected)
+        local command = user_opts[name .. "_" .. action .. "_command"] or ""
+        command = command:gsub("^no%-osd ", ""):gsub("^osd%-msg ", "")
+        return command == expected
+    end
+    local function add(action, expected, text)
+        if matches(action, expected) then parts[#parts + 1] = text end
+    end
+    if name == "title" then
+        add("mbtn_right", "script-binding playback_feedback/open-media-path", state.is_url and "右键打开来源页" or "右键定位文件")
+    elseif name == "sub_track" then
+        for _, entry in ipairs({{"mbtn_mid", "中键"}, {"mbtn_right", "右键"}}) do
+            add(entry[1], "script-binding subtitle_controls/toggle", entry[2] .. "显隐")
+            add(entry[1], "script-binding subtitle_controls/select", entry[2] .. "选择字幕")
+            add(entry[1], "script-binding subtitle_controls/adjust-mode", entry[2] .. "调整字幕")
+        end
+    elseif name == "vol_ctrl" then
+        for _, entry in ipairs({{"mbtn_mid", "中键"}, {"mbtn_right", "右键"}}) do
+            add(entry[1], "cycle mute", entry[2] .. "静音")
+            add(entry[1], "set volume 100", entry[2] .. "100%")
+            add(entry[1], "script-binding select/select-aid", entry[2] .. "选择音轨")
+        end
+    elseif name == "speed" then
+        if matches("mbtn_right", "set speed 1") or matches("mbtn_right", "script-message-to playback_feedback set-speed 1") then
+            parts[#parts + 1] = "右键恢复1×"
+        end
+        if not omit_wheel and ((matches("wheel_up", "add speed 0.25") and matches("wheel_down", "add speed -0.25"))
+            or (matches("wheel_up", "script-message-to playback_feedback add-speed 0.25")
+                and matches("wheel_down", "script-message-to playback_feedback add-speed -0.25"))) then
+            parts[#parts + 1] = "滚轮±0.25×"
+        end
+    elseif name == "screenshot" then
+        add("mbtn_right", "script-binding capture_controls/clip-point", "右键标记A/B")
+        add("mbtn_mid", "script-binding capture_controls/open-folder", "中键输出目录")
+    end
+    if #parts > 0 then return table.concat(parts, " · ") end
+end
+
 -- format seconds into a time string
 format_time = function(seconds)
     if not seconds then return "--:--" end
@@ -3974,6 +4158,7 @@ local function osc_init()
         local t = make_escaped_title(source)
         return user_opts.truncate_title and truncate_title(t, state.title_max_w, osc_styles.title) or t
     end
+    ne.tooltipF = function() return control_tooltip("title") end
     bind_buttons("title")
 
     -- Chapter title
@@ -4070,22 +4255,14 @@ local function osc_init()
     ne.enabled = have_pl or not user_opts.hide_empty_playlist_button
     ne.off = not have_pl and user_opts.gray_empty_playlist_button
     ne.content = icons.playlist
-    ne.tooltipF = "Playlist"
     ne.nothingavailable = locale.no_playlist
     bind_buttons("playlist")
-
-    -- track tooltip helper
-    local function track_tooltip(label, track_type, id_prop, count)
-        local prop = mp.get_property("current-tracks/" .. track_type .. "/title") or mp.get_property("current-tracks/" .. track_type .. "/lang") or locale.unknown
-        return label .. " [" .. mp.get_property_number(id_prop, "-") .. "/" .. count .. "] [" .. prop .. "]"
-    end
 
     --audio_track
     ne = new_element("audio_track", "button")
     ne.enabled = state.audio_track_count > 0
     ne.off = state.audio_track_count == 0 or not mp.get_property_native("aid")
     ne.content = icons.audio
-    ne.tooltipF = function () return track_tooltip(locale.audio, "audio", "aid", state.audio_track_count) end
     ne.nothingavailable = locale.no_audio
     bind_buttons("audio_track")
 
@@ -4102,8 +4279,8 @@ local function osc_init()
     end
     ne.off = not selected_subtitle or not mp.get_property_bool("sub-visibility", true)
     ne.content = icons.subtitle
-    ne.tooltipF = ne.off and "Subtitle Off" or "Subtitles"
-    ne.nothingavailable = "No subtitles"
+    ne.tooltipF = control_tooltip("sub_track")
+    ne.nothingavailable = locale.no_subs
     bind_buttons("sub_track")
 
     -- vol_ctrl
@@ -4114,12 +4291,8 @@ local function osc_init()
         local volume = state.volume
         return state.mute and icons.volume_mute or (volume >= 75 and icons.volume_high) or (volume >= 25 and icons.volume_low) or icons.volume_quiet
     end
-    ne.tooltipF = function ()
-        local volume = state.volume
-        -- show only one decimal, if decimals exist
-        local volume_str = (volume % 1 == 0) and string.format("%.0f", volume) or string.format("%.1f", volume)
-        return locale.volume .. ": " .. volume_str .. (state.mute and " (" .. locale.muted .. ")" or "")
-    end
+    ne.tooltipF = function(omit_wheel) return control_tooltip("vol_ctrl", omit_wheel) end
+    ne.popover_hint = true
     bind_buttons("vol_ctrl")
 
     --volumebar
@@ -4169,7 +4342,6 @@ local function osc_init()
     -- zoom out icon
     ne = new_element("zoom_out_icon", "button")
     ne.content = icons.zoom_out
-    ne.tooltipF = locale.zoom_out
     ne.eventresponder["mbtn_left_up"] = function () zoom_step(-0.05) end
     ne.eventresponder["mbtn_right_up"] = function () mp.commandv("osd-msg", "set", "video-zoom", 0) end
     ne.eventresponder["wheel_up_press"] = function () zoom_step(0.05) end
@@ -4198,7 +4370,6 @@ local function osc_init()
     -- zoom in icon
     ne = new_element("zoom_in_icon", "button")
     ne.content = icons.zoom_in
-    ne.tooltipF = locale.zoom_in
     ne.eventresponder["mbtn_left_up"] = function () zoom_step(0.05) end
     ne.eventresponder["mbtn_right_up"] = function () mp.commandv("osd-msg", "set", "video-zoom", 0) end
     ne.eventresponder["wheel_up_press"] = function () zoom_step(0.05) end
@@ -4207,40 +4378,33 @@ local function osc_init()
     --fullscreen
     ne = new_element("fullscreen", "button")
     ne.content = function() return state.fullscreen and icons.fullscreen_exit or icons.fullscreen end
-    ne.tooltipF = function() return state.fullscreen and locale.fullscreen_exit or locale.fullscreen end
     bind_buttons("fullscreen")
 
     --info
     ne = new_element("info", "button")
     ne.content = icons.info
-    ne.tooltipF = locale.stats_info
     bind_buttons("info")
 
     --ontop
     ne = new_element("ontop", "button")
     ne.content = function () return not state.ontop and icons.ontop_on or icons.ontop_off end
-    ne.tooltipF = function ()
-        if user_opts.ontop_in_topbar and window_controls_enabled() and state.ontop then return nil end
-        return state.ontop and locale.ontop_disable or locale.ontop
-    end
     bind_buttons("ontop")
 
     --screenshot
     ne = new_element("screenshot", "button")
     ne.content = icons.screenshot
-    ne.tooltipF = locale.screenshot
+    ne.tooltipF = function() return control_tooltip("screenshot") end
+    ne.popover_hint = true
     bind_buttons("screenshot")
 
     --file_loop
     ne = new_element("file_loop", "button")
     ne.content = function() return state.file_loop and icons.loop_on or icons.loop_off end
-    ne.tooltipF = function() return state.file_loop and locale.file_loop_enable or locale.file_loop_disable end
     bind_buttons("file_loop")
 
     --shuffle
     ne = new_element("shuffle", "button")
     ne.content = function() return state.shuffled and icons.shuffle_on or icons.shuffle_off end
-    ne.tooltipF = function() return state.shuffled and locale.shuffle or locale.unshuffle end
     ne.eventresponder["mbtn_left_up"] = function()
         mp.commandv("show-text", state.shuffled and locale.unshuffle or locale.shuffle, "-1", "1")
         state.shuffled = not state.shuffled
@@ -4263,7 +4427,8 @@ local function osc_init()
     --speed
     ne = new_element("speed", "button")
     ne.content = function() return "× " .. string.format(state.speed % 1 == 0 and "%.1f" or "%g", state.speed) end
-    ne.tooltipF = locale.speed_control
+    ne.tooltipF = function(omit_wheel) return control_tooltip("speed", omit_wheel) end
+    ne.popover_hint = true
     bind_buttons("speed")
     if user_opts.layout == "default" then
         ne.eventresponder.mbtn_left_up = function() set_popover("speed") end
@@ -4272,7 +4437,6 @@ local function osc_init()
     --download
     ne = new_element("download", "button")
     ne.content = function () return state.downloading and icons.downloading or icons.download end
-    ne.tooltipF = function () return state.downloading and locale.downloading .. "..." or locale.download .. " (" .. state.file_size_normalized .. ")" end
     ne.eventresponder["mbtn_left_up"] = function ()
         local localpath = mp.command_native({"expand-path", user_opts.download_path})
 
@@ -4318,7 +4482,6 @@ local function osc_init()
         local number, unit = utils.format_bytes_humanized(dmx_speed):match("([%d%.]+)%s*(%S+)")
         return cache_info .. "\\N" .. string.format("%8s %4s/s", number or 0, unit or "B")
     end
-    ne.tooltipF = function() return cache_enabled() and locale.cache or nil end
     ne.eventresponder["mbtn_left_up"] = function() mp.command("script-binding stats/display-page-3") end
 
     --seekbar
@@ -4464,6 +4627,7 @@ local function osc_init()
 
     -- Time codes display
     ne = new_element("time_codes", "button")
+    ne.tooltipF = "右键复制时间"
     ne.content = function()
         local playback_time = mp.get_property_number("playback-time", 0)
         if not state.duration then return "--:--" end
@@ -5027,7 +5191,9 @@ tick = function()
             ass:new_event()
             ass:pos(display_w / 2, icon_y + 65)
             ass:an(8)
-            ass:append("{\\fs24\\1c&HFFFFFF&}" .. locale.idle)
+            -- Fit the two short idle lines even in a portrait window.
+            local idle_fs = math.min(24, math.max(8, (display_w - 24) / 17))
+            ass:append(string.format("{\\fs%.1f\\q2\\1c&HFFFFFF&}", idle_fs) .. locale.idle)
             set_osd(state.logo_osd, display_w, display_h, ass.text, -1000)
         end
 

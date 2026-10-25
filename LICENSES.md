@@ -29,6 +29,10 @@
 - `config/helpers/media-info-window.ps1`
 - `config/helpers/media-path-action.ps1`
 - `config/helpers/playlist-window.ps1`
+- `config/scripts/user-shortcuts.lua`
+- `config/script-modules/user-shortcuts.lua`
+- `config/helpers/shortcuts-window.ps1`
+- `config/helpers/shortcut-key-names.cs`
 - `config/input.conf`
 - `config/mpv.conf`
 - `config/mpvnet.conf`
@@ -52,3 +56,8 @@
 - `tools/install.ps1`
 - `tools/installer.ps1`
 - `tools/restore.ps1`
+- `tools/legacy-releases.json`
+- `tools/legacy-install.psm1`
+- `tools/prepare-legacy.ps1`
+- `tools/maintenance.psm1`
+- `tools/maintain.ps1`

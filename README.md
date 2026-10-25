@@ -4,25 +4,36 @@
 
 在 mpv.net 和 ModernZ 的基础上，调整控制栏与交互方式，开发独立播放列表、字幕调整、截图与片段导出等功能，并整理快捷键、操作反馈和画面增强预设。
 
-当前版本：**0.2.0**。兼容基线为 mpv.net 7.1.2 / libmpv 0.41，其他版本和显示环境需自行确认。
+当前版本：**0.3.0**。下载 [完整安装包](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.3.0/mpvnet-kit-0.3.0.zip)，或查看 [Release 说明](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.3.0)。
+
+当前验证基线为 mpv.net 7.1.2 / libmpv 0.41。版本变化见[变更记录](CHANGELOG.md)。
 
 ![mpvnet-kit 主界面](assets/screenshots/overview.png)
 
 ## 主要特性
 
-- **提供简洁、干净、实用、高效的 GUI 体验**：基于 ModernZ 整理控制栏布局、图标与提示，将速度、音量、画面增强和截图格式放入悬停浮层；配合自动隐藏、本地缩略图、章节与时间预览，让常用操作集中在视频周围。
-- **实用好用的鼠标、快捷键与操作反馈**：梳理播放、定位、字幕和音频操作，提供长按空格临时加速、分级跳转、逐帧、标记与循环；用简短文字和按钮状态反馈显示操作结果。
-- **独立于视频窗口的 Playlist GUI**：播放列表以独立侧窗展示，跟随主窗口位置，支持搜索、拖动排序、追加文件和双击切换；可自动补充同目录的同类媒体，方便连续观看。
+- **集中的控制栏与清晰提示**：基于 ModernZ 整理控制栏布局、图标与提示，将速度、音量、画面增强和截图格式放入悬停浮层；配合自动隐藏、本地缩略图、章节与时间预览，让常用操作集中在视频周围。
+- **鼠标操作与快捷键**：梳理播放、定位、字幕和音频操作，提供长按空格临时加速、分级跳转、逐帧、标记与循环；用简短文字和按钮状态反馈显示操作结果。
+- **用户快捷键窗口**：从右键菜单“工具与设置 → 用户快捷键”打开，按 9 类浏览 194 项功能，每项最多绑定两组快捷键；支持搜索、冲突检查和恢复默认，个人键位独立保存。
+- **安装、更新与还原**：图形安装器自动识别配置目录，更新前备份相关文件，并提供还原入口；遇到文件冲突时停止，不自动合并个人修改。
+- **独立播放列表窗口**：播放列表以独立侧窗展示，跟随主窗口位置，支持搜索、拖动排序、追加文件和双击切换；可自动补充同目录的同类媒体，方便连续观看。
 - **按需切换的画面增强**：默认 Original，可恢复当前媒体的原生渲染基准；提供配置好的 Scaling 缩放、Deband 去色带和 Anime4K-L/S 增强预设方案，保持原帧率。
-- **方便实用的观看体验**：
-    - **截图分享**：同时支持动态静态截取；可快速截取源 PNG 截图直接复制到剪贴板；支持标记两端时间，选择 MP4、WebP、GIF 中一种导出并复制到剪贴板；支持截取内容按媒体标题整理输出目录。
+- **常用观看工具**：
+    - **截图分享**：支持源 PNG 截图，以及按起止时间导出 MP4、WebP 或 GIF；结果可复制到剪贴板，输出按媒体标题整理。
     - **字幕调整**：支持快速调整延迟、位置和大小；支持快速复制当前字幕文本、按字幕时间定位。
     - **网页调起兼容**：可配合用户自行配置的 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player)、[URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler)，从浏览器调用 mpv.net。
     - **Bilibili 弹幕接入**：随包提供基于 [MPV-Play-BiliBili-Comments](https://github.com/itKelis/MPV-Play-BiliBili-Comments) 的兼容脚本及控制配置，无需重复安装原版；准备 Python 后，可在弹幕数据可用时加载、显示与调整弹幕。
 
 具体按钮、快捷键和使用条件见[功能与操作指南](docs/features.md)。
 
-![控制栏交互演示](assets/screenshots/controls.png)
+![音量、倍速、画面增强、复制格式与本地缩略图](assets/screenshots/controls.png)
+
+<details>
+<summary>用户快捷键窗口</summary>
+
+![用户快捷键窗口](assets/screenshots/hotkey.png)
+
+</details>
 
 <details>
 <summary>更多演示：播放列表、字幕调整与片段截取</summary>
@@ -35,49 +46,51 @@
 
 ![片段截取演示](assets/screenshots/capture.webp)
 
-演示已缩短操作之间的等待时间。
+动图选取 3:00–8:00 的片段，展示 A、B 标记及导出时的区间染色；等待时间已压缩。
 
 </details>
 
-## 快速安装
+## 安装与更新
 
-1. 需要自行安装 [mpv.net](https://github.com/mpvnet-player/mpv.net/releases)。
-2. （**推荐**）安装 [FFmpeg](https://www.ffmpeg.org/download.html) 和 [Python](https://www.python.org/downloads/windows/)，分别用于片段导出和弹幕转换。
-3. 从 [v0.2.0 Release](https://github.com/Takkoury/mpvnet-kit/releases/tag/v0.2.0) 下载 [mpvnet-kit-0.2.0.zip](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.2.0/mpvnet-kit-0.2.0.zip)，解压到独立目录，退出受影响的播放器。
-4. 如果已有配置或脚本，请先自行备份并处理，安装器不会覆盖或合并它们，播放器状态和缓存可保留。
-5. 双击 `Install.cmd`，点击 “浏览…” 选择 `mpvnet.exe`，等待自动检查，核对目录后点击右下角“确认安装”。完成后自行启动播放器。
-6. （**推荐**）按 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 的说明，自行配置浏览器脚本及配套的 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler)，将播放器路径指向自己的 `mpvnet.exe`，实现网页视频快速调起。
+以下步骤适用于 [0.3.0 完整安装包](https://github.com/Takkoury/mpvnet-kit/releases/download/v0.3.0/mpvnet-kit-0.3.0.zip)。
 
-安装版和便携版均可使用，只需选择播放器，配置目录会自动识别。
+1. 自行安装 [mpv.net](https://github.com/mpvnet-player/mpv.net/releases)。本包不包含播放器。
+2. 将完整安装包解压到独立目录，不要解压到播放器的配置目录中。退出所有 mpv.net 实例。
+3. 双击 `Install.cmd`，点击“浏览…”选择 `mpvnet.exe`。
+4. 等待检查完成，核对配置目录、文件变更和备份位置，再点击“开始安装”或“开始更新”，确认后执行。
+5. 完成后启动播放器，并保留备份目录。需要撤回时，再次打开安装器，选择“还原更新前配置”；首次安装对应“撤销本次安装”。
 
-FFmpeg 和 Python 仅从当前 PATH 查找，不执行或下载程序，未发现不影响基本安装。本机路径可之后手动配置。
+安装版和便携版均可使用。安装器依次检查已有的 `MPVNET_HOME`、播放器旁已有的 `portable_config`，否则使用当前用户 AppData 下的 `mpv.net`。操作前请核对窗口显示的完整目录。
 
-完整步骤、目录规则和重新安装方法见[安装指南](docs/installation.md)。
+**已有配置无需预先清空。** 安装器可识别完整匹配的 v0.1.0、v0.1.1 和 v0.2.0 配置，以及带有安装记录的配置。若配置包文件被修改、缺失或与新增文件重名，会停止并说明原因；请保留现场，按[安装指南](docs/installation.md)处理，不要为通过检查直接删除文件。
+
+独立快捷键设置、本机路径配置及其他个人文件会保留。自动备份只涵盖本次操作涉及的文件，不是整个配置目录的完整副本。
+
+### 可选功能准备
+
+- [FFmpeg](https://www.ffmpeg.org/download.html)：用于片段导出。
+- [Python](https://www.python.org/downloads/windows/)：用于弹幕转换。
+- 网页视频调起：按 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 和 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler) 的说明配置，将播放器路径指向自己的 `mpvnet.exe`。
+
+安装器仅从当前 PATH 查找 FFmpeg 和 Python，不执行或下载程序；缺少它们不影响基本安装。本机路径可按[配置说明](docs/configuration.md#3-本机路径与外部组件)单独设置。
 
 ## 文档导航
 
 | 指南 | 内容 |
 | --- | --- |
-| [安装与个人配置维护](docs/installation.md) | 安装准备、图形安装、可选组件和重新安装 |
+| [安装与个人配置维护](docs/installation.md) | 安装准备、更新与还原、冲突处理 |
 | [功能与操作](docs/features.md) | **快捷键**、控制栏、字幕、Playlist、截图与增强 |
 | [配置说明](docs/configuration.md) | 本机路径、外观、键位和个人参数 |
 
 版本变化见[变更记录](CHANGELOG.md)。
 
-## 后续计划
-
-- 提炼、优化视觉规范。
-- 将用户配置层可视化，丰富常用场景下的 GUI 体验（如右键菜单、Playlist、各项功能配置窗口等）。
-- 对弹幕功能进行加强。
-- 丰富画面增强方案，评估基于场景的补帧方案。
-- 丰富其他播放器功能。
-
-## 已知问题与限制
-
-- 网络缩略图默认关闭；网络播放、片段导出和弹幕仍受来源、读取权限及输入数据条件影响。
-- 个人没有实际有效的 HDR 环境，没有针对 HDR 做针对性配置。
-- Anime4K 仅在满足条件的 SDR 素材上启用，HDR 不启用；效果和性能取决于素材与 GPU。
-- 片段导出采用兼容格式，不无损保留 HDR 或原色彩链路。
+## 未来计划
+- 继续完善常用设置和窗口体验
+- 统一所有区域和界面的视觉设计语言
+- 继续评估增强播放的视听体验
+- 增强弹幕相关功能
+- 设计轻量内容文件组织方案
+- 评估实现网络播放相关扩展
 
 ## 致谢与许可
 

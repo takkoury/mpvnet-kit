@@ -29,7 +29,9 @@ local failure_reasons = {
     ['ffmpeg-missing'] = 'FFMPEG NOT FOUND', ['file-missing'] = 'FILE NOT FOUND',
     ['invalid-range'] = 'INVALID RANGE', ['invalid-path'] = 'INVALID PATH',
     ['access-denied'] = 'ACCESS DENIED', ['clipboard'] = 'CLIPBOARD FAILED',
-    ['directory'] = 'FOLDER UNAVAILABLE', ['temporary-file'] = 'TEMP UNAVAILABLE',
+    ['directory'] = 'FOLDER UNAVAILABLE', ['temporary-file'] = 'TEMP UNAVAILABLE · CHECK TEMP FOLDER',
+    ['no-video'] = 'NO VIDEO · OPEN A VIDEO',
+    ['stream-unavailable'] = 'STREAM NOT EXPORTABLE · TRY ANOTHER VIDEO',
     ['save'] = 'CANNOT SAVE FILE', ['encode-mp4'] = 'MP4 ENCODING FAILED',
     ['encode-webp'] = 'WEBP ENCODING FAILED', ['encode-gif'] = 'GIF ENCODING FAILED',
     ['cancelled'] = 'CANCELLED',
@@ -138,9 +140,13 @@ end
 
 local function screenshot()
     if busy then feedback('CAPTURE BUSY'); return end
-    if not mp.get_property_native('video-out-params') then feedback('SCREENSHOT FAILED'); return end
+    if mp.get_property_native('idle-active') or not mp.get_property_native('video-out-params') then
+        report_failure('SCREENSHOT FAILED', {reason = 'no-video'}); return
+    end
     local temp = os.getenv('TEMP') or os.getenv('TMP')
-    if not temp then feedback('SCREENSHOT FAILED'); return end
+    if not temp then
+        report_failure('SCREENSHOT FAILED', {reason = 'temporary-file'}); return
+    end
     pending_png = utils.join_path(temp, 'mpvnet-capture-' .. token() .. '.png')
     local ok, _, err = pcall(mp.command_native, {'screenshot-to-file', pending_png, 'video'})
     if not ok or err or not utils.file_info(pending_png) then
@@ -183,10 +189,14 @@ local function clip_point()
     if not a then a = pos; publish(); feedback('CLIP A ' .. clock(a)); return end
     if pos <= a then feedback('CLIP B MUST BE AFTER A'); return end
     local main = mp.get_property('stream-open-filename') or mp.get_property('path')
-    local video = track_source(selected('video'), main)
+    local video_track = selected('video')
+    if not video_track then report_failure('CLIP FAILED', {reason = 'no-video'}); return end
+    local video = track_source(video_track, main)
     local audio_track = selected('audio')
     local audio = audio_track and track_source(audio_track, main)
-    if not video or (audio_track and not audio) then feedback('CLIP FAILED'); return end
+    if not video or (audio_track and not audio) then
+        report_failure('CLIP FAILED', {reason = 'stream-unavailable'}); return
+    end
     local format = clipboard_format -- Freeze the choice for this asynchronous export.
     local payload = {action = 'clip', title = title(), start = a, finish = pos,
         clipboard_format = format,

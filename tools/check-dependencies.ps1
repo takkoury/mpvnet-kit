@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory=$true)][string]$PlayerPath,
     [string]$ConfigDirectory = '',
-    [string]$PackageRoot = ''
+    [string]$PackageRoot = '',
+    [ValidateSet('Json', 'Text')][string]$OutputFormat = 'Json',
+    [switch]$Details
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'common.psm1') -Force
@@ -42,8 +44,15 @@ try {
     if (-not $PackageRoot) { $PackageRoot = Split-Path -Parent $PSScriptRoot }
     $package = Get-KitPackage $PackageRoot
     $player = Get-KitPlayer $PlayerPath
-    if (-not $ConfigDirectory) { $ConfigDirectory = Join-Path ([IO.Path]::GetDirectoryName($player)) 'portable_config' }
-    $target = Get-KitRoot $ConfigDirectory
+    $context = Get-KitTargetContext -PlayerPath $player -ConfigDirectory $ConfigDirectory
+    $target = $context.target
+    $targetPrefix = $target.TrimEnd('\', '/') + '\'
+    $packagePrefix = $package.root.TrimEnd('\', '/') + '\'
+    if ($targetPrefix.StartsWith($packagePrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        $packagePrefix.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        $player.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Package, target and player paths overlap unsafely.'
+    }
     $local = Read-PathOptions $target 'script-opts/mpvnet-local.conf' @('capture_root', 'ffmpeg_path', 'python_path', 'mpv_path')
     $bili = Read-PathOptions $target 'script-opts/bilibiliAssert.conf' @('python_path')
     $thumb = Read-PathOptions $target 'script-opts/thumbfast.conf' @('mpv_path')
@@ -73,11 +82,12 @@ try {
         Get-KitRoot $local.values['capture_root']
     } else { Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures)) 'Capture' }
     Write-KitResult ([ordered]@{ mode = 'read-only'; verifiedPackageFiles = $package.verifiedFileCount; configDirectory = $target;
+        targetSource = $context.source; targetSourceLabel = $context.sourceLabel; targetExists = $context.targetExists; packageVersion = $package.version;
         player = [ordered]@{ path = $player; fileVersion = $playerVersion; libmpvFileVersion = $mpvVersion; recordedBaselineFamily = 'mpv.net 7.1.2 / libmpv 0.41'; baselineFamilyMatch = [bool]$family };
         powershell = $powershell; winFormsAssemblyAvailable = $forms; thumbnailWorker = $worker; ffmpeg = $ffmpeg; python = $python; captureRoot = $capture;
         effects = [ordered]@{ ffmpegMissing = 'Clip export unavailable; core UI, PNG and folder opening do not require FFmpeg.'; pythonMissing = 'Danmaku conversion unavailable; core UI does not require Python.' };
-        ignoredLocalKeys = $local.ignoredKeys; limitation = 'Static checks only. Unknown versions are unvalidated, and metadata does not prove playback or codec capability.' })
+        ignoredLocalKeys = $local.ignoredKeys; limitation = 'Static checks only. Unknown versions are unvalidated, and metadata does not prove playback or codec capability.' }) -OutputFormat $OutputFormat -Details:$Details
 } catch {
-    Write-KitResult ([ordered]@{ status = 'refused-or-failed'; error = $_.Exception.Message })
+    Write-KitResult ([ordered]@{ status = 'refused-or-failed'; error = $_.Exception.Message }) -OutputFormat $OutputFormat -Details:$Details
     exit 1
 }

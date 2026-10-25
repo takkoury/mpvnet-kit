@@ -8,17 +8,18 @@ local token = string.format('%.0f-%.0f', mp.get_property_number('pid', 0), mp.ge
 local wanted, running, ready, closing = false, false, false, false
 local payload_path, helper_pid
 local forwarded_keys = {}
-local approved_keys = {}
-for _, key in ipairs({
+local default_keys = {
     'd', 'Space', 'Left', 'Right', 'Shift+Left', 'Shift+Right', 'Ctrl+Left', 'Ctrl+Right', ',', '.',
     'Ctrl+r', 'Ctrl+[', 'Ctrl+]', 'Ctrl+BS', 's', 'Alt+s', 'PGUP', 'PGDWN', 'Alt+Left', 'Alt+Right',
     'Alt+BS', 'Ctrl+Shift+s', 'Ctrl+c', 'm', 'M', 'l', 'Ctrl+Shift+l', 'Home', 'End', 'Enter',
-    'Ctrl+t', 'Ctrl+0', 'Ctrl+i', 'Ctrl+m', 'TAB', 'Alt+o', '`', 'Ctrl+Shift+c', 'Ctrl+Shift+v', 'p',
-}) do approved_keys[key] = true end
+    'Ctrl+t', 'Ctrl+0', 'Ctrl+i', 'Ctrl+m', 'Tab', 'Alt+o', '`', 'Ctrl+Shift+c', 'Ctrl+Shift+v', 'p',
+}
+local approved_keys = {}
+for _, key in ipairs(default_keys) do approved_keys[key] = true end
 
 local named_keys = {
     space = 'Space', left = 'Left', right = 'Right', home = 'Home', ['end'] = 'End',
-    enter = 'Enter', ['return'] = 'Enter', bs = 'BS', backspace = 'BS', tab = 'TAB',
+    enter = 'Enter', ['return'] = 'Enter', bs = 'BS', backspace = 'BS', tab = 'Tab',
     pgup = 'PGUP', pageup = 'PGUP', pgdwn = 'PGDWN', pgdown = 'PGDWN', pagedown = 'PGDWN',
     up = 'Up', down = 'Down',
 }
@@ -33,7 +34,9 @@ local function normalize_key(raw)
         if (prefix ~= 'ctrl' and prefix ~= 'alt' and prefix ~= 'shift') or modifiers[prefix] then return end
         modifiers[prefix], raw = true, rest
     end
+    local function_number = tonumber(raw:match('^[fF](%d%d?)$'))
     local base = named_keys[raw:lower()] or (#raw == 1 and raw or nil)
+        or (function_number and function_number >= 1 and function_number <= 24 and ('F' .. function_number))
     if not base then return end
     if base:match('^%a$') and modifiers.shift then
         if modifiers.ctrl or modifiers.alt then base = base:lower()
@@ -271,6 +274,18 @@ mp.add_key_binding(nil, 'previous', function() step(-1) end)
 mp.add_key_binding(nil, 'next', function() step(1) end)
 mp.register_script_message('action', action)
 mp.register_script_message('key', key)
+mp.observe_property('user-data/mpvnet/shortcuts', 'native', function(_, state)
+    local keys = type(state) == 'table' and state.schema == 1
+        and type(state.forward_keys) == 'table' and state.forward_keys or default_keys
+    local updated, changed = {}, false
+    for _, raw in ipairs(keys) do
+        local normalized = normalize_key(raw)
+        if normalized then updated[normalized] = true end
+    end
+    for key in pairs(updated) do if not approved_keys[key] then changed = true end end
+    for key in pairs(approved_keys) do if not updated[key] then changed = true end end
+    if changed then release_keys(); approved_keys = updated end
+end)
 mp.register_script_message('window-hidden', function(received_token)
     if received_token == token then release_keys(); wanted = false; publish() end
 end)

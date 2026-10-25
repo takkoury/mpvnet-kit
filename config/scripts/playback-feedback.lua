@@ -435,6 +435,13 @@ mp.register_event("end-file", function(event)
     frame_pending = false
     release_hold()
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
+    if event.reason == "error" then
+        -- Never echo backend errors: they may contain private paths or URLs.
+        local message = (event.error or event.file_error) == "unrecognized file format"
+            and "UNSUPPORTED FORMAT · TRY ANOTHER FILE"
+            or "PLAYBACK FAILED · CHECK FILE OR URL"
+        mp.osd_message(message, 1)
+    end
 end)
 mp.register_event("file-loaded", function()
     capture_media_origin()

@@ -12,3 +12,6 @@ script-opts/mpvnet-local.conf
 .mpvnet-kit-install.json
 backups/
 test-output/
+
+# User preferences survive managed-file upgrades.
+mpvnet-user.json
