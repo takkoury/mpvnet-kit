@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-import runpy
+
+from support.dev_imports import package_zip, stage_package
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPORT = runpy.run_path(str(ROOT / 'dev-tools/build-package.py'))['export']
 
 class UserPreferencesExport(unittest.TestCase):
     def test_user_state_is_absent_from_distribution(self):
@@ -22,5 +22,21 @@ class UserPreferencesExport(unittest.TestCase):
                 spec = root / 'map.json'
                 spec.write_text(json.dumps({'schema':1,'version':'test','files':[{'source':src,'destination':dst,'component':'author','origin':'test'}]}),encoding='utf-8')
                 with self.assertRaisesRegex(ValueError, 'user preferences must not be exported'):
-                    EXPORT(source,root / 'output',spec,True)
+                    stage_package(source, root / 'output', spec, apply=True)
                 self.assertFalse((root / 'output').exists())
+
+    def test_zip_rejects_user_file_in_an_existing_manifest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'package'
+            source.mkdir()
+            for name in ('config/mpvnet-user.json', 'config/MPVNET-USER.JSON'):
+                with self.subTest(name=name):
+                    (source / 'manifest.json').write_text(json.dumps({
+                        'schema': 1, 'version': 'test',
+                        'files': [{'path': name, 'sha256': '0' * 64}],
+                    }), encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, 'user preferences must not be exported'):
+                        package_zip(source, root / 'trial.zip', apply=True)
+                    self.assertFalse((root / 'trial.zip').exists())
+                    self.assertFalse((root / 'trial.zip.sha256').exists())
