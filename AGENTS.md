@@ -2,6 +2,10 @@
 
 This repository is the single source for mpvnet-kit. Read `CONTRIBUTING.md` before changing package tooling or running maintenance tests. Runtime behavior is documented in `docs/`.
 
+When changing module interfaces, state ownership, or process lifecycles, read [the architecture guide](docs/architecture.md) first. Update it when those boundaries change.
+
+Write end-user documentation in natural, precise Chinese prose. Explain the action, result, and necessary conditions; preserve actual UI labels and commands. Keep internal implementation details in developer documentation, and link to the installation guide for install, update, and restore procedures.
+
 If `AGENTS.local.md` exists, read it for this checkout's private maintenance context. It is optional, ignored by Git, and never required to build or test the project.
 
 - Preserve unrelated edits, unknown files, user configuration, and recovery records. Use new external fixture directories for installer tests; never use a personal player directory as a test target.

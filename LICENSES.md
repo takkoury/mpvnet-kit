@@ -64,6 +64,6 @@
 
 ## 仅源码仓库提供的开发文件
 
-自有的 `AGENTS.md`、`CONTRIBUTING.md`、`dev-tools/` 中的构建脚本与清单、`tests/` 中的测试代码与说明采用 MIT。它们不属于安装包的运行文件清单。
+自有的 `AGENTS.md`、`CONTRIBUTING.md`、`docs/architecture.md`、`dev-tools/` 中的开发脚本与清单、`tests/` 中的测试代码与说明采用 MIT。这些文件仅在源码仓库提供，不随安装包分发。
 
 `tests/fixtures/native-menu.json` 是 mpv.net 原生命令名称的测试快照，来源保留在该文件的 `source` 字段中；未包含上游实现源码。第三方运行代码、许可及演示素材仍按本页前述范围处理。

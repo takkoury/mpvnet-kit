@@ -23,11 +23,13 @@
 
 - `config/`：通用运行配置、脚本及其依赖。
 - `tools/` 和 `Install.cmd`：随安装包交付的安装与维护入口。
-- `dev-tools/`：仅供开发者使用的清单构建和 ZIP 打包工具。
+- `dev-tools/`：仅供开发者使用的测试入口、清单构建和 ZIP 打包工具。
 - `tests/`：回归测试及合成夹具，使用 Python 标准库；部分测试需要 Windows PowerShell 或已有的 Lua 5.1 共享库。
-- `docs/`、`assets/`、`licenses/`：用户指南、演示图片和许可材料。
+- `docs/`、`assets/`、`licenses/`：文档、演示图片和许可材料；开发架构说明仅在源码仓库提供。
 
 构建需要 Python 3；安装测试使用 Windows 自带的 Windows PowerShell。无需下载新的开发框架。具体测试依赖与跳过条件见 [测试说明](tests/README.md)。
+
+修改模块接口、状态归属或进程生命周期前，先读[架构说明](docs/architecture.md)。面向用户的安装、更新和还原步骤统一维护在[安装指南](docs/installation.md)，配置参数与功能操作分别维护在对应指南中。
 
 ## 生成测试包
 
@@ -40,17 +42,27 @@ python -B dev-tools/build-package.py --source . --destination C:/Temp/mpvnet-kit
 
 第一条仅预览，显式 `--dry-run` 与默认行为相同；第二条才写入清单文件及生成的 `manifest.json`。已有受管文件遭外部修改、未知文件碰撞或清单退役项会停止构建，保留现场处理，不整目录覆盖。
 
-本次仓库迁移使用 `0.3.0-migration-test` 标识，正式发行版本仍为 v0.3.0。版本号由清单维护；正式发行前须确认新版本并统一更新版本说明及下载入口。
+当前清单中的 `0.3.0-migration-test` 是开发验证标识，已发行版本仍为 v0.3.0。正式发行前须确认新版本，更新清单中的版本号，并统一版本说明及下载入口。
 
 运行生成目录中的 `Install.cmd` 可试用完整安装器；自动测试使用各自的合成目标。`--apply` 仅授权构建输出，不安装到播放器。
 
 ## 测试
 
+在仓库根目录使用统一入口。无参数时显示帮助；`--list` 只列出测试类与前置条件，不运行测试。允许跳过的项目见下方测试说明。
+
 ```powershell
-python -B -m unittest discover -s tests -v
+python -B dev-tools/run-tests.py
+python -B dev-tools/run-tests.py --list
+python -B dev-tools/run-tests.py --profile core
 ```
 
-Lua 或显式启用的安装测试未配置环境时会报告 `skipped`；不能将跳过视为通过。新包、旧发行以及用户状态保留测试的完整参数见 [测试说明](tests/README.md)。历史发行夹具默认从本仓库已保留的提交读取，不需要另一个代码仓库。
+按改动选择 `core`、`lua`、`helpers` 或 `install`，需要组合时重复 `--profile`，例如：
+
+```powershell
+python -B dev-tools/run-tests.py --profile core --profile lua
+```
+
+入口检查所选测试组的前置条件，并保留原有测试环境变量。缺少必要条件或出现未列入允许范围的跳过时，整次运行失败；报告中应区分通过、失败和允许跳过的项目。测试组范围、环境变量、夹具准备及具体用例说明统一见[测试说明](tests/README.md)。历史发行夹具默认读取本仓库保留的提交，不需要另一个代码仓库。测试使用 Python 标准库，不增加 pytest 或 CI 依赖。
 
 ## ZIP 与发行
 
@@ -60,6 +72,8 @@ python -B dev-tools/prepare-release.py --source C:/Temp/mpvnet-kit-trial/package
 ```
 
 默认检查文件摘要、许可和包内文档链接，`--apply` 才生成 ZIP 及同名 `.sha256` 校验文件。包内容只来自白名单；开发工具、测试、协作说明和本地资料均不交付。
+
+每个工作包使用新的仓外输出目录。已用于交付或留证的候选包、ZIP 和测试目录应保留原样，不将历史证据目录复用为下一次构建目标。
 
 正式发行应从已确认、干净的源码提交生成新包，记录源码提交、manifest 和 ZIP 摘要，核对 ZIP 中的源文件字节与该提交一致。manifest 属于生成结果，单独核对其文件清单及摘要；不再要求整个源码仓库与 ZIP 文件列表相同。
 
