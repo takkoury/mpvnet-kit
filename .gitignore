@@ -15,3 +15,8 @@ test-output/
 
 # User preferences survive managed-file upgrades.
 mpvnet-user.json
+
+# Local collaboration notes and generated package manifests.
+/AGENTS.local.md
+/manifest.json
+/config/mpvnet-user.json

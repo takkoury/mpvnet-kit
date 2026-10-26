@@ -1,0 +1,438 @@
+{
+  "schema": 1,
+  "version": "0.3.0-migration-test",
+  "files": [
+    {
+      "source": "config/input.conf",
+      "destination": "config/input.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/mpvnet.conf",
+      "destination": "config/mpvnet.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/mpv.conf",
+      "destination": "config/mpv.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/playlist-controls.lua",
+      "destination": "config/scripts/playlist-controls.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/subtitle-controls.lua",
+      "destination": "config/scripts/subtitle-controls.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/thumbfast.lua",
+      "destination": "config/scripts/thumbfast.lua",
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast"
+    },
+    {
+      "source": "config/scripts/capture-controls.lua",
+      "destination": "config/scripts/capture-controls.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/modernz.lua",
+      "destination": "config/scripts/modernz.lua",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "config/scripts/enhancement-controls.lua",
+      "destination": "config/scripts/enhancement-controls.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/playback-feedback.lua",
+      "destination": "config/scripts/playback-feedback.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/bilibiliAssert/Danmu2Ass.py",
+      "destination": "config/scripts/bilibiliAssert/Danmu2Ass.py",
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments"
+    },
+    {
+      "source": "config/scripts/bilibiliAssert/main.lua",
+      "destination": "config/scripts/bilibiliAssert/main.lua",
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments"
+    },
+    {
+      "source": "config/scripts/bilibiliAssert/LICENSE",
+      "destination": "config/scripts/bilibiliAssert/LICENSE",
+      "component": "bilibili",
+      "origin": "https://github.com/itKelis/MPV-Play-BiliBili-Comments"
+    },
+    {
+      "source": "config/fonts/modernz-icons.ttf",
+      "destination": "config/fonts/modernz-icons.ttf",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "config/script-opts/enhancement-controls.conf",
+      "destination": "config/script-opts/enhancement-controls.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-opts/thumbfast.conf",
+      "destination": "config/script-opts/thumbfast.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-opts/modernz.conf",
+      "destination": "config/script-opts/modernz.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-opts/bilibiliAssert.conf",
+      "destination": "config/script-opts/bilibiliAssert.conf",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/capture-media.ps1",
+      "destination": "config/helpers/capture-media.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/media-info-window.ps1",
+      "destination": "config/helpers/media-info-window.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/playlist-window.ps1",
+      "destination": "config/helpers/playlist-window.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/media-path-action.ps1",
+      "destination": "config/helpers/media-path-action.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Restore_CNN_Soft_M.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Restore_CNN_Soft_M.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Restore_CNN_VL.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Restore_CNN_VL.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_M.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_M.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_S.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_S.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x2.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x2.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x4.glsl",
+      "destination": "config/shaders/anime4k/Anime4K_AutoDownscalePre_x4.glsl",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "licenses/anime4k/SOURCE.md",
+      "destination": "licenses/anime4k/SOURCE.md",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "licenses/anime4k/LICENSE",
+      "destination": "licenses/anime4k/LICENSE",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K"
+    },
+    {
+      "source": "licenses/thumbfast/LICENSE",
+      "destination": "licenses/thumbfast/LICENSE",
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast"
+    },
+    {
+      "source": "licenses/thumbfast/NOTICE.md",
+      "destination": "licenses/thumbfast/NOTICE.md",
+      "component": "thumbfast",
+      "origin": "https://github.com/po5/thumbfast"
+    },
+    {
+      "source": "licenses/modernz/Material-Symbols-Apache-2.0.txt",
+      "destination": "licenses/modernz/Material-Symbols-Apache-2.0.txt",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "licenses/modernz/Fluent-MIT.txt",
+      "destination": "licenses/modernz/Fluent-MIT.txt",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "licenses/modernz/NOTICE.md",
+      "destination": "licenses/modernz/NOTICE.md",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "licenses/modernz/LICENSE",
+      "destination": "licenses/modernz/LICENSE",
+      "component": "modernz",
+      "origin": "https://github.com/Samillion/ModernZ"
+    },
+    {
+      "source": "README.md",
+      "destination": "README.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "CHANGELOG.md",
+      "destination": "CHANGELOG.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "LICENSES.md",
+      "destination": "LICENSES.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "docs/installation.md",
+      "destination": "docs/installation.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": ".gitignore",
+      "destination": ".gitignore",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-modules/mpvnet-paths.lua",
+      "destination": "config/script-modules/mpvnet-paths.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-opts/mpvnet-local.conf.example",
+      "destination": "config/script-opts/mpvnet-local.conf.example",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": ".gitattributes",
+      "destination": ".gitattributes",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/install.ps1",
+      "destination": "tools/install.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/restore.ps1",
+      "destination": "tools/restore.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/check-dependencies.ps1",
+      "destination": "tools/check-dependencies.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/common.psm1",
+      "destination": "tools/common.psm1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "licenses/anime4k/UNLICENSE",
+      "destination": "licenses/anime4k/UNLICENSE",
+      "component": "anime4k",
+      "origin": "https://github.com/bloc97/Anime4K; AutoDownscalePre file-header Unlicense"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "Install.cmd",
+      "destination": "Install.cmd",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/installer.ps1",
+      "destination": "tools/installer.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/clean-install.psm1",
+      "destination": "tools/clean-install.psm1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "docs/configuration.md",
+      "destination": "docs/configuration.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "docs/features.md",
+      "destination": "docs/features.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "assets/screenshots/overview.png",
+      "destination": "assets/screenshots/overview.png",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained"
+    },
+    {
+      "source": "assets/screenshots/controls.png",
+      "destination": "assets/screenshots/controls.png",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained"
+    },
+    {
+      "source": "assets/screenshots/hotkey.png",
+      "destination": "assets/screenshots/hotkey.png",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit user shortcuts interface screenshot; supplied by maintainer; scope in LICENSES.md"
+    },
+    {
+      "source": "assets/screenshots/playlist.png",
+      "destination": "assets/screenshots/playlist.png",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained"
+    },
+    {
+      "source": "assets/screenshots/subtitle.png",
+      "destination": "assets/screenshots/subtitle.png",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained"
+    },
+    {
+      "source": "assets/screenshots/capture.webp",
+      "destination": "assets/screenshots/capture.webp",
+      "component": "documentation-media",
+      "origin": "mpvnet-kit interface screenshots; Ruri no Houseki demonstration material; source-media rights retained"
+    },
+    {
+      "source": "config/scripts/user-shortcuts.lua",
+      "destination": "config/scripts/user-shortcuts.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-modules/user-shortcuts.lua",
+      "destination": "config/script-modules/user-shortcuts.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/shortcuts-window.ps1",
+      "destination": "config/helpers/shortcuts-window.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/shortcut-key-names.cs",
+      "destination": "config/helpers/shortcut-key-names.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/legacy-releases.json",
+      "destination": "tools/legacy-releases.json",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/legacy-install.psm1",
+      "destination": "tools/legacy-install.psm1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/prepare-legacy.ps1",
+      "destination": "tools/prepare-legacy.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/maintenance.psm1",
+      "destination": "tools/maintenance.psm1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/maintain.ps1",
+      "destination": "tools/maintain.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    }
+  ]
+}
