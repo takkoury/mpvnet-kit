@@ -5,14 +5,14 @@ the new package. Optional MPVNET_LEGACY_RELEASE_REPO defaults to this repository
 All fixtures/evidence remain outside source worktrees. No player is executed.
 """
 import hashlib
-import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import unittest
-import zipfile
+
+from support.install_fixtures import (create_fixture_root, checked_fixture_root, package_directory, powershell_path, load_release_files, run_recorded)
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_BYTES = b'{\r\n "schema":1, "future":{"keep":[null,42]}, "shortcuts":{}\r\n}\r\n'
@@ -42,32 +42,13 @@ class LegacyBackup(unittest.TestCase):
             raise unittest.SkipTest('Set MPVNET_LEGACY_ROOT and MPVNET_LEGACY_PACKAGE')
         if not value or not package:
             raise RuntimeError('Both fixture root and generated package must be supplied')
-        cls.root, cls.package = Path(value), Path(package)
-        for path in (cls.root, cls.package):
-            if not path.is_absolute():
-                raise RuntimeError('Fixture/package paths must be absolute')
-            for p in (path, *path.parents):
-                if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()):
-                    raise RuntimeError('Fixture paths cannot traverse links')
-        cls.root, cls.package = cls.root.resolve(), cls.package.resolve()
-        trees = subprocess.check_output(['git', 'worktree', 'list', '--porcelain'], cwd=ROOT, encoding='utf-8')
-        source_roots = [ROOT, *(Path(x[9:]).resolve() for x in trees.splitlines() if x.startswith('worktree '))]
-        if cls.root.exists() or any(cls.root == p or p in cls.root.parents for p in source_roots):
-            raise RuntimeError('Fixture root must be new and outside source worktrees')
-        if cls.root == cls.package or cls.root in cls.package.parents or cls.package in cls.root.parents:
-            raise RuntimeError('Package and fixture roots must be separate')
-        cls.root.mkdir(parents=True, exist_ok=False)
+        cls.ps = powershell_path()
+        cls.package = package_directory(package)
+        checked_fixture_root(value, ROOT, packages=(cls.package,))
         cls.release_repo = Path(os.environ.get('MPVNET_LEGACY_RELEASE_REPO', ROOT))
-        cls.releases = {}
-        catalog = read(cls.package / 'tools/legacy-releases.json')
-        for release in catalog['releases']:
-            archive = subprocess.check_output(['git', '-C', str(cls.release_repo), 'archive', '--format=zip', release['commit']])
-            with zipfile.ZipFile(io.BytesIO(archive)) as z:
-                cls.releases[release['version']] = {f['path']: z.read('config/' + f['path']) for f in release['files']}
-            for f in release['files']:
-                if digest(cls.releases[release['version']][f['path']]) != f['sha256']:
-                    raise RuntimeError('Catalog is inconsistent with immutable release archive')
-        cls.ps = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        cls.releases = {release['version']: load_release_files(cls.release_repo, release)
+                        for release in read(cls.package / 'tools/legacy-releases.json')['releases']}
+        cls.root = create_fixture_root(value, ROOT, packages=(cls.package,))
 
     def setUp(self):
         self.case = self.root / self._testMethodName
@@ -95,10 +76,8 @@ class LegacyBackup(unittest.TestCase):
         self.calls += 1
         command = [str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                    str((package or self.package) / 'tools' / script), *map(str, args)]
-        result = subprocess.run(command, env=self.env, capture_output=True, timeout=60)
         prefix = self.case / ('call-%02d' % self.calls)
-        prefix.with_suffix('.stdout').write_bytes(result.stdout)
-        prefix.with_suffix('.stderr').write_bytes(result.stderr)
+        result = run_recorded(command, prefix, env=self.env, timeout=60)
         self.assertEqual(result.returncode, expected, result.stderr.decode('utf-8', errors='replace'))
         return result.stdout.decode('utf-8-sig')
 

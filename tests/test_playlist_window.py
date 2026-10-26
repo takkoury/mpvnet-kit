@@ -6,6 +6,8 @@ import subprocess
 import unittest
 import uuid
 
+from support.install_fixtures import (create_fixture_root, powershell_path, run_recorded)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -17,22 +19,14 @@ class PlaylistWindow(unittest.TestCase):
         configured = os.environ.get('MPVNET_TEST_PLAYLIST_ARTIFACTS')
         if not configured:
             raise unittest.SkipTest('Set MPVNET_TEST_PLAYLIST_ARTIFACTS to a unique external artifact directory')
-        output_root = Path(configured)
-        if not output_root.is_absolute():
-            raise RuntimeError('MPVNET_TEST_PLAYLIST_ARTIFACTS must be an absolute path')
-        output_root = output_root.resolve()
-        if output_root == ROOT or ROOT in output_root.parents:
-            raise RuntimeError('MPVNET_TEST_PLAYLIST_ARTIFACTS must be outside the repository')
-        cls.output = output_root / ('tests-' + uuid.uuid4().hex[:10])
-        cls.output.mkdir(parents=True, exist_ok=False)
+        cls.ps = powershell_path()
+        cls.output = create_fixture_root(configured, ROOT, mode='unique')
         cls.helper = ROOT / 'config/helpers/playlist-window.ps1'
 
     def run_fixture(self, name):
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
-                                 '-File', str(ROOT / 'tests/fixtures' / name),
-                                 '-SourcePath', str(self.helper)], capture_output=True, timeout=30)
-        (self.output / (name + '.stdout')).write_bytes(result.stdout)
-        (self.output / (name + '.stderr')).write_bytes(result.stderr)
+        result = run_recorded([str(self.ps), '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+                               '-File', str(ROOT / 'tests/fixtures' / name),
+                               '-SourcePath', str(self.helper)], self.output / name, timeout=30, append_suffix=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
         return json.loads(result.stdout.decode('utf-8-sig'))
 
@@ -69,12 +63,10 @@ class PlaylistWindow(unittest.TestCase):
         payload.write_text(json.dumps(dict({'token': '123-456', 'script': 'playlist_controls',
                                            'visible': False}, **values)), encoding='utf-8')
         environment = dict(os.environ, TEMP=str(self.output), TMP=str(self.output))
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
-                                 '-File', str(self.helper), '-ValidateOnly', '-PayloadPath', str(payload)],
-                                env=environment, capture_output=True, timeout=30)
-        prefix = self._testMethodName + '-' + uuid.uuid4().hex[:6]
-        (self.output / (prefix + '.stdout')).write_bytes(result.stdout)
-        (self.output / (prefix + '.stderr')).write_bytes(result.stderr)
+        prefix = self.output / (self._testMethodName + '-' + uuid.uuid4().hex[:6])
+        result = run_recorded([str(self.ps), '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+                               '-File', str(self.helper), '-ValidateOnly', '-PayloadPath', str(payload)],
+                              prefix, env=environment, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
         return json.loads(result.stdout.decode('utf-8-sig'))
 

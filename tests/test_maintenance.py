@@ -5,14 +5,14 @@ MPVNET_MAINTENANCE_PACKAGE a generated package. Player enumeration is replaced
 inside each disposable test process, never by a public bypass switch.
 """
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
-import zipfile
+
+from support.install_fixtures import (create_fixture_root, checked_fixture_root, package_directory, powershell_path, load_release_files, run_recorded)
 
 ROOT = Path(__file__).resolve().parents[1]
 USER = b'{\r\n "schema":1,"future":{"keep":true},"shortcuts":{}\r\n}\r\n'
@@ -42,26 +42,13 @@ class Maintenance(unittest.TestCase):
             raise unittest.SkipTest('Set MPVNET_MAINTENANCE_ROOT/PACKAGE')
         if not root or not package:
             raise RuntimeError('Both fixture root and package are required')
-        cls.root, cls.package = Path(root), Path(package)
-        for p in (cls.root, cls.package):
-            if not p.is_absolute():
-                raise RuntimeError('Paths must be absolute')
-            if any(a.is_symlink() or (hasattr(a, 'is_junction') and a.is_junction()) for a in (p, *p.parents)):
-                raise RuntimeError('Fixture paths cannot traverse links')
-        cls.root, cls.package = cls.root.resolve(), cls.package.resolve()
-        listed = subprocess.check_output(['git', 'worktree', 'list', '--porcelain'], cwd=ROOT, encoding='utf-8')
-        roots = [ROOT, *(Path(x[9:]).resolve() for x in listed.splitlines() if x.startswith('worktree '))]
-        if cls.root.exists() or any(p == cls.root or p in cls.root.parents for p in roots):
-            raise RuntimeError('Fixture root must be new and outside source worktrees')
-        if cls.package in cls.root.parents or cls.root in cls.package.parents or cls.package == cls.root:
-            raise RuntimeError('Fixture and package roots must be separate')
-        cls.root.mkdir(parents=True, exist_ok=False)
-        cls.ps = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        cls.ps = powershell_path()
+        cls.package = package_directory(package)
+        checked_fixture_root(root, ROOT, packages=(cls.package,))
         release_repo = Path(os.environ.get('MPVNET_LEGACY_RELEASE_REPO', ROOT))
         release = next(r for r in read(cls.package / 'tools/legacy-releases.json')['releases'] if r['version'] == '0.2.0')
-        archive = subprocess.check_output(['git', '-C', str(release_repo), 'archive', '--format=zip', release['commit']])
-        with zipfile.ZipFile(io.BytesIO(archive)) as z:
-            cls.legacy = {f['path']: z.read('config/' + f['path']) for f in release['files']}
+        cls.legacy = load_release_files(release_repo, release)
+        cls.root = create_fixture_root(root, ROOT, packages=(cls.package,))
         cls.runner = cls.root / 'run-maintenance.ps1'
         cls.runner.write_text('''param([string]$PackageRoot,[string]$PlayerPath,[string]$Target,[string]$BackupRoot,
  [string]$Operation='Inspect',[string]$ExpectedPlanToken='', [string]$OutputFormat='Json',[switch]$Details,[switch]$Running)
@@ -103,10 +90,8 @@ exit $LASTEXITCODE
             args += ['-Details']
         if running:
             args += ['-Running']
-        result = subprocess.run(args, env=self.env, capture_output=True, timeout=90)
         p = self.case / ('call-%02d' % self.calls)
-        p.with_suffix('.stdout').write_bytes(result.stdout)
-        p.with_suffix('.stderr').write_bytes(result.stderr)
+        result = run_recorded(args, p, env=self.env, timeout=90)
         self.assertEqual(result.returncode, expected, result.stderr.decode('utf-8', errors='replace'))
         output = result.stdout.decode('utf-8-sig')
         return output if text else json.loads(output)

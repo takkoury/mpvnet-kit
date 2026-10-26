@@ -5,14 +5,11 @@ import unittest
 from lua_runtime import load_lua51
 
 
+from support.lua_source import fragment
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'config/scripts/enhancement-controls.lua'
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
-
-
-def fragment(source, start, end):
-    first = source.index(start)
-    return source[first:source.index(end, first)]
 
 
 class EnhancementControls(unittest.TestCase):

@@ -5,13 +5,10 @@ import unittest
 from lua_runtime import load_lua51
 
 
+from support.lua_source import fragment
+
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
-
-
-def fragment(source, start, end):
-    first = source.index(start)
-    return source[first:source.index(end, first)]
 
 
 class SeekbarMarkers(unittest.TestCase):

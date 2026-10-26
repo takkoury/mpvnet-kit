@@ -5,31 +5,10 @@ import unittest
 
 from lua_runtime import load_lua51
 
+from support.lua_source import fragment, typed_configuration
+
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
-
-
-def fragment(source, start, end):
-    first = source.index(start)
-    return source[first:source.index(end, first)]
-
-
-def configuration():
-    lines = []
-    for line in (ROOT / 'config/script-opts/modernz.conf').read_text(encoding='utf-8').splitlines():
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        key, value = line.split('=', 1)
-        if value in ('yes', 'no'):
-            literal = 'true' if value == 'yes' else 'false'
-        else:
-            try:
-                float(value)
-                literal = value
-            except ValueError:
-                literal = json.dumps(value, ensure_ascii=False)
-        lines.append('user_opts[%s] = %s' % (json.dumps(key), literal))
-    return '\n'.join(lines)
 
 
 class ResponsiveOsc(unittest.TestCase):
@@ -40,7 +19,7 @@ class ResponsiveOsc(unittest.TestCase):
         prelude, cases = (ROOT / 'tests/lua/responsive_osc.lua').read_text(encoding='utf-8').split(
             '-- SOURCE FUNCTIONS ARE INSERTED HERE\n', 1)
         cls.source = '\n'.join([
-            fragment(source, 'local user_opts = {', 'local osc_param = {'), configuration(), prelude,
+            fragment(source, 'local user_opts = {', 'local osc_param = {'), typed_configuration(ROOT / 'config/script-opts/modernz.conf'), prelude,
             fragment(source, 'local function ass_draw_rr_h_cw(', 'local function get_hidetimeout()'),
             fragment(source, 'local function scale_value(', '-- returns the position of an object'),
             fragment(source, 'local function get_time_codes_width()', 'local function mult_alpha('),

@@ -9,16 +9,13 @@ import unittest
 
 from lua_runtime import load_lua51
 
+from support.lua_source import fragment
+
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = ROOT / 'config/scripts/capture-controls.lua'
 HELPER = ROOT / 'config/helpers/capture-media.ps1'
 PLAYBACK = ROOT / 'config/scripts/playback-feedback.lua'
 DANMAKU = ROOT / 'config/scripts/bilibiliAssert/main.lua'
-
-
-def fragment(source, start, end):
-    first = source.index(start)
-    return source[first:source.index(end, first)]
 
 
 class PlaybackEndFeedback(unittest.TestCase):

@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 import unittest
 
+from support.install_fixtures import (create_fixture_root, powershell_path, run_recorded)
+
 ROOT = Path(__file__).resolve().parents[1]
 CASES = (
     'appdata-preview', 'home-priority', 'missing-home-portable',
@@ -28,30 +30,15 @@ class InstallTargets(unittest.TestCase):
         value = os.environ.get('MPVNET_INSTALL_TARGET_ROOT')
         if not value:
             raise unittest.SkipTest('Set MPVNET_INSTALL_TARGET_ROOT to a new external directory')
-        cls.root = Path(value)
-        if not cls.root.is_absolute():
-            raise RuntimeError('Fixture root must be absolute')
-        for p in (cls.root, *cls.root.parents):
-            if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()):
-                raise RuntimeError('Fixture root must not traverse a link')
-        cls.root = cls.root.resolve()
-        worktrees = subprocess.check_output(['git', 'worktree', 'list', '--porcelain'],
-                                            cwd=ROOT, encoding='utf-8')
-        source_roots = [ROOT, *(Path(x[9:]).resolve() for x in worktrees.splitlines()
-                               if x.startswith('worktree '))]
-        if cls.root.exists() or any(p == cls.root or p in cls.root.parents for p in source_roots):
-            raise RuntimeError('Fixture root must be new and outside source worktrees')
-        cls.root.mkdir(parents=True, exist_ok=False)
-        cls.ps = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        cls.ps = powershell_path()
+        cls.root = create_fixture_root(value, ROOT)
 
     def run_case(self, case):
-        result = subprocess.run([
+        result = run_recorded([
             str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
             str(ROOT / 'tests/fixtures/install_target_cases.ps1'),
             '-SourceRoot', str(ROOT), '-CaseRoot', str(self.root / case), '-Case', case,
-        ], capture_output=True, timeout=60)
-        (self.root / (case + '.stdout')).write_bytes(result.stdout)
-        (self.root / (case + '.stderr')).write_bytes(result.stderr)
+        ], self.root / case, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
         data = json.loads(result.stdout.decode('utf-8-sig'))
         self.assertTrue(data['passed'])
@@ -77,12 +64,10 @@ class InstallTargets(unittest.TestCase):
         return case, player, package, target, environment
 
     def invoke_cli(self, script, arguments, environment, case, expected=0):
-        result = subprocess.run([str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                                 '-File', str(ROOT / 'tools' / script),
-                                 *map(str, arguments)], env=environment, capture_output=True, timeout=60)
         evidence = case / ('call-%02d' % len(list(case.glob('call-*.stdout'))))
-        evidence.with_suffix('.stdout').write_bytes(result.stdout)
-        evidence.with_suffix('.stderr').write_bytes(result.stderr)
+        result = run_recorded([str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                               '-File', str(ROOT / 'tools' / script), *map(str, arguments)],
+                              evidence, env=environment, timeout=60)
         self.assertEqual(result.returncode, expected, result.stderr.decode('utf-8', errors='replace'))
         return result.stdout.decode('utf-8-sig')
 

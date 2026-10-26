@@ -3,7 +3,8 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
-from test_responsive_osc import configuration, fragment
+
+from support.lua_source import fragment, typed_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
@@ -17,7 +18,7 @@ class ControlTooltips(unittest.TestCase):
         prelude, cases = (ROOT / 'tests/lua/control_tooltips.lua').read_text(encoding='utf-8').split(
             '-- SOURCE FUNCTIONS ARE INSERTED HERE\n', 1)
         cls.source = '\n'.join([
-            fragment(source, 'local user_opts = {', 'local osc_param = {'), configuration(),
+            fragment(source, 'local user_opts = {', 'local osc_param = {'), typed_configuration(ROOT / 'config/script-opts/modernz.conf'),
             fragment(source, 'local language = {', 'local bidi = {'),
             'local locale = language.default', prelude,
             fragment(source, 'local function mult_alpha(', '-- draw tooltip background box and label'),

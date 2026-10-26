@@ -6,24 +6,10 @@ import unittest
 from lua_runtime import load_lua51
 
 
+from support.lua_source import fragment, string_configuration
+
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
-
-
-def fragment(source, start, end):
-    """Keep source extraction explicit; a changed boundary fails loudly."""
-    first = source.index(start)
-    return source[first:source.index(end, first)]
-
-
-def configuration():
-    values = []
-    for line in (ROOT / 'config/script-opts/modernz.conf').read_text(encoding='utf-8').splitlines():
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        key, value = line.split('=', 1)
-        values.append('user_opts[%s] = %s' % (json.dumps(key), json.dumps(value, ensure_ascii=False)))
-    return '\n'.join(values)
 
 
 class ModernzInteractions(unittest.TestCase):
@@ -37,7 +23,7 @@ class ModernzInteractions(unittest.TestCase):
         prelude, cases = fixture.split('-- SOURCE FUNCTIONS ARE INSERTED HERE\n', 1)
         pieces = [
             fragment(source, 'local user_opts = {', 'local osc_param = {'),
-            configuration(), prelude,
+            string_configuration(ROOT / 'config/script-opts/modernz.conf'), prelude,
             fragment(source, 'local function contains(', 'local thumbfast = {'),
             fragment(source, 'local function get_hitbox_coords(', 'local function limit_range('),
             fragment(source, 'local function new_element(', 'local function add_layout('),

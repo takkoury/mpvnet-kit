@@ -12,6 +12,8 @@ import subprocess
 import unittest
 
 
+from support.install_fixtures import (create_fixture_root, checked_fixture_root, package_directory, powershell_path, run_recorded)
+
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPT = '.mpvnet-kit-install.json'
 USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "play_pause" : "Ctrl+p",'
@@ -27,16 +29,7 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def runtime(package):
-    result = {}
-    for item in read(package / 'manifest.json')['files']:
-        name = item['path']
-        path = PurePosixPath(name)
-        if path.is_absolute() or '..' in path.parts or '\\' in name or ':' in name:
-            raise ValueError('Unsafe package entry: ' + name)
-        if name.startswith('config/') and not name.lower().endswith('.example'):
-            result[name[7:]] = item['sha256']
-    return result
+from support.install_fixtures import runtime_hashes as runtime
 
 
 @unittest.skipUnless(os.name == 'nt', 'Uses the existing Windows PowerShell installer')
@@ -49,38 +42,18 @@ class UserSettingsUpgrade(unittest.TestCase):
             raise unittest.SkipTest('Set MPVNET_USER_UPGRADE_ROOT/OLD_PACKAGE/NEW_PACKAGE')
         if not all(os.environ.get(name) for name in names):
             raise RuntimeError('All three MPVNET_USER_UPGRADE variables are required')
-        paths = [Path(os.environ[name]) for name in names]
-        if not all(path.is_absolute() for path in paths):
-            raise RuntimeError('Upgrade fixture paths must be absolute')
-        for path in paths:
-            if any(p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction())
-                   for p in (path, *path.parents)):
-                raise RuntimeError('Upgrade fixture paths cannot traverse reparse points')
-        cls.root, cls.old, cls.new = (path.resolve() for path in paths)
-        # The explicitly chosen artifact store may itself track management notes.
-        # Exclude this source repository and its worktrees, not every Git ancestor.
-        source_roots = [ROOT]
-        if (ROOT / '.git').exists():
-            listed = subprocess.check_output(['git', 'worktree', 'list', '--porcelain'],
-                                             cwd=ROOT, encoding='utf-8')
-            source_roots.extend(Path(line[9:]).resolve() for line in listed.splitlines()
-                                if line.startswith('worktree '))
-        if cls.root.exists() or any(cls.root == p or p in cls.root.parents for p in source_roots):
-            raise RuntimeError('MPVNET_USER_UPGRADE_ROOT must be new and outside source worktrees')
-        for package in (cls.old, cls.new):
-            if cls.root == package or cls.root in package.parents or package in cls.root.parents:
-                raise RuntimeError('Fixture root and package roots must be separate')
-            if not (package / 'manifest.json').is_file():
-                raise RuntimeError('Missing package manifest: ' + str(package))
+        cls.ps = powershell_path()
+        cls.old = package_directory(os.environ[names[1]])
+        cls.new = package_directory(os.environ[names[2]])
+        cls.root = checked_fixture_root(os.environ[names[0]], ROOT, packages=(cls.old, cls.new))
         cls.old_runtime, cls.new_runtime = runtime(cls.old), runtime(cls.new)
         if not cls.old_runtime or not set(cls.old_runtime) < set(cls.new_runtime):
             raise RuntimeError('Expected an additive upgrade with existing runtime preserved')
         if 'mpvnet-user.json' in cls.new_runtime:
             raise RuntimeError('New package must not manage user settings')
-        cls.root.mkdir(parents=True, exist_ok=False)
+        cls.root = create_fixture_root(cls.root, ROOT, packages=(cls.old, cls.new))
         cls.player = cls.root / 'player-stub.exe'
         cls.player.write_bytes(b'Not executable: installer path validation fixture only.\r\n')
-        cls.ps = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
 
     def setUp(self):
         self.case = self.root / self._testMethodName
@@ -115,11 +88,9 @@ class UserSettingsUpgrade(unittest.TestCase):
     def invoke(self, script, arguments, failure=None, tool_package=None):
         command = [str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                    str((tool_package or self.new) / 'tools' / script), *map(str, arguments)]
-        result = subprocess.run(command, capture_output=True, timeout=60)
         self.calls += 1
         prefix = self.case / ('%02d-%s' % (self.calls, Path(script).name))
-        prefix.with_suffix('.stdout').write_bytes(result.stdout)
-        prefix.with_suffix('.stderr').write_bytes(result.stderr)
+        result = run_recorded(command, prefix, timeout=60)
         parsed = json.loads(result.stdout.decode('utf-8-sig'))
         prefix.with_suffix('.json').write_text(json.dumps({
             'command': command, 'exit_code': result.returncode, 'result': parsed,
