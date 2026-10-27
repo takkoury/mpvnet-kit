@@ -23,6 +23,8 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 项目默认由受管配置文件提供。`mpvnet-user.json` 保存用户快捷键覆盖，`script-opts/mpvnet-local.conf` 保存本机路径；两者都不属于安装器的受管文件集合。快捷键窗口通过互斥锁、原内容比较和原子替换保存；Lua 保存成功后重新读取，其他实例约每秒检查同一文件。未知字段继续保留，损坏文件或不支持的 schema 保持原样。
 
+JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs](../config/helpers/user-preferences-storage.cs) 的 `UserPreferencesStorage` 提供，不依赖 WPF。快捷键 helper 在保存进程和编辑窗口中编译同一份源码；`-Operation Save -RequestPath` 及其 `{ok, error, conflict}` 返回约定保持。当前 `Save` 仍要求 schema 1 和 `shortcuts` 对象；这次提取没有增加常用设置域或本机路径文件的写入能力。后续窗口可复用此存储实现，扩展文档规则须另有对应验证。
+
 播放实例的临时状态与这些长期配置分开。增强选择和导出格式可跨媒体保留，但不跨重启；字幕调整和标记遵从媒体生命周期。观看记录、未知文件和第三方组件数据也不因配置包更新而自动纳管。
 
 安装计划绑定目标目录、包内容、受管文件和恢复记录。统一维护入口的 `Apply`、`Restore`、`Recover` 都要求本次预览的校验值，持锁后再次核对。写入前保存真实备份与日志；恢复只接受日志中记录的操作前后字节，额外修改会阻止恢复。哈希用于一致性检查，不提供对恶意重写整套本地记录的认证。

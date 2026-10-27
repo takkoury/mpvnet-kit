@@ -33,6 +33,7 @@
 - `config/script-modules/user-shortcuts.lua`
 - `config/helpers/shortcuts-window.ps1`
 - `config/helpers/shortcut-key-names.cs`
+- `config/helpers/user-preferences-storage.cs`
 - `config/input.conf`
 - `config/mpv.conf`
 - `config/mpvnet.conf`

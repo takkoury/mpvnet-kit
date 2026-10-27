@@ -405,6 +405,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/user-preferences-storage.cs",
+      "destination": "config/helpers/user-preferences-storage.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "tools/legacy-releases.json",
       "destination": "tools/legacy-releases.json",
       "component": "author",
