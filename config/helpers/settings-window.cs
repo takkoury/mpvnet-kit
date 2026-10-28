@@ -122,7 +122,6 @@ public sealed class SettingsEditor : Window
     readonly List<object> sent = new List<object>();
     readonly Dictionary<string, Control> editors = new Dictionary<string, Control>();
     readonly Dictionary<string, TextBlock> scaleValues = new Dictionary<string, TextBlock>();
-    readonly Dictionary<string, TextBlock> descriptions = new Dictionary<string, TextBlock>();
     readonly Dictionary<string, Button> categories = new Dictionary<string, Button>();
     Dictionary<string, object> latest = new Dictionary<string, object>();
     NamedPipeClientStream pipe; StreamReader reader; StreamWriter writer; Task<string> read;
@@ -241,7 +240,7 @@ public sealed class SettingsEditor : Window
     {
         if (page != id && displayRequested) EndDisplay();
         if (page != id) fullPreview = false;
-        page = id; editors.Clear(); scaleValues.Clear(); descriptions.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
+        page = id; editors.Clear(); scaleValues.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
         previewPane.Visibility = page == "paths" ? Visibility.Collapsed : Visibility.Visible;
         ArrangePreview();
         foreach (var f in model.Fields.Values.Where(x => x.Page == page))
@@ -257,8 +256,6 @@ public sealed class SettingsEditor : Window
             }
             else
             {
-                content.Children.Add(new TextBlock { Text = f.Page == "subtitles" ? "相对原有字幕大小，100% 表示原比例。" : "相对控制栏原有大小，100% 表示原比例。",
-                    Foreground = Brush("#bcbcbc"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
                 var slider = new Slider { Minimum = f.SliderMin * 100, Maximum = f.SliderMax * 100,
                     SmallChange = f.Step * 100, LargeChange = f.Step * 100, TickFrequency = f.Step * 100,
                     IsSnapToTickEnabled = true, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 4) };
@@ -280,8 +277,6 @@ public sealed class SettingsEditor : Window
             title.Target = input; System.Windows.Automation.AutomationProperties.SetName(input, f.Label);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id);
             editors.Add(f.Id, input);
-            var detail = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brush("#bcbcbc"), Margin = new Thickness(0, 0, 0, 8) };
-            descriptions.Add(f.Id, detail); content.Children.Add(detail);
             if (f.Page != "paths")
             {
                 var preview = Button("重新预览", delegate { Preview(field); }); preview.HorizontalAlignment = HorizontalAlignment.Left;
@@ -402,42 +397,31 @@ public sealed class SettingsEditor : Window
         }
         syncing = false;
     }
-    static string Status(string value)
-    {
-        switch (value) { case "preview": return "正在预览，仅此播放器"; case "pending-media": return "下一媒体生效";
-            case "pending-restart": return "重启播放器后生效"; case "apply-failed": return "应用失败"; case "effective": return "已生效"; default: return "等待播放器状态"; }
-    }
     void Refresh()
     {
         foreach (var item in categories) { item.Value.Content = SettingsDraft.PageName(item.Key) + (model.Dirty(item.Key) ? " *" : ""); item.Value.BorderBrush = Brush(item.Key == page ? "#1287bb" : "#555555"); }
-        foreach (var item in descriptions)
-        {
-            var f = model.Fields[item.Key];
-            item.Value.Text = "已保存：" + DisplayField(f, f.Saved) + "    当前：" + DisplayField(f, f.Effective) + "\n" + Status(f.Status) +
-                (f.Override ? "" : " · 沿用默认") + (f.ApplyError.Length > 0 ? "\n" + f.ApplyError : "") +
-                (f.Page == "paths" ? "\n留空沿用默认路径。" : "\n默认：" + DisplayField(f, f.Default) + "（" + f.Source + "）");
-        }
         foreach (var item in scaleValues)
         {
-            var f = model.Fields[item.Key]; double number;
+            var f = model.Fields[item.Key];
             item.Value.Text = DisplayField(f, f.Text);
-            if (Double.TryParse(f.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out number) && (number < f.SliderMin || number > f.SliderMax))
-                item.Value.Text += "（已保留原值；滑块常用范围 " + (f.SliderMin * 100) + "%–" + (f.SliderMax * 100) + "%，移动后采用新值）";
         }
         string error = SettingsDraft.Str(latest, page == "paths" ? "paths_error" : "error");
         string revision = SettingsDraft.Str(latest, page == "paths" ? "paths_revision" : "revision");
         string baseline; bool stale = model.Revisions.TryGetValue(page, out baseline) && baseline != revision;
         string noticeText = localError.Length > 0 ? localError : error.Length > 0 ? error :
             stale && model.Dirty(page) ? "配置已被其他窗口修改。草稿已保留；撤销本页修改可载入最新值。" :
-            saving ? "正在保存，请稍候…" : model.Dirty(page) ? "本页有未保存修改。" : "本页没有未保存修改。";
+            saving ? "正在保存…" : "";
         if (!saving && localError.Length == 0 && SettingsDraft.Str(latest, "save_page") == page && serial > 0)
         {
             string saveError = SettingsDraft.Str(latest, "save_error");
             if (saveError.Length > 0) noticeText += "\n" + saveError;
-            else if (SettingsDraft.Flag(latest, "save_ok")) noticeText += "\n已保存。生效情况见各项说明。";
+            else if (SettingsDraft.Flag(latest, "save_ok") && !model.Dirty(page) && noticeText.Length == 0) noticeText = "已保存。";
         }
+        foreach (var f in model.Fields.Values.Where(f => f.Page == page && f.ApplyError.Length > 0))
+            noticeText += "\n" + f.Label + "：" + f.ApplyError;
         string previewError = SettingsDraft.Str(latest, "preview_error"); if (previewError.Length > 0) noticeText += "\n" + previewError;
-        notice.Text = noticeText;
+        notice.Text = noticeText.Trim();
+        notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         bool valid = model.Fields.Values.Where(f => f.Page == page).All(f => { object v; return model.TryValue(f, out v); });
         save.IsEnabled = !saving && !disconnected && model.Dirty(page) && !stale && error.Length == 0 && valid;
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));

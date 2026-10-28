@@ -196,8 +196,7 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['drafts']['sub-scale']['text'], '3')
         self.assertEqual(data['dirty_pages'], [])
         self.assertEqual(data['sent'], [])
-        self.assertIn('300%', data['scale_labels']['sub-scale'])
-        self.assertIn('已保留原值', data['scale_labels']['sub-scale'])
+        self.assertEqual(data['scale_labels']['sub-scale'], '300%')
         changed = self.run_window([dict(op='slide', id='sub-scale', percent=150)], initial)
         self.assertEqual(changed['drafts']['sub-scale']['text'], '1.5')
 
@@ -225,3 +224,10 @@ class SettingsWindow(unittest.TestCase):
     def test_previous_font_size_search_still_finds_subtitle_scale(self):
         data = self.run_window([dict(op='search', text='字号')])
         self.assertEqual(data['search_results'], ['字幕缩放 · 字幕'])
+
+    def test_runtime_failure_remains_visible_without_per_field_descriptions(self):
+        failed = state(save_serial=1, save_page='subtitles', save_ok=True)
+        failed['fields'][0].update(status='apply-failed', apply_error='播放器未能应用此设置')
+        data = self.run_window(initial=failed)
+        self.assertIn('已保存。', data['notice'])
+        self.assertIn('字幕缩放：播放器未能应用此设置', data['notice'])
