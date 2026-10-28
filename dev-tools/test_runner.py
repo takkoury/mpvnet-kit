@@ -31,7 +31,7 @@ PROFILES = {
         'test_failure_feedback.DanmakuFailureFeedback', 'test_modernz.ModernzInteractions',
         'test_playlist_controls.PlaylistControls', 'test_responsive_osc.ResponsiveOsc',
         'test_seekbar_markers.SeekbarMarkers', 'test_subtitle_controls.SubtitleControls',
-        'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings',
+        'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
         'test_capture_single_format.CaptureOutputs', 'test_failure_feedback.CaptureHelperReasons',

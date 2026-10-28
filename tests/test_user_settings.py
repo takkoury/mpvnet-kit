@@ -91,6 +91,12 @@ class UserSettings(unittest.TestCase):
     def test_float32_roundtrip_is_successful_and_preview_ownership_uses_actual_value(self):
         self.run_case('float_roundtrip_accepts_apply_and_keeps_exact_preview_ownership')
 
+    def test_display_preview_accepts_only_the_current_editor_and_known_operations(self):
+        self.run_case('display_preview_token_and_operation_fencing')
+
+    def test_display_preview_finishes_on_close_helper_exit_and_shutdown(self):
+        self.run_case('display_preview_editor_lifecycle')
+
     def test_complete_production_lua_syntax(self):
         for path in ('config/script-modules/user-settings.lua', 'config/scripts/user-settings.lua',
                      'config/scripts/modernz.lua', 'config/scripts/subtitle-controls.lua',

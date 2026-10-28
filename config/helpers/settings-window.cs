@@ -115,6 +115,7 @@ public sealed class SettingsEditor : Window
     readonly string token;
     readonly Process parent;
     readonly DispatcherTimer timer = new DispatcherTimer();
+    readonly SettingsPreview playerPreview = new SettingsPreview();
     readonly List<object> sent = new List<object>();
     readonly Dictionary<string, TextBox> editors = new Dictionary<string, TextBox>();
     readonly Dictionary<string, TextBlock> descriptions = new Dictionary<string, TextBlock>();
@@ -122,9 +123,12 @@ public sealed class SettingsEditor : Window
     Dictionary<string, object> latest = new Dictionary<string, object>();
     NamedPipeClientStream pipe; StreamReader reader; StreamWriter writer; Task<string> read;
     TextBox search; StackPanel content, results; TextBlock notice, heading; Button save, undo, reset;
+    Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage;
     string page = "subtitles", pendingPage, pendingRevision, localError = "";
     int pendingSerial, serial, sequence;
     bool syncing, saving, forceClose, finished, disconnected;
+    bool displayRequested, displayAvailable, selectingPage;
+    DateTime lastDisplayRenew;
     DateTime saveStarted;
     static SolidColorBrush Brush(string value) { return (SolidColorBrush)new BrushConverter().ConvertFromString(value); }
     public SettingsEditor(Dictionary<string, object> request, bool validate, bool hidden)
@@ -170,11 +174,12 @@ public sealed class SettingsEditor : Window
     }
     void Build()
     {
-        Title = "设置 · mpvnet-kit"; Width = 900; Height = 650; MinWidth = 760; MinHeight = 540;
+        Title = "设置 · mpvnet-kit"; Width = 1100; Height = 720; MinWidth = 760; MinHeight = 640;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14; Background = Brush("#111111"); Foreground = Brushes.White;
         Resources = (ResourceDictionary)XamlReader.Parse(@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
 <Style TargetType='Button'><Setter Property='Background' Value='#262626'/><Setter Property='Foreground' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType='Label'><Setter Property='Foreground' Value='White'/></Style>
 <Style TargetType='TextBox'><Setter Property='Background' Value='#1b1b1b'/><Setter Property='Foreground' Value='White'/><Setter Property='CaretBrush' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='8'/><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287bb'/></Trigger></Style.Triggers></Style>
 </ResourceDictionary>");
         var root = new Grid { Margin = new Thickness(24) }; Content = root;
@@ -194,8 +199,23 @@ public sealed class SettingsEditor : Window
             string selected = id; var b = Button(SettingsDraft.PageName(id), delegate { SelectPage(selected); });
             b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Margin = new Thickness(0, 0, 16, 8); nav.Children.Add(b); categories[id] = b;
         }
+        var main = new Grid(); Grid.SetColumn(main, 1); body.Children.Add(main);
+        previewLayout = main;
+        main.ColumnDefinitions.Add(new ColumnDefinition()); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
+        main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition());
+        previewPane = new Grid { Margin = new Thickness(0, 0, 0, 16), VerticalAlignment = VerticalAlignment.Top };
+        previewPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); previewPane.RowDefinitions.Add(new RowDefinition());
+        previewPane.Children.Add(new TextBlock { Text = "当前播放器画面 · 等比例预览", Foreground = Brush("#bcbcbc"), Margin = new Thickness(0, 0, 0, 8) });
+        previewArea = new Border { Height = 230, Background = Brushes.Black, ClipToBounds = true };
+        previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#bcbcbc"), TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16) };
+        previewArea.Child = previewMessage; Grid.SetRow(previewArea, 1); previewPane.Children.Add(previewArea); main.Children.Add(previewPane);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Grid.SetColumn(scroll, 1); body.Children.Add(scroll);
+        settingsScroll = scroll;
+        Grid.SetRow(scroll, 1); main.Children.Add(scroll);
+        SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
+        main.SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
+        StateChanged += delegate { UpdatePlayerPreview(); };
         var panel = new StackPanel(); scroll.Content = panel;
         results = new StackPanel(); panel.Children.Add(results);
         heading = new TextBlock { FontSize = 20, Margin = new Thickness(0, 0, 0, 16) }; panel.Children.Add(heading);
@@ -209,7 +229,10 @@ public sealed class SettingsEditor : Window
     }
     void SelectPage(string id)
     {
+        if (page != id && displayRequested) EndDisplay();
         page = id; editors.Clear(); descriptions.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
+        previewPane.Visibility = page == "paths" ? Visibility.Collapsed : Visibility.Visible;
+        ArrangePreview();
         foreach (var f in model.Fields.Values.Where(x => x.Page == page))
         {
             var field = f;
@@ -222,7 +245,7 @@ public sealed class SettingsEditor : Window
             descriptions.Add(f.Id, detail); content.Children.Add(detail);
             if (f.Page != "paths")
             {
-                var preview = Button("预览", delegate { Preview(field); }); preview.HorizontalAlignment = HorizontalAlignment.Left;
+                var preview = Button("重新预览", delegate { Preview(field); }); preview.HorizontalAlignment = HorizontalAlignment.Left;
                 preview.Margin = new Thickness(0, 0, 0, 20); content.Children.Add(preview);
             }
             input.TextChanged += delegate {
@@ -235,7 +258,25 @@ public sealed class SettingsEditor : Window
                 }
             };
         }
+        selectingPage = true;
         Refresh();
+        UpdatePlayerPreview();
+        selectingPage = false;
+    }
+    void ArrangePreview()
+    {
+        if (previewLayout == null || settingsScroll == null) return;
+        bool wide = (ActualWidth > 0 ? ActualWidth : Width) >= 1000 && page != "paths";
+        previewLayout.ColumnDefinitions[0].Width = wide ? new GridLength(280) : new GridLength(1, GridUnitType.Star);
+        previewLayout.ColumnDefinitions[1].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        previewLayout.RowDefinitions[0].Height = wide ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        previewLayout.RowDefinitions[1].Height = wide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        Grid.SetColumn(previewPane, wide ? 1 : 0); Grid.SetRow(settingsScroll, wide ? 0 : 1);
+        previewPane.Margin = wide ? new Thickness(20, 0, 0, 0) : new Thickness(0, 0, 0, 16);
+        double windowWidth = ActualWidth > 0 ? ActualWidth : Width;
+        double desired = wide ? Math.Max(200, Math.Min(380, (windowWidth - 510) * 9 / 16)) : Math.Max(150, Math.Min(260, ActualHeight * 0.3));
+        if (previewLayout.ActualHeight > 0) desired = Math.Min(desired, Math.Max(80, previewLayout.ActualHeight - (wide ? 36 : 150)));
+        previewArea.Height = desired;
     }
     void Search()
     {
@@ -255,7 +296,37 @@ public sealed class SettingsEditor : Window
         if (saving || disconnected) return;
         object value;
         if (!model.TryValue(f, out value)) { localError = f.Label + "请输入 " + f.Min + " 至 " + f.Max + " 的数值。"; Refresh(); return; }
+        if (f.Page == "controlbar") BeginDisplay();
         Action("preview", f.Id, json.Serialize(value));
+    }
+    void BeginDisplay()
+    {
+        if (disconnected || (!validation && !displayAvailable)) return;
+        Action("preview-display", "controlbar"); displayRequested = true; lastDisplayRenew = DateTime.UtcNow;
+    }
+    void EndDisplay()
+    {
+        if (displayRequested) { try { Action("preview-display", "none"); } catch { } }
+        displayRequested = false;
+    }
+    void DisplayAvailability(bool available)
+    {
+        bool becameAvailable = available && !displayAvailable;
+        displayAvailable = available;
+        if (!available || page != "controlbar") EndDisplay();
+        else if (becameAvailable || selectingPage && !displayRequested) BeginDisplay();
+        else if (displayRequested && (DateTime.UtcNow - lastDisplayRenew).TotalSeconds >= 1)
+        { Action("preview-display", "renew"); lastDisplayRenew = DateTime.UtcNow; }
+    }
+    void UpdatePlayerPreview()
+    {
+        if (previewArea == null || validation) return;
+        bool enabled = page != "paths" && !disconnected;
+        string message = playerPreview.Update(this, previewArea, parent, enabled);
+        bool available = enabled && playerPreview.Visible;
+        previewMessage.Text = message;
+        previewMessage.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        DisplayAvailability(available);
     }
     void Reset() { if (saving) return; model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && page != "paths")) Preview(f); Refresh(); }
     void Revert() { if (saving) return; Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
@@ -331,7 +402,11 @@ public sealed class SettingsEditor : Window
     void Send(object[] command)
     {
         sent.Add(command);
-        if (!validation) writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence }));
+        if (!validation)
+        {
+            try { writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence })); }
+            catch { Disconnect(); }
+        }
     }
     void Action(string operation, params string[] args)
     {
@@ -341,6 +416,7 @@ public sealed class SettingsEditor : Window
     void Disconnect()
     {
         disconnected = true;
+        EndDisplay(); playerPreview.Hide(); displayAvailable = false;
         localError = "播放器连接中断，草稿已保留。请核对保存结果后关闭并重新打开设置。";
         saving = false; Refresh();
     }
@@ -350,6 +426,7 @@ public sealed class SettingsEditor : Window
         {
             if (parent.HasExited) { forceClose = true; Close(); return; }
             if (disconnected) return;
+            UpdatePlayerPreview();
             int count = 0;
             while (read != null && read.IsCompleted && count++ < 64)
             {
@@ -391,13 +468,16 @@ public sealed class SettingsEditor : Window
     {
         if (!forceClose && saving) { e.Cancel = true; return; }
         if (!forceClose && !validation && !ConfirmDiscard()) { e.Cancel = true; return; }
+        EndDisplay(); playerPreview.Hide();
         try { Action("editor-close"); } catch { }
     }
-    public void Finish() { if (finished) return; finished = true; timer.Stop(); if (pipe != null) pipe.Dispose(); parent.Dispose(); }
+    public void Finish() { if (finished) return; finished = true; timer.Stop(); playerPreview.Dispose(); if (pipe != null) pipe.Dispose(); parent.Dispose(); }
     public void Run() { if (noShow) new Application().Run(); else new Application().Run(this); }
     // Exercises the same draft and control event paths, without player/filesystem IO.
     public object Validate(Dictionary<string, object> request)
     {
+        if (request.ContainsKey("validation_width")) Width = Convert.ToDouble(request["validation_width"]);
+        if (request.ContainsKey("validation_height")) Height = Convert.ToDouble(request["validation_height"]);
         State(UserPreferencesStorage.Object(request["validation_state"]));
         object steps;
         if (request.TryGetValue("validation_steps", out steps)) foreach (var entry in (object[])steps)
@@ -409,12 +489,24 @@ public sealed class SettingsEditor : Window
             else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
             else if (op == "save") Save(); else if (op == "reset") Reset(); else if (op == "undo") Revert();
             else if (op == "disconnect") Disconnect();
+            else if (op == "display-available") DisplayAvailability(SettingsDraft.Flag(step, "value"));
             else if (op == "preview") Preview(model.Fields[SettingsDraft.Str(step, "id")]);
         }
-        Measure(new Size(Width, Height)); Arrange(new Rect(0, 0, Width, Height)); UpdateLayout();
+        // NoShow deliberately has no native Window presentation source; measure
+        // its actual content tree rather than assume Window is a visual ancestor.
+        var layoutRoot = (FrameworkElement)Content;
+        layoutRoot.Measure(new Size(Width - 48, Height - 80));
+        layoutRoot.Arrange(new Rect(0, 0, Width - 48, Height - 80)); layoutRoot.UpdateLayout();
+        var previewBounds = previewArea.TransformToAncestor(layoutRoot).TransformBounds(new Rect(previewArea.RenderSize));
+        var saveBounds = save.TransformToAncestor(layoutRoot).TransformBounds(new Rect(save.RenderSize));
         return new { ok = true, shown = IsVisible, page = page, dirty_pages = model.DirtyPages(),
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
+            preview_visible = previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
+            layout_valid = saveBounds.Bottom <= layoutRoot.ActualHeight && saveBounds.Right <= layoutRoot.ActualWidth &&
+                (page == "paths" || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
+            preview_column = Grid.GetColumn(previewPane),
+            preview_fit = SettingsPreview.Fit(new Rect(0, 0, 600, 300), 1920, 1080).ToString(CultureInfo.InvariantCulture),
             search_results = results.Children.OfType<Button>().Select(b => (string)b.Content).ToArray(), sent = sent };
     }
 }

@@ -24,6 +24,7 @@ local msg = require "mp.msg"
 local opt = require "mp.options"
 local utils = require "mp.utils"
 local settings_owner
+local settings_display
 mp.set_property("osc", "no")
 
 -- Parameters
@@ -4698,6 +4699,7 @@ local function hide_osc()
     if thumbfast.width ~= 0 and thumbfast.height ~= 0 then
         mp.commandv("script-message-to", "thumbfast", "clear")
     end
+    if settings_display and settings_display.active() then return end
     -- clear input area immediately so clicks pass through while the bar is
     -- hidden, rather than waiting for the next render tick to do it
     set_virt_mouse_area(0, 0, 0, 0, "input")
@@ -5134,7 +5136,7 @@ local function render()
     end
 
     if state.hide_timer then state.hide_timer.timeout = math.huge end
-    if not state.keeponpause_active then
+    if not state.keeponpause_active and not (settings_display and settings_display.active()) then
         run_autohide("showtime", hide_osc, osc_areas)
     end
     run_autohide("wc_showtime", hide_wc, wc_areas)
@@ -5249,6 +5251,7 @@ local function set_tick_delay(_, display_fps)
 end
 
 mp.register_event("shutdown", function()
+    if settings_display then settings_display.finish() end
     close_popover()
     reset_margins()
     mp.del_property("user-data/osc")
@@ -5262,6 +5265,7 @@ mp.register_event("file-loaded", function()
     if oos == "top" or oos == "both" then show_wc() end
 end)
 mp.register_event("start-file", function()
+    if settings_display then settings_display.finish() end
     if thumbfast.available then mp.commandv("script-message-to", "thumbfast", "clear") end
     cancel_seekbar_drag(false)
     close_popover()
@@ -5269,6 +5273,9 @@ mp.register_event("start-file", function()
     mp.set_property("ab-loop-a", "no")
     mp.set_property("ab-loop-b", "no")
     request_init()
+end)
+mp.register_event("end-file", function()
+    if settings_display then settings_display.finish() end
 end)
 mp.observe_property("track-list", "native", update_tracklist)
 mp.observe_property("sid", "native", request_init)
@@ -5309,8 +5316,12 @@ end)
 observe_cached("border", request_init_resize)
 observe_cached("title-bar", request_init_resize)
 observe_cached("window-maximized", request_init_resize)
-observe_cached("idle-active", request_tick)
+observe_cached("idle-active", function()
+    if state.idle_active and settings_display then settings_display.finish() end
+    request_tick()
+end)
 mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
+    if val and settings_display then settings_display.finish() end
     if val and user_opts.visibility == "auto" and not user_opts.showonselect and not state.keeponpause_active then
         -- clear pending thumbnail
         if thumbfast.width ~= 0 and thumbfast.height ~= 0 then
@@ -5525,6 +5536,68 @@ local function visibility_mode(mode, no_osd)
     request_tick()
 end
 
+-- A display lease keeps the real bottom bar visible for the settings preview.
+-- It never changes visibility preferences or the numeric settings owner.
+local function create_settings_display()
+    local owner,expires
+    local function active() return owner~=nil end
+    local function hold()
+        if active() and not state.idle_active then
+            enable_osc(true)
+            show_osc()
+            -- An already-running fade-out must not finish after we acquire.
+            kill_animation("anitype","anistart","animation")
+            osc_visible(true)
+        end
+    end
+    local function finish(token)
+        if not active() or (token and token~=owner) then return end
+        owner,expires=nil,nil
+        visibility_mode(user_opts.visibility,true)
+        -- Re-evaluate the current pause policy, rather than restoring a stale
+        -- pre-preview snapshot after pause, media or manual changes.
+        if state.pause and user_opts.showonpause and user_opts.visibility~="never" then
+            show_osc()
+        end
+    end
+    local function message(token,operation)
+        if type(token)~="string" or token=="" then return end
+        if active() and mp.get_time()>=expires then finish() end
+        if operation=="begin" then
+            if state.idle_active then return end
+            if active() and owner~=token then finish() end
+            owner,expires=token,mp.get_time()+3
+            hold()
+        elseif operation=="renew" then
+            -- A heartbeat cannot revive a lease revoked by a manual operation,
+            -- media change, expiry or closing/replacing the settings window.
+            if owner==token then expires=mp.get_time()+3 end
+        elseif operation=="end" then finish(token) end
+    end
+    mp.register_script_message("settings-display-preview",message)
+    mp.add_periodic_timer(0.25,function()
+        if active() and mp.get_time()>=expires then finish() end
+    end)
+    return {active=active,hold=hold,finish=finish}
+end
+settings_display=create_settings_display()
+
+local function manual_visibility_mode(mode,no_osd)
+    if mode~="auto" and mode~="always" and mode~="never" and mode~="cycle" then
+        visibility_mode(mode,no_osd)
+        return
+    end
+    local had_lease=settings_display.active()
+    settings_display.finish()
+    -- A manual choice made while keeponpause=both temporarily uses 'always'
+    -- supersedes that earlier restoration point, even for a same-mode choice.
+    if had_lease then
+        state.keeponpause_restore=nil
+        state.keeponpause_active=false
+    end
+    visibility_mode(mode,no_osd)
+end
+
 local function idlescreen_visibility(mode, no_osd)
     if mode == "cycle" then
         mode = user_opts.idlescreen and "no" or "yes"
@@ -5576,9 +5649,10 @@ mp.observe_property("pause", "bool", function(_, enabled)
             if state.wc_visible then state.wc_showtime = now end
         end
     end
+    settings_display.hold()
 end)
 
-mp.register_script_message("osc-visibility", visibility_mode)
+mp.register_script_message("osc-visibility", manual_visibility_mode)
 mp.add_key_binding(nil, "fullscreen-video-double-click", function()
     -- Controls retain their native mouse actions; only the uncovered video toggles fullscreen.
     if (state.osc_visible and mouse_in_area("input"))
@@ -5588,12 +5662,13 @@ mp.add_key_binding(nil, "fullscreen-video-double-click", function()
 end)
 mp.register_script_message("osc-show", show_osc)
 mp.register_script_message("osc-hide", function()
+    settings_display.finish()
     if user_opts.visibility == "auto" then
         hide_osc()
         hide_wc()
     end
 end)
-mp.add_key_binding(nil, "visibility", function() visibility_mode("cycle") end)
+mp.add_key_binding(nil, "visibility", function() manual_visibility_mode("cycle") end)
 mp.add_key_binding(nil, "progress-toggle", function()
     user_opts.persistent_progress = not user_opts.persistent_progress
     state.persistent_progress_toggle = user_opts.persistent_progress
@@ -5696,7 +5771,7 @@ opt.read_options(user_opts, "modernz", function(changed)
     end
     request_tick()
     if changed.visibility then
-        visibility_mode(user_opts.visibility, true)
+        manual_visibility_mode(user_opts.visibility, true)
     end
     request_init()
     if settings_owner then

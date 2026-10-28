@@ -30,12 +30,12 @@ def state(**changes):
 
 @unittest.skipUnless(os.name == 'nt', 'Requires Windows PowerShell/WPF')
 class SettingsWindow(unittest.TestCase):
-    def run_window(self, steps=(), initial=None):
+    def run_window(self, steps=(), initial=None, width=1100, height=720):
         with tempfile.TemporaryDirectory(prefix='mpvnet-settings-window-') as temp:
             request = Path(temp) / 'request.json'
             request.write_text(json.dumps(dict(schema=1, token=TOKEN, script='user_settings',
                 parent_pid=os.getpid(), pipe='fixture-unused', validation_state=initial or state(),
-                validation_steps=list(steps)), ensure_ascii=False), encoding='utf-8')
+                validation_steps=list(steps), validation_width=width, validation_height=height), ensure_ascii=False), encoding='utf-8')
             result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
                 '-File', str(ROOT / 'config/helpers/settings-window.ps1'), '-RequestPath', str(request),
                 '-ValidateOnly', '-NoShow'], capture_output=True, timeout=30)
@@ -149,3 +149,34 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['drafts']['sub-scale']['text'], '1.3')
         self.assertFalse(data['can_save'])
         self.assertIn('连接中断，草稿已保留', data['notice'])
+
+    def test_inline_preview_keeps_aspect_and_only_appearance_pages(self):
+        initial = self.run_window()
+        self.assertTrue(initial['preview_visible'])
+        x, y, width, height = map(float, initial['preview_fit'].split(','))
+        self.assertAlmostEqual(width / height, 16 / 9)
+        self.assertGreater(x, 0)
+        self.assertEqual(y, 0)
+        paths = self.run_window([dict(op='page', page='paths')])
+        self.assertFalse(paths['preview_visible'])
+
+    def test_controlbar_display_released_on_page_change_without_losing_draft(self):
+        data = self.run_window([dict(op='page', page='controlbar'), dict(op='display-available', value=True),
+            dict(op='edit', id='modernz.scalewindowed', text='1.3'), dict(op='page', page='paths')])
+        messages = [c[-1] for c in data['sent'] if c[2] == 'preview-display']
+        self.assertEqual(messages, ['controlbar', 'controlbar', 'none'])
+        self.assertFalse(data['display_requested'])
+        self.assertEqual(data['dirty_pages'], ['controlbar'])
+
+    def test_unavailable_display_ends_lease_but_preserves_drafts(self):
+        data = self.run_window([dict(op='edit', id='modernz.scalewindowed', text='1.3'),
+            dict(op='display-available', value=False)])
+        self.assertEqual([c[-1] for c in data['sent'] if c[2] == 'preview-display'], ['controlbar', 'none'])
+        self.assertEqual(data['drafts']['modernz.scalewindowed']['text'], '1.3')
+
+    def test_preview_and_save_remain_separate_in_wide_and_narrow_layout(self):
+        for width, height, column in [(1100, 720, 1), (1100, 640, 1), (760, 640, 0)]:
+            with self.subTest(width=width, height=height):
+                data = self.run_window(width=width, height=height)
+                self.assertTrue(data['layout_valid'])
+                self.assertEqual(data['preview_column'], column)

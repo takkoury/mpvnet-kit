@@ -15,6 +15,7 @@ try {
         [Windows.Threading.Dispatcher].Assembly.Location)
     Add-Type -ReferencedAssemblies $references -Path @(
         (Join-Path $PSScriptRoot 'user-preferences-storage.cs'),
+        (Join-Path $PSScriptRoot 'settings-preview.cs'),
         (Join-Path $PSScriptRoot 'settings-window.cs'))
     $request = [UserPreferencesStorage]::Request($RequestPath)
     $editor = New-Object SettingsEditor($request, [bool]$ValidateOnly, [bool]$NoShow)

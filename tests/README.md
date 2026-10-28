@@ -24,6 +24,8 @@ python -B dev-tools/run-tests.py --profile core
 
 常用设置基础的 `UserSettings` 归入 lua，覆盖原文补丁、两实例生效、异步通知顺序、媒体代次、手动覆盖及失败恢复；`SettingsStorage`、`SettingsWindow` 归入 helpers，分别验证真实文件保存与 WPF 控件／草稿状态。窗口检查默认不显示，不等同于真实键鼠、观感或跨 DPI 验收。
 
+`SettingsDisplay` 同属 lua，执行实际 ModernZ 的显隐、暂停及临时显示代码，覆盖续期、超时、手动显隐和媒体切换。`SettingsWindow` 另检查预览与保存区在宽窄窗口中不重叠。DWM 实际画面是否包含字幕与控制栏仍须用隔离播放器观察，不能由这些替身测试代替。
+
 ```powershell
 # 使用本机已有的 Lua 5.1 库，不由测试下载或安装。
 $env:MPVNET_TEST_LUA51 = 'C:/path/to/lua51.dll'

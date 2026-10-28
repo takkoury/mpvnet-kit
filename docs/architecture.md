@@ -35,6 +35,10 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。正常关闭有草稿时列出分类并确认放弃，保存期间禁止关闭；IPC 中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)及[窗口](../tests/test_settings_window.py)。
 
+窗口内画面由 [settings-preview.cs](../config/helpers/settings-preview.cs) 注册所属播放器的 DWM 实时缩略图，校验源窗口 PID，将客户区等比例显示在固定预览区域。它复用当前播放器的字幕和 ModernZ 渲染，不另起解码器、不保存截图、不转发预览区域输入。路径页隐藏画面；设置关闭释放 DWM 句柄，源窗口最小化／不可用时隐藏画面并提示。布局按 WPF 逻辑单位转换到目标客户区，真实跨 DPI、特殊渲染器及最小化恢复仍需各自验证。
+
+控制栏页通过 `preview-display(token, controlbar|none|renew)` 请求临时显示。控制层校验当前会话后转发 ModernZ 的 `settings-display-preview(token, begin|end|renew)`；ModernZ 持有3秒显示期限，窗口约每秒续期，续期不能重新创建已撤销的显示状态。此机制不写 visibility 偏好，也不改数值预览所有权。离页、关闭、失联超时、切媒体和显式手动显隐结束临时显示，按当前显隐／暂停策略恢复。只有预览期间的手动显隐会使旧暂停恢复点失效；未使用预览时沿用原行为。显隐回归见 [SettingsDisplay](../tests/test_settings_display.py)。
+
 ### 共享保存与既有模块
 
 项目默认由受管配置文件提供。`mpvnet-user.json` 保存用户快捷键与常用设置覆盖，`script-opts/mpvnet-local.conf` 保存本机路径；两者都不属于安装器的受管文件集合。保存使用互斥锁、原内容比较和原子替换；Lua 保存成功后重新读取，其他实例约每秒检查同一文件。未知字段继续保留，损坏文件或不支持的 schema 保持原样。

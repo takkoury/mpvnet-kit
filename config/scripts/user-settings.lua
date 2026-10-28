@@ -110,6 +110,9 @@ local function launch(helper,operation,path,callback)
     end)
 end
 local function current(received) return not closing and token~='' and received==token end
+local function display_preview(owner,operation)
+    mp.commandv('script-message-to','modernz','settings-display-preview',owner,operation)
+end
 local function retire(owner)
     for _,field in ipairs(model.fields) do
         local value=mp.get_property_native('user-data/mpvnet/settings-runtime/'..field.id) or runtime[field.id] or {}
@@ -213,7 +216,10 @@ local function open()
     local opened_token=token
     editor_running,editor_visible=true,true;publish()
     launch(window,nil,path,function(ok,result)
-        if token==opened_token then retire(opened_token);cancel(nil,opened_token);token='';editor_visible=false end
+        if token==opened_token then
+            display_preview(opened_token,'end')
+            retire(opened_token);cancel(nil,opened_token);token='';editor_visible=false
+        end
         editor_running=false
         if not ok or not result or result.status~=0 then save_error='无法打开设置窗口' end
         publish()
@@ -222,7 +228,15 @@ end
 mp.add_key_binding(nil,'open',open)
 mp.register_script_message('editor-ready',function(received) if current(received) then editor_visible=true;publish() end end)
 mp.register_script_message('editor-close',function(received)
-    if current(received) then retire(received);cancel(nil,received);token='';editor_visible=false;publish() end
+    if current(received) then
+        display_preview(received,'end')
+        retire(received);cancel(nil,received);token='';editor_visible=false;publish()
+    end
+end)
+mp.register_script_message('preview-display',function(received,page)
+    if not current(received) then return end
+    local operation=({controlbar='begin',none='end',renew='renew'})[page]
+    if operation then display_preview(received,operation) end
 end)
 mp.register_script_message('save',save)
 mp.register_script_message('preview',preview)
@@ -250,7 +264,10 @@ for _,field in ipairs(model.fields) do
     end)
 end
 mp.register_event('shutdown',function()
-    if token~='' then cancel(nil,token);mp.commandv('script-message','mpvnet-settings-close',token) end
+    if token~='' then
+        display_preview(token,'end')
+        cancel(nil,token);mp.commandv('script-message','mpvnet-settings-close',token)
+    end
     closing,editor_visible=true,false;token=''
     for path in pairs(owned) do remove_owned(path) end
 end)

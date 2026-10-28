@@ -373,3 +373,40 @@ function corrupt_files_and_conflict_keep_runtime()
     save(host,'subtitles','{"sub-scale":3}');writer('writer-conflict');eq(host.state().save_ok,false)
     eq(host.field('sub-scale').effective,1.25)
 end
+
+local function display_commands(host)
+    local commands={}
+    for _,command in ipairs(host.commands) do
+        if command[1]=='script-message-to' and command[2]=='modernz' and command[3]=='settings-display-preview' then
+            commands[#commands+1]=command
+        end
+    end
+    return commands
+end
+function display_preview_token_and_operation_fencing()
+    local host=instance(61);local token=host.open()
+    host.send('preview-display','foreign','controlbar')
+    host.send('preview-display',token,'subtitles')
+    host.send('preview-display',token,'begin')
+    eq(#display_commands(host),0)
+    for _,operation in ipairs({'controlbar','renew','none'}) do host.send('preview-display',token,operation) end
+    local commands=display_commands(host);eq(#commands,3)
+    eq(commands[1][4],token);eq(commands[1][5],'begin')
+    eq(commands[2][5],'renew');eq(commands[3][5],'end')
+    host.send('editor-close',token)
+    local count=#display_commands(host)
+    host.send('preview-display',token,'controlbar');eq(#display_commands(host),count)
+end
+function display_preview_editor_lifecycle()
+    for index,operation in ipairs({'close','exit','shutdown'}) do
+        local host=instance(61+index);local token=host.open()
+        local editor=requests[#requests]
+        host.send('preview-display',token,'controlbar')
+        if operation=='close' then host.send('editor-close',token)
+        elseif operation=='exit' then editor.callback(true,{status=0})
+        else host.event('shutdown') end
+        local commands=display_commands(host);eq(#commands,2)
+        eq(commands[2][4],token);eq(commands[2][5],'end')
+        host.send('preview-display',token,'controlbar');eq(#display_commands(host),2)
+    end
+end
