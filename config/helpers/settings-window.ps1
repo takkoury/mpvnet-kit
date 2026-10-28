@@ -10,12 +10,15 @@ $outputWriter.AutoFlush = $true
 $editor = $null
 try {
     Add-Type -AssemblyName System.Web.Extensions, PresentationFramework, PresentationCore, WindowsBase
-    $references = @('System.Web.Extensions', 'System.Core', 'System.Xaml',
+    $references = @('System.Web.Extensions', 'System.Core', 'System.Xaml', 'System.Windows.Forms',
         [Windows.Window].Assembly.Location, [Windows.Media.Brushes].Assembly.Location,
         [Windows.Threading.Dispatcher].Assembly.Location)
     Add-Type -ReferencedAssemblies $references -Path @(
         (Join-Path $PSScriptRoot 'user-preferences-storage.cs'),
         (Join-Path $PSScriptRoot 'settings-preview.cs'),
+        (Join-Path $PSScriptRoot 'shortcut-key-names.cs'),
+        (Join-Path $PSScriptRoot 'settings-shortcuts.cs'),
+        (Join-Path $PSScriptRoot 'settings-controls.cs'),
         (Join-Path $PSScriptRoot 'settings-window.cs'))
     $request = [UserPreferencesStorage]::Request($RequestPath)
     $editor = New-Object SettingsEditor($request, [bool]$ValidateOnly, [bool]$NoShow)

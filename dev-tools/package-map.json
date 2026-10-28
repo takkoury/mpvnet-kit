@@ -477,6 +477,18 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/settings-controls.cs",
+      "destination": "config/helpers/settings-controls.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-shortcuts.cs",
+      "destination": "config/helpers/settings-shortcuts.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/helpers/settings-window.cs",
       "destination": "config/helpers/settings-window.cs",
       "component": "author",

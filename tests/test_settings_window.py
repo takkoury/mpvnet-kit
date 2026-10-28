@@ -213,7 +213,7 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['drafts']['modernz.scalewindowed']['text'], '1.3')
 
     def test_preview_and_save_remain_separate_in_wide_and_narrow_layout(self):
-        for width, height, column in [(1100, 720, 1), (1100, 640, 1), (760, 640, 0)]:
+        for width, height, column in [(1100, 720, 0), (1100, 640, 0), (760, 640, 0)]:
             with self.subTest(width=width, height=height):
                 data = self.run_window(width=width, height=height)
                 self.assertTrue(data['layout_valid'])
@@ -297,10 +297,10 @@ class SettingsWindow(unittest.TestCase):
 
     def test_complete_catalog_renders_every_page_with_correct_controls(self):
         expected = {
-            'subtitles': {'slang': 'TextBox', 'sub-visibility': 'ComboBox', 'sub-font': 'TextBox', 'sub-pos': 'SettingsSlider'},
-            'audio': {'alang': 'TextBox', 'volume': 'SettingsSlider', 'mute': 'ComboBox'},
-            'window': {'fullscreen': 'ComboBox', 'ontop': 'ComboBox'},
-            'controlbar': {'modernz.hidetimeout': 'SettingsSlider', 'modernz.keeponpause': 'ComboBox', 'modernz.timems': 'ComboBox'},
+            'subtitles': {'slang': 'Button', 'sub-visibility': 'CheckBox', 'sub-font': 'Button', 'sub-pos': 'SettingsSlider'},
+            'audio': {'alang': 'Button', 'volume': 'SettingsSlider', 'mute': 'CheckBox'},
+            'window': {'fullscreen': 'CheckBox', 'ontop': 'CheckBox'},
+            'controlbar': {'modernz.hidetimeout': 'SettingsSlider', 'modernz.keeponpause': 'ComboBox', 'modernz.timems': 'CheckBox'},
             'decoding': {'hwdec': 'ComboBox'}, 'paths': {'capture_root': 'TextBox'}, 'shortcuts': {}, 'advanced': {}
         }
         for page, controls in expected.items():
@@ -313,12 +313,12 @@ class SettingsWindow(unittest.TestCase):
                 self.assertTrue(data['layout_valid'])
 
     def test_boolean_false_is_explicit_json_false_and_inherit_is_null(self):
-        explicit = self.run_window([dict(op='page', page='window'), dict(op='choose', id='fullscreen', index=2), dict(op='save')], complete_state())
+        explicit = self.run_window([dict(op='page', page='window'), dict(op='choose', id='fullscreen', index=1), dict(op='choose', id='fullscreen', index=2), dict(op='save')], complete_state())
         self.assertIs(json.loads(explicit['sent'][-1][-1])['fullscreen'], False)
         self.assertTrue(explicit['drafts']['fullscreen']['overridden'])
         initial = complete_state()
         next(f for f in initial['fields'] if f['id'] == 'fullscreen').update(saved=True, effective=True, has_override=True)
-        inherited = self.run_window([dict(op='choose', id='fullscreen', index=0), dict(op='save')], initial)
+        inherited = self.run_window([dict(op='inherit', id='fullscreen'), dict(op='save')], initial)
         self.assertIsNone(json.loads(inherited['sent'][-1][-1])['fullscreen'])
         self.assertEqual([c[2] for c in inherited['sent']], ['save'])
 
@@ -361,7 +361,7 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(len(action['action_ids']), 4)
 
     def test_action_buttons_only_send_stable_action_id(self):
-        for page, action in [('shortcuts', 'shortcuts.open'), ('advanced', 'edit.mpv.conf'), ('advanced', 'open.config-folder')]:
+        for page, action in [('advanced', 'edit.mpv.conf'), ('advanced', 'open.config-folder')]:
             with self.subTest(action=action):
                 data = self.run_window([dict(op='page', page=page), dict(op='action', id=action)], complete_state())
                 self.assertEqual(data['sent'][-1][2:], ['open-action', TOKEN, action])
@@ -397,10 +397,48 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['sent'], [])
         self.assertIn('512 字节', data['notice'])
 
-    def test_language_and_font_examples_are_available_only_in_tooltips(self):
+    def test_language_and_font_are_selection_controls_not_raw_input(self):
         subtitles = self.run_window(initial=complete_state())
-        self.assertIn('按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en', subtitles['field_details']['slang'])
-        self.assertIn('填写已安装字体名称，例如 Microsoft YaHei UI', subtitles['field_details']['sub-font'])
-        audio = self.run_window([dict(op='page', page='audio')], complete_state())
-        self.assertIn('按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en', audio['field_details']['alang'])
-        self.assertEqual(audio['notice'], '')
+        self.assertEqual(subtitles['editor_types']['slang'], 'Button')
+        self.assertEqual(subtitles['editor_types']['sub-font'], 'Button')
+        self.assertEqual(subtitles['editor_types']['sub-visibility'], 'CheckBox')
+        self.assertNotIn('填写', subtitles['field_details']['slang'])
+        self.assertNotIn('填写', subtitles['field_details']['sub-font'])
+
+    def test_unrelated_json_revision_preserves_and_rebases_unchanged_page(self):
+        changed = complete_state()
+        changed['revision'] = 'r2'
+        data = self.run_window([dict(op='edit', id='sub-scale', text='1.2'),
+            dict(op='state', state=changed), dict(op='save')], complete_state())
+        self.assertEqual(data['sent'][-1][3:6], [TOKEN, 'r2', 'subtitles'])
+        self.assertEqual(json.loads(data['sent'][-1][-1])['sub-scale'], 1.2)
+
+    def test_global_search_has_visible_text_viewport_and_replaces_content(self):
+        data = self.run_window([dict(op='search', text='音轨')], complete_state())
+        self.assertGreaterEqual(data['search_viewport_height'], 18)
+        self.assertFalse(data['ordinary_content_visible'])
+        self.assertFalse(data['embedded_shortcuts_visible'])
+
+    def test_font_picker_is_in_window_and_searchable(self):
+        data = self.run_window([dict(op='font-picker'), dict(op='picker-query', text='Segoe UI')], complete_state())
+        self.assertTrue(data['overlay_open'])
+        self.assertFalse(data['body_enabled'])
+        self.assertTrue(any('Segoe UI' in name for name in data['picker_items']))
+        self.assertNotIn('Arial', data['picker_items'])
+        self.assertEqual(data['dirty_pages'], [])
+
+    def test_language_buttons_reorder_without_exposing_codes_or_losing_unknowns(self):
+        initial = complete_state()
+        field = next(f for f in initial['fields'] if f['id'] == 'slang')
+        field.update(saved='zh,zho,chi,ja,jpn,x-custom', effective='zh,zho,chi,ja,jpn,x-custom',has_override=True)
+        data = self.run_window([dict(op='invoke-control',name='上移日语')], initial)
+        self.assertEqual(data['drafts']['slang']['text'], 'ja,jpn,zh,zho,chi,x-custom')
+        self.assertEqual(data['dirty_pages'], ['subtitles'])
+
+    def test_embedded_shortcuts_replace_launch_button_and_are_searchable_globally(self):
+        from test_settings_shortcuts import state as shortcut_state
+        data = self.run_window([dict(op='shortcuts-state',state=shortcut_state()),dict(op='page',page='shortcuts')], complete_state())
+        self.assertTrue(data['embedded_shortcuts_visible'])
+        self.assertNotIn('shortcuts.open',data['action_ids'])
+        found = self.run_window([dict(op='shortcuts-state',state=shortcut_state()),dict(op='search',text='静音')], complete_state())
+        self.assertTrue(any('快捷键 / 音频' in item for item in found['search_results']))

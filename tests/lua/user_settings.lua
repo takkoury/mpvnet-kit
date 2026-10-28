@@ -4,6 +4,9 @@ end)()
 local model=(function()
 -- MODEL SOURCE
 end)()
+local package_options={
+-- PACKAGE OPTIONS
+}
 local files,requests,removed={},{},{}
 local config='X:/config/'
 local user_path,local_path=config..'mpvnet-user.json',config..'script-opts/mpvnet-local.conf'
@@ -46,11 +49,12 @@ io.open=function(path,mode)
 end
 os.getenv=function(name) if name=='TEMP' then return 'X:/temp' end end
 os.remove=function(path) removed[#removed+1]=path;files[path]=nil;return true end
-local function instance(pid,order)
+local function instance(pid,order,startup_options)
     local host={properties={pid=pid,['options/input-ipc-server']='',['sub-scale']=1.25,
         ['sub-pos']=80,['sub-font']='Default Font',['sub-visibility']=true,slang='eng',alang='jpn',hwdec='auto-safe',
         volume=75,mute=true,fullscreen=false,ontop=false,['user-data/mpvnet/subtitle-base-pos']=80,sid=1,
         ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},writes={},hooks={},local_options={},osd={},fail=false}
+    for id,value in pairs(startup_options or {}) do host.properties[id]=value end
     local script
     local function get(name,fallback) local value=host.properties[name];if value~=nil then return value end;return fallback end
     local function set(name,value)
@@ -733,4 +737,58 @@ function failed_first_media_initialization_is_not_retried_on_media_change()
     local count=0
     for _,write in ipairs(host.writes) do if write[1]=='volume' or write[1]=='mute' then count=count+1 end end
     eq(count,2)
+end
+
+function package_language_defaults_come_from_actual_startup_configuration()
+    eq(package_options.slang,'zh,zho,chi,ja,jpn,en,eng')
+    eq(package_options.alang,'');eq(package_options['sub-visibility'],true)
+    for _,id in ipairs({'slang','alang','sub-visibility'}) do eq(model.field(id).default,package_options[id]) end
+    for _,order in ipairs({{'user_settings','settings_options'},{'settings_options','user_settings'}}) do
+        local host=instance(101,order,package_options)
+        for id,value in pairs(package_options) do
+            eq(host.field(id).saved,value);eq(host.field(id).default,value)
+            eq(host.field(id).effective,value);eq(host.field(id).has_override,false)
+            eq(host.field(id).default_source,'播放器启动配置')
+        end
+        host.media()
+        eq(host.field('slang').effective,package_options.slang)
+        eq(host.field('alang').effective,'');eq(host.field('sub-visibility').effective,true)
+        -- Inherited preferences do not manufacture a track ID or rewrite a
+        -- per-file choice; mpv owns selection from these startup options.
+        for _,write in ipairs(host.writes) do
+            assert(write[1]~='sid' and write[1]~='aid' and not write[1]:find('file-local-options/',1,true))
+        end
+    end
+end
+
+function language_defaults_preserve_advanced_configuration_and_explicit_empty_values()
+    for _,slang in ipairs({'fr,zh-Hant',''}) do
+        local custom={slang=slang,alang='deu,eng',['sub-visibility']=false}
+        local host=instance(102,{'user_settings','settings_options'},custom)
+        host.media()
+        for id,value in pairs(custom) do
+            eq(host.field(id).default,value);eq(host.field(id).saved,value)
+            eq(host.field(id).effective,value);eq(host.field(id).has_override,false)
+        end
+    end
+    files[user_path]='{"schema":1,"settings":{"slang":"","alang":"custom-Lang,jpn","sub-visibility":false,"future":42}}'
+    local original=files[user_path]
+    local host=instance(103,{'settings_options','user_settings'},package_options)
+    eq(files[user_path],original);eq(host.field('slang').has_override,true)
+    eq(host.field('slang').saved,'');eq(host.field('slang').status,'pending-media')
+    host.hook('on_load')
+    eq(host.field('slang').effective,'');eq(host.field('alang').effective,'custom-Lang,jpn')
+    eq(host.field('sub-visibility').effective,false);eq(files[user_path],original)
+    host.open()
+    save(host,'subtitles','{"slang":null,"sub-visibility":null}');writer('writer-ok')
+    save(host,'audio','{"alang":null}');writer('writer-ok')
+    local doc=assert(model.document(files[user_path],decode,parser))
+    eq(doc.values.slang,nil);eq(doc.values.alang,nil);eq(doc.values['sub-visibility'],nil)
+    assert(files[user_path]:find('"future":42',1,true))
+    eq(host.field('slang').saved,package_options.slang)
+    eq(host.field('slang').effective,'');eq(host.field('sub-visibility').effective,false)
+    eq(host.field('slang').has_override,false)
+    host.media()
+    eq(host.field('slang').effective,package_options.slang)
+    eq(host.field('alang').effective,'');eq(host.field('sub-visibility').effective,true)
 end

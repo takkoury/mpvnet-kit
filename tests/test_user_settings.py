@@ -1,5 +1,6 @@
 """Production settings/controller/feature code with an mpv and IO host double."""
 from pathlib import Path
+import json
 import unittest
 
 from lua_runtime import load_lua51
@@ -12,6 +13,21 @@ class UserSettings(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'tests/lua/user_settings.lua').read_text(encoding='utf-8')
+        package_options = {}
+        for line in (ROOT / 'config/mpv.conf').read_text(encoding='utf-8').splitlines():
+            key, separator, value = line.partition('=')
+            key, value = key.strip(), value.strip()
+            if separator and key in ('slang', 'alang', 'sub-visibility'):
+                if key in package_options:
+                    raise AssertionError('Duplicate package default: ' + key)
+                if key == 'sub-visibility':
+                    if value not in ('yes', 'no'):
+                        raise AssertionError('Invalid package subtitle visibility')
+                    value = value == 'yes'
+                package_options[key] = value
+        cls.source = cls.source.replace('-- PACKAGE OPTIONS', ',\n'.join(
+            '[' + json.dumps(key) + ']=' + (str(value).lower() if isinstance(value, bool) else json.dumps(value))
+            for key, value in package_options.items()))
         for marker, path in (
             ('PARSER SOURCE', 'config/script-modules/user-shortcuts.lua'),
             ('MODEL SOURCE', 'config/script-modules/user-settings.lua'),
@@ -157,6 +173,12 @@ class UserSettings(unittest.TestCase):
 
     def test_failed_first_media_initialization_reports_failure_without_retrying_next_media(self):
         self.run_case('failed_first_media_initialization_is_not_retried_on_media_change')
+
+    def test_package_language_and_visibility_defaults_match_the_startup_owner(self):
+        self.run_case('package_language_defaults_come_from_actual_startup_configuration')
+
+    def test_language_defaults_preserve_advanced_custom_values_and_null_reset(self):
+        self.run_case('language_defaults_preserve_advanced_configuration_and_explicit_empty_values')
 
     def test_complete_production_lua_syntax(self):
         for path in ('config/script-modules/user-settings.lua', 'config/scripts/user-settings.lua',

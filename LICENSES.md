@@ -40,6 +40,8 @@
 - `config/helpers/settings-storage.ps1`
 - `config/helpers/settings-window.ps1`
 - `config/helpers/settings-window.cs`
+- `config/helpers/settings-controls.cs`
+- `config/helpers/settings-shortcuts.cs`
 - `config/helpers/settings-preview.cs`
 - `config/input.conf`
 - `config/mpv.conf`

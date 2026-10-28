@@ -2,8 +2,8 @@
 -- its actual value, media generation and conditional preview restoration.
 local M = {max_bytes=256*1024}
 M.fields = {
-    {id='slang',page='subtitles',label='字幕语言顺序',kind='string',default='',timing='next-media',section='选择',script='settings_options',search_terms='语言 优先 顺序 slang'},
-    {id='sub-visibility',page='subtitles',label='默认显示字幕',kind='boolean',default=true,timing='next-media',section='选择',script='settings_options'},
+    {id='slang',page='subtitles',label='字幕语言顺序',kind='string',default='zh,zho,chi,ja,jpn,en,eng',timing='next-media',section='语言与显示',script='settings_options',search_terms='语言 优先 顺序 中文 日语 英语 slang'},
+    {id='sub-visibility',page='subtitles',label='打开视频时显示字幕',kind='boolean',default=true,timing='next-media',section='语言与显示',script='settings_options'},
     {id='sub-font',page='subtitles',label='字幕字体',kind='string',default='sans-serif',timing='preview',section='外观',script='subtitle_controls'},
     {id='sub-pos',page='subtitles',label='字幕位置',kind='number',display='position',default=100,min=0,max=100,slider_min=0,slider_max=100,step=1,timing='preview',section='外观',script='subtitle_controls'},
     {id='sub-scale',page='subtitles',label='字幕缩放',kind='number',display='percent',search_terms='字幕大小 字号 比例 字体大小',default=1,min=0.05,max=100,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='subtitle_controls'},

@@ -37,6 +37,7 @@ public sealed class SettingsDraft
     }
     public readonly Dictionary<string, Field> Fields = new Dictionary<string, Field>();
     public readonly Dictionary<string, string> Revisions = new Dictionary<string, string>();
+    readonly Dictionary<string, string> observedRevisions = new Dictionary<string, string>();
     public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "decoding", "paths", "shortcuts", "advanced" };
     public static readonly string[] PageNames = { "字幕", "声音与音轨", "窗口", "控制栏", "解码", "输出与组件", "快捷键", "高级" };
     public static string PageName(string page) { int i = Array.IndexOf(Pages, page); return i < 0 ? page : PageNames[i]; }
@@ -49,6 +50,7 @@ public sealed class SettingsDraft
     public void Adopt(Dictionary<string, object> state, string committedPage, string submittedRevision = null)
     {
         var dirty = Pages.ToDictionary(p => p, p => Dirty(p));
+        var unchanged = Pages.ToDictionary(p => p, p => true);
         object raw;
         if (!state.TryGetValue("fields", out raw) || !(raw is object[])) return;
         foreach (var item in (object[])raw)
@@ -58,6 +60,7 @@ public sealed class SettingsDraft
             if (!Pages.Contains(page)) continue;
             Field f; bool fresh = !Fields.TryGetValue(id, out f);
             if (fresh) { f = new Field { Id = id, Page = page }; Fields.Add(id, f); }
+            unchanged[page] &= !fresh && f.BaselineText == Text(Value(row, "saved")) && f.BaselineOverride == Flag(row, "has_override");
             f.Label = Str(row, "label"); f.SearchTerms = Str(row, "search_terms"); f.Default = Value(row, "default");
             f.Saved = Value(row, "saved"); f.Effective = Value(row, "effective");
             f.Status = Str(row, "status"); f.ApplyError = Str(row, "apply_error"); f.Source = Str(row, "default_source");
@@ -80,9 +83,12 @@ public sealed class SettingsDraft
         foreach (string page in Pages)
         {
             string revision = Str(state, page == "paths" ? "paths_revision" : "revision");
-            if (!dirty[page] || committedPage == page || !Revisions.ContainsKey(page)) Revisions[page] = revision;
+            string previous;
+            bool safeRebase = unchanged[page] && observedRevisions.TryGetValue(page, out previous) && Revisions.ContainsKey(page) && Revisions[page] == previous && Str(state,page == "paths" ? "paths_error" : "error").Length == 0;
+            if (!dirty[page] || committedPage == page || !Revisions.ContainsKey(page) || safeRebase) Revisions[page] = revision;
             else if (committedPage != null && committedPage != "paths" && page != "paths" &&
                      Str(state, "save_revision") == revision && Revisions[page] == submittedRevision) Revisions[page] = revision;
+            observedRevisions[page] = revision;
         }
     }
     public void Edit(string id, string text) { Field f = Fields[id]; f.Text = text; f.Override = f.Page != "paths" || text.Length > 0; }
@@ -181,7 +187,7 @@ public sealed class SettingsSlider : Slider
     }
 }
 
-public sealed class SettingsEditor : Window
+public sealed partial class SettingsEditor : Window
 {
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int n);
     readonly SettingsDraft model = new SettingsDraft();
@@ -231,8 +237,9 @@ public sealed class SettingsEditor : Window
         SourceInitialized += delegate {
             try { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); } catch { }
         };
-        PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
-            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { search.Focus(); search.SelectAll(); e.Handled = true; }
+        KeyDown += delegate(object sender, KeyEventArgs e) {
+            if (overlayOpen) return;
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { if (page == "shortcuts" && search.Text.Length == 0) shortcuts.FocusSearch(); else { search.Focus(); search.SelectAll(); } e.Handled = true; }
             else if (e.Key == Key.Escape) { if (search.Text.Length > 0) search.Clear(); else Close(); e.Handled = true; }
         };
         timer.Interval = TimeSpan.FromMilliseconds(100); timer.Tick += Tick;
@@ -242,6 +249,7 @@ public sealed class SettingsEditor : Window
             reader = new StreamReader(pipe, new UTF8Encoding(false, true));
             writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true }; read = reader.ReadLineAsync();
             Send(new object[] { "observe_property", 1, "user-data/mpvnet/settings" });
+            Send(new object[] { "observe_property", 2, "user-data/mpvnet/shortcuts" });
             Send(new object[] { "enable_event", "client-message" });
             Action("editor-ready"); timer.Start();
         }
@@ -253,9 +261,10 @@ public sealed class SettingsEditor : Window
     }
     void Build()
     {
-        Title = "设置 · mpvnet-kit"; Width = 1100; Height = 720; MinWidth = 760; MinHeight = 640;
+        Title = "设置 · mpvnet-kit"; Width = 1040; Height = 780; MinWidth = 760; MinHeight = 600;
+        Icon = new DrawingImage(new GeometryDrawing(Brush("#1287BB"), null, Geometry.Parse("M 2 1 L 15 9 L 2 17 Z")));
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14; Background = Brush("#111111"); Foreground = Brushes.White;
+        FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14; Background = Brush("#151515"); Foreground = Brushes.White;
         Resources = (ResourceDictionary)XamlReader.Parse(@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
 <Style TargetType='Button'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='Label'><Setter Property='Foreground' Value='#F2F2F2'/></Style>
@@ -268,63 +277,50 @@ public sealed class SettingsEditor : Window
 <Style TargetType='ComboBoxItem'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='Padding' Value='10,7'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBoxItem'><Border x:Name='row' Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='row' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsSelected' Value='True'><Setter TargetName='row' Property='Background' Value='#1287bb'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='ComboBox'><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='Background' Value='#242424'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='HorizontalContentAlignment' Value='Left'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBox'><Grid><ToggleButton x:Name='toggle' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Focusable='False' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}' ClickMode='Press'><ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border x:Name='outline' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3'><Path Data='M 0 0 L 4 4 L 8 0' Stroke='#ABABAB' StrokeThickness='1.5' HorizontalAlignment='Right' VerticalAlignment='Center' Margin='0,0,12,0'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='outline' Property='Background' Value='#303030'/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><ContentPresenter Content='{TemplateBinding SelectionBoxItem}' ContentTemplate='{TemplateBinding SelectionBoxItemTemplate}' IsHitTestVisible='False' HorizontalAlignment='Left' VerticalAlignment='Center' Margin='10,0,30,0'/><Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' AllowsTransparency='True' Focusable='False'><Border Background='#242424' BorderBrush='#555555' BorderThickness='1' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='300'><ScrollViewer CanContentScroll='True'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup></Grid><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='toggle' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='toggle' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='ScrollBar'><Setter Property='Width' Value='10'/><Setter Property='Background' Value='#151515'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ScrollBar'><Grid Background='{TemplateBinding Background}'><Track x:Name='PART_Track' IsDirectionReversed='True' Orientation='Vertical' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' ViewportSize='{TemplateBinding ViewportSize}'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageUpCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Background='#555555' CornerRadius='3' Margin='2'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageDownCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
-<Style x:Key='SearchBox' TargetType='TextBox' BasedOn='{StaticResource {x:Type TextBox}}'><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='TextBox'><Border x:Name='outline' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='3' Padding='{TemplateBinding Padding}'><Grid><ScrollViewer x:Name='PART_ContentHost'/><TextBlock x:Name='watermark' Text='{TemplateBinding Tag}' Foreground='#ABABAB' IsHitTestVisible='False' Visibility='Collapsed'/></Grid></Border><ControlTemplate.Triggers><Trigger Property='Text' Value=''><Setter TargetName='watermark' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='outline' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='outline' Property='BorderThickness' Value='2'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style x:Key='SearchBox' TargetType='TextBox' BasedOn='{StaticResource {x:Type TextBox}}'><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='TextBox'><Border x:Name='outline' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='3'><Grid><ScrollViewer x:Name='PART_ContentHost' Margin='0'/><TextBlock x:Name='watermark' Text='{TemplateBinding Tag}' Foreground='#ABABAB' Margin='{TemplateBinding Padding}' VerticalAlignment='Center' IsHitTestVisible='False' Visibility='Collapsed'/></Grid></Border><ControlTemplate.Triggers><Trigger Property='Text' Value=''><Setter TargetName='watermark' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='outline' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='outline' Property='BorderThickness' Value='2'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style x:Key='SettingsSwitch' TargetType='CheckBox'><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='CheckBox'><Grid Width='42' Height='28' Background='Transparent' HorizontalAlignment='Left'><Border x:Name='track' Height='22' CornerRadius='11' Background='#454545' BorderBrush='#777' BorderThickness='1'/><Ellipse x:Name='knob' Width='14' Height='14' Fill='#F2F2F2' HorizontalAlignment='Left' Margin='4,0,0,0'/></Grid><ControlTemplate.Triggers><Trigger Property='IsChecked' Value='True'><Setter TargetName='track' Property='Background' Value='#1287BB'/><Setter TargetName='knob' Property='HorizontalAlignment' Value='Right'/><Setter TargetName='knob' Property='Margin' Value='0,0,4,0'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='track' Property='BorderBrush' Value='#1287BB'/><Setter TargetName='track' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 </ResourceDictionary>");
-        var root = new Grid { Background = Background }; Content = root;
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(158) }); root.ColumnDefinitions.Add(new ColumnDefinition());
-        var sidebar = new Border { Background = Brush("#151515"), Padding = new Thickness(12, 24, 12, 20) }; root.Children.Add(sidebar);
+        rootPanel = new Grid { Background = Background }; Content = rootPanel;
+        bodyPanel = new Grid(); rootPanel.Children.Add(bodyPanel);
+        bodyPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(196) }); bodyPanel.ColumnDefinitions.Add(new ColumnDefinition());
+        var sidebar = new Border { Background = Brush("#111111"), Padding = new Thickness(12, 18, 12, 20), BorderBrush = Brush("#282828"), BorderThickness = new Thickness(0,0,1,0) }; bodyPanel.Children.Add(sidebar);
         var nav = new StackPanel(); sidebar.Child = nav;
-        nav.Children.Add(new TextBlock { Text = "设置", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, 0, 0, 22) });
-        foreach (string id in SettingsDraft.Pages)
-        {
-            string selected = id; var b = Button(SettingsDraft.PageName(id), delegate { SelectPage(selected); });
+        var searchRow = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        search = new TextBox { Height = 36, FontSize = 12, Padding = new Thickness(32, 6, 8, 6), Tag = "搜索全部设置", Style = (Style)FindResource("SearchBox") };
+        System.Windows.Automation.AutomationProperties.SetName(search, "搜索全部设置"); searchRow.Children.Add(search);
+        var magnifier = new System.Windows.Shapes.Path { Data = Geometry.Parse("M 7 1 A 6 6 0 1 0 7 13 A 6 6 0 1 0 7 1 M 11 11 L 16 16"), Stroke = Brush("#ABABAB"), StrokeThickness = 1.6, Width = 16, Height = 16, Stretch = Stretch.Uniform, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10,0,0,0) }; searchRow.Children.Add(magnifier); nav.Children.Add(searchRow);
+        foreach (string id in SettingsDraft.Pages) {
+            string selected = id; var b = Button(SettingsDraft.PageName(id), delegate { search.Clear(); SelectPage(selected); });
             b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Height = 38; b.Padding = new Thickness(12, 0, 6, 0);
             b.Margin = new Thickness(0, 0, 0, 4); b.BorderThickness = new Thickness(2, 0, 0, 0); b.Background = Brushes.Transparent;
             nav.Children.Add(b); categories[id] = b;
         }
-        var shell = new Grid { Margin = new Thickness(28, 24, 28, 0) }; mainShell = shell; Grid.SetColumn(shell, 1); root.Children.Add(shell);
-        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var shell = new Grid { Margin = new Thickness(30, 24, 30, 0) }; mainShell = shell; Grid.SetColumn(shell, 1); bodyPanel.Children.Add(shell);
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); shell.RowDefinitions.Add(new RowDefinition()); shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 18) }; shell.Children.Add(head);
-        reset = Button("恢复本页默认", Reset); reset.FontSize = 12; reset.Foreground = Brush("#ABABAB"); reset.Background = Brushes.Transparent; reset.BorderThickness = new Thickness(0);
-        reset.Padding = new Thickness(8, 4, 0, 4); reset.Margin = new Thickness(12, 0, 0, 0); DockPanel.SetDock(reset, Dock.Right); head.Children.Add(reset);
-        heading = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }; head.Children.Add(heading);
-        search = new TextBox { ToolTip = "搜索全部设置（Ctrl+F）", Height = 36, Margin = new Thickness(0, 0, 0, 16) };
-        System.Windows.Automation.AutomationProperties.SetName(search, "搜索全部设置");
-        // An in-control watermark keeps search visible without another permanent paragraph.
-        search.Tag = "搜索设置…"; search.Style = (Style)FindResource("SearchBox");
-        search.TextChanged += delegate { Search(); }; Grid.SetRow(search, 1); shell.Children.Add(search);
-        search.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
-            if (e.Key == Key.Down || e.Key == Key.Return) { var first = results.Children.OfType<Button>().FirstOrDefault(); if (first != null) { first.Focus(); if (e.Key == Key.Return) first.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); e.Handled = true; } }
-        };
-        results = new StackPanel(); resultScroll = new ScrollViewer { Content = results, MaxHeight = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 16) };
-        Grid.SetRow(resultScroll, 2); shell.Children.Add(resultScroll);
-        var main = new Grid(); Grid.SetRow(main, 3); shell.Children.Add(main); previewLayout = main;
+        heading = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,18) }; shell.Children.Add(heading);
+        results = new StackPanel(); resultScroll = new ScrollViewer { Content = results, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed }; Grid.SetRow(resultScroll,1); shell.Children.Add(resultScroll);
+        var main = new Grid(); previewLayout = main; Grid.SetRow(main, 1); shell.Children.Add(main);
         main.ColumnDefinitions.Add(new ColumnDefinition()); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition());
-        previewPane = new Grid { VerticalAlignment = VerticalAlignment.Top };
-        previewPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); previewPane.RowDefinitions.Add(new RowDefinition());
-        var previewHeader = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        previewMode = Button("完整画面", TogglePreviewMode); previewMode.FontSize = 12; previewMode.Padding = new Thickness(8, 4, 8, 4); previewMode.Margin = new Thickness(8, 0, 0, 0); previewMode.BorderThickness = new Thickness(0); previewMode.Background = Brushes.Transparent;
-        DockPanel.SetDock(previewMode, Dock.Right); previewHeader.Children.Add(previewMode);
-        previewTitle = new TextBlock { Foreground = Brush("#ABABAB"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
-        previewHeader.Children.Add(previewTitle); previewPane.Children.Add(previewHeader);
+        previewPane = new Grid { Margin = new Thickness(0,0,0,16) }; previewPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); previewPane.RowDefinitions.Add(new RowDefinition());
+        previewTitle = new TextBlock { Text = "控制栏预览", Foreground = Brush("#ABABAB"), FontSize = 12, Margin = new Thickness(0,0,0,8) }; previewPane.Children.Add(previewTitle);
+        previewMode = Button("完整画面", TogglePreviewMode); // retained for geometry validation, not part of normal editing
         previewArea = new Border { Height = 150, Background = Brushes.Black, ClipToBounds = true };
-        previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#ABABAB"), TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16) };
-        previewArea.Child = previewMessage; Grid.SetRow(previewArea, 1); previewPane.Children.Add(previewArea); main.Children.Add(previewPane);
-        settingsScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Grid.SetRow(settingsScroll, 1); main.Children.Add(settingsScroll);
-        content = new StackPanel(); settingsScroll.Content = content;
-        SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
-        main.SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
-        StateChanged += delegate { UpdatePlayerPreview(); };
-        var footer = new StackPanel { Margin = new Thickness(0, 16, 0, 0), Background = Brush("#151515") }; Grid.SetRow(footer, 4); shell.Children.Add(footer);
-        notice = new TextBlock { Text = "正在连接播放器…", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 10, 12, 8), Foreground = Brush("#ABABAB") }; footer.Children.Add(notice);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12, 12, 4, 12) }; footer.Children.Add(actions);
-        undo = Button("撤销本页修改", Revert); save = Button("保存本页", Save);
-        undo.Background = Brushes.Transparent; undo.BorderThickness = new Thickness(0); save.Background = Brush("#1287bb"); save.BorderBrush = Brush("#1287bb");
-        actions.Children.Add(undo); actions.Children.Add(save);
+        previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#ABABAB"), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16) };
+        previewArea.Child = previewMessage; Grid.SetRow(previewArea,1); previewPane.Children.Add(previewArea); main.Children.Add(previewPane);
+        content = new StackPanel(); settingsScroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(settingsScroll,1); main.Children.Add(settingsScroll);
+        shortcuts = new SettingsShortcutsPanel(Send, delegate { if (save != null) Refresh(); }, Confirm);
+        Grid.SetRow(shortcuts,1); shell.Children.Add(shortcuts); shortcuts.Visibility = Visibility.Collapsed;
+        footerPanel = new Border { BorderBrush = Brush("#2E2E2E"), BorderThickness = new Thickness(0,1,0,0), Padding = new Thickness(0,12,0,16), Margin = new Thickness(0,12,0,0), Background = Background }; Grid.SetRow(footerPanel,2); shell.Children.Add(footerPanel);
+        var footer = new StackPanel(); footerPanel.Child = footer;
+        notice = new TextBlock { Text = "正在连接播放器…", TextWrapping = TextWrapping.Wrap, Foreground = Brush("#ABABAB"), Margin = new Thickness(0,0,0,8) }; footer.Children.Add(notice);
+        var actions = new DockPanel(); footer.Children.Add(actions);
+        reset = Button("恢复本页默认", Reset); reset.Background = Brushes.Transparent; reset.BorderThickness = new Thickness(0); reset.Foreground = Brush("#ABABAB"); reset.Padding = new Thickness(0,8,8,8); DockPanel.SetDock(reset,Dock.Left); actions.Children.Add(reset);
+        var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; actions.Children.Add(right);
+        undo = Button("撤销", Revert); save = Button("保存本页", Save); undo.Background = Brushes.Transparent; undo.BorderThickness = new Thickness(0); save.Background = Brush("#0D6F9D"); save.BorderBrush = Brush("#1287BB"); save.Margin = new Thickness(0); right.Children.Add(undo); right.Children.Add(save);
+        search.TextChanged += delegate { shortcuts.CancelCapture(); Search(); };
+        search.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Down || e.Key == Key.Return) { var first = results.Children.OfType<Button>().FirstOrDefault(); if (first != null) { first.Focus(); if (e.Key == Key.Return) first.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); e.Handled = true; } } };
+        SizeChanged += delegate { ArrangePreview(); UpdateSubtitleExample(); UpdatePlayerPreview(); }; main.SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); }; StateChanged += delegate { UpdatePlayerPreview(); };
         SelectPage(page); Refresh();
     }
     void SelectPage(string id)
@@ -332,21 +328,32 @@ public sealed class SettingsEditor : Window
         if (page != id && displayRequested) EndDisplay();
         if (page != id) fullPreview = false;
         if (!SettingsDraft.Pages.Contains(id)) return;
-        page = id; editors.Clear(); settingRows.Clear(); scaleValues.Clear(); actionButtons.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
-        previewPane.Visibility = AppearancePage ? Visibility.Visible : Visibility.Collapsed;
+        if (shortcuts != null) shortcuts.CancelCapture();
+        page = id; languageLists.Clear(); subtitleExample = null; subtitleSample = null; editors.Clear(); settingRows.Clear(); scaleValues.Clear(); actionButtons.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
+        previewPane.Visibility = page == "controlbar" ? Visibility.Visible : Visibility.Collapsed;
+        previewLayout.Visibility = page == "shortcuts" ? Visibility.Collapsed : Visibility.Visible;
+        shortcuts.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         ArrangePreview();
+        if (page == "subtitles" && model.Fields.Values.Where(f => f.Page == page).All(f => f.Section.Length == 0)) content.Children.Add(SubtitleExample());
         string section = null;
         foreach (var f in model.Fields.Values.Where(x => x.Page == page).GroupBy(x => x.Section).SelectMany(group => group))
         {
             var field = f;
             if (f.Section.Length > 0 && f.Section != section) {
                 content.Children.Add(new TextBlock { Text = f.Section, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brush("#ABABAB"), Margin = new Thickness(0, section == null ? 4 : 24, 0, 8) }); section = f.Section;
+                if (page == "subtitles" && (f.Section == "外观" || f.Section == "字幕外观")) content.Children.Add(SubtitleExample());
             }
             var row = new Grid { MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
             var title = new Label { Content = f.Label, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; row.Children.Add(title);
             Control input; FrameworkElement control;
-            if (f.Kind == "boolean" || f.Kind == "choice") {
+            if (f.Id == "slang" || f.Id == "alang") { control = LanguageControl(field, out input); }
+            else if (f.Id == "sub-font") { var font = Button(FontLabel(f.Text), delegate { FontPicker(field); }); font.HorizontalContentAlignment = HorizontalAlignment.Left; font.Margin = new Thickness(0); control = input = font; }
+            else if (f.Kind == "boolean") {
+                var toggle = new CheckBox { Content = "", IsChecked = f.Text == "true", VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8,0,0,0) };
+                toggle.Style = (Style)FindResource("SettingsSwitch"); toggle.Checked += delegate { if (!syncing) EditField(field,"true",true); }; toggle.Unchecked += delegate { if (!syncing) EditField(field,"false",true); }; control = input = toggle;
+            }
+            else if (f.Kind == "choice") {
                 var choice = new ComboBox { MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
                 choice.Items.Add(new ComboBoxItem { Content = "沿用播放器", Tag = null });
                 if (f.Kind == "boolean") { choice.Items.Add(new ComboBoxItem { Content = "开启", Tag = "true" }); choice.Items.Add(new ComboBoxItem { Content = "关闭", Tag = "false" }); }
@@ -374,20 +381,22 @@ public sealed class SettingsEditor : Window
             else {
                 var text = new TextBox { Text = f.Text, MaxLength = f.Page == "paths" ? 2048 : 512, MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
                 text.TextChanged += delegate { if (!syncing) EditField(field, text.Text); }; input = text; control = text;
+                if (f.Page == "paths") { var pathRow = new Grid(); pathRow.ColumnDefinitions.Add(new ColumnDefinition()); pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); text.Tag = f.Id == "capture_root" ? "默认：图片文件夹中的 Capture" : "自动检测"; text.Style = (Style)FindResource("SearchBox"); pathRow.Children.Add(text); var browse = Button("浏览…", delegate { BrowsePath(field); }); browse.Margin = new Thickness(8,0,0,0); Grid.SetColumn(browse,1); pathRow.Children.Add(browse); control = pathRow; }
             }
+            if (f.Id == "slang" || f.Id == "alang") { title.VerticalAlignment = VerticalAlignment.Top; title.Margin = new Thickness(0,8,12,0); }
+            if (page != "paths") row.ColumnDefinitions[1].MaxWidth = 430;
             control.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(control, 1); row.Children.Add(control); content.Children.Add(row); settingRows[field.Id] = row;
             title.Target = input; input.ToolTip = FieldDetails(field);
-            var menu = new ContextMenu(); var inherit = new MenuItem { Header = "沿用播放器" }; inherit.Click += delegate { Inherit(field); }; menu.Items.Add(inherit); input.ContextMenu = menu;
+            var menu = new ContextMenu(); var inherit = new MenuItem { Header = "沿用播放器" }; inherit.Click += delegate { Inherit(field); }; menu.Items.Add(inherit); if (f.Id != "sub-visibility") input.ContextMenu = menu;
             System.Windows.Automation.AutomationProperties.SetName(input, f.Label); System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id); editors.Add(f.Id, input);
         }
-        if (page == "shortcuts") AddAction("管理快捷键", "shortcuts.open");
         if (page == "advanced") { AddAction("编辑 mpv.conf", "edit.mpv.conf"); AddAction("编辑 input.conf", "edit.input.conf"); AddAction("编辑 modernz.conf", "edit.modernz.conf"); AddAction("打开配置目录", "open.config-folder"); }
         selectingPage = true;
         Refresh();
         UpdatePlayerPreview();
         selectingPage = false;
     }
-    bool AppearancePage { get { return page == "subtitles" || page == "controlbar"; } }
+    bool AppearancePage { get { return page == "controlbar"; } }
     void AddAction(string label, string id)
     {
         var b = Button(label, delegate { Action("open-action", id); }); b.HorizontalAlignment = HorizontalAlignment.Left; b.MinWidth = 220; b.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(b); actionButtons[id] = b;
@@ -398,8 +407,8 @@ public sealed class SettingsEditor : Window
     }
     static string FieldDetails(SettingsDraft.Field f)
     {
-        string guidance = f.Id == "slang" || f.Id == "alang" ? "按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en\n" : f.Id == "sub-font" ? "填写已安装字体名称，例如 Microsoft YaHei UI\n" : "";
-        return guidance + TimingLabel(f.Timing) + "\n默认来源：" + f.Source + "\n已保存：" + DetailValue(f, f.Saved) + "\n当前有效：" + DetailValue(f, f.Effective) + "\n默认：" + DetailValue(f, f.Default) + "\n右键可沿用播放器设置";
+        string guidance = "";
+        return guidance + TimingLabel(f.Timing) + "\n默认来源：" + f.Source + "\n已保存：" + DetailValue(f, f.Saved) + "\n当前有效：" + DetailValue(f, f.Effective) + "\n默认：" + DetailValue(f, f.Default) + (f.Id == "sub-visibility" ? "" : "\n右键可沿用播放器设置");
     }
     static string DetailValue(SettingsDraft.Field f, object value)
     {
@@ -425,7 +434,7 @@ public sealed class SettingsEditor : Window
         model.Edit(field.Id, text); localError = "";
         object value;
         if (field.Previewable && model.TryValue(field, out value)) Preview(field);
-        Refresh();
+        UpdateSubtitleExample(); Refresh();
     }
     void ReleaseSlider(SettingsDraft.Field field, Slider slider)
     {
@@ -451,37 +460,38 @@ public sealed class SettingsEditor : Window
         if (previewLayout == null || settingsScroll == null) return;
         previewTitle.Text = fullPreview ? "完整画面" : page == "controlbar" ? "控制栏局部预览" : "字幕区域预览";
         previewMode.Content = fullPreview ? "局部预览" : "完整画面";
-        bool wide = (ActualWidth > 0 ? ActualWidth : Width) >= 1000 && AppearancePage;
-        previewLayout.ColumnDefinitions[0].Width = wide ? new GridLength(430) : new GridLength(1, GridUnitType.Star);
-        previewLayout.ColumnDefinitions[1].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-        previewLayout.RowDefinitions[0].Height = wide ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-        previewLayout.RowDefinitions[1].Height = wide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-        Grid.SetColumn(previewPane, wide ? 1 : 0); Grid.SetRow(settingsScroll, wide ? 0 : 1);
-        previewPane.Margin = wide ? new Thickness(20, 0, 0, 0) : new Thickness(0, 0, 0, 16);
-        double windowWidth = ActualWidth > 0 ? ActualWidth : Width;
-        double fraction = fullPreview ? 1 : page == "controlbar" ? 0.35 : 0.45;
-        double desired = wide ? Math.Max(100, Math.Min(380, (windowWidth - 510) * 9 / 16 * fraction)) : Math.Max(100, Math.Min(260, ActualHeight * 0.3 * fraction));
-        if (previewLayout.ActualHeight > 0) desired = Math.Min(desired, Math.Max(80, previewLayout.ActualHeight - (wide ? 36 : 150)));
-        previewArea.Height = desired;
+        previewLayout.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+        previewLayout.ColumnDefinitions[1].Width = new GridLength(0);
+        previewLayout.RowDefinitions[0].Height = GridLength.Auto; previewLayout.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
+        Grid.SetColumn(previewPane, 0); Grid.SetRow(settingsScroll, 1); previewPane.Margin = new Thickness(0,0,0,16); previewArea.Height = 150;
     }
+
     static readonly string[][] ActionCatalog = {
-        new[] { "管理快捷键", "shortcuts.open", "shortcuts" }, new[] { "编辑 mpv.conf", "edit.mpv.conf", "advanced" }, new[] { "编辑 input.conf", "edit.input.conf", "advanced" }, new[] { "编辑 modernz.conf", "edit.modernz.conf", "advanced" }, new[] { "打开配置目录", "open.config-folder", "advanced" }
+        new[] { "编辑 mpv.conf", "edit.mpv.conf", "advanced" }, new[] { "编辑 input.conf", "edit.input.conf", "advanced" }, new[] { "编辑 modernz.conf", "edit.modernz.conf", "advanced" }, new[] { "打开配置目录", "open.config-folder", "advanced" }
     };
     static bool Matches(string haystack, string query) { return query.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).All(word => haystack.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0); }
     void Search()
     {
         results.Children.Clear(); string query = search.Text.Trim(); resultScroll.Visibility = query.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (query.Length == 0) return;
+        bool searching = query.Length > 0;
+        heading.Text = searching ? "搜索结果" : SettingsDraft.PageName(page);
+        previewLayout.Visibility = !searching && page != "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
+        shortcuts.Visibility = !searching && page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
+        footerPanel.Visibility = searching ? Visibility.Collapsed : Visibility.Visible;
+        if (searching) { EndDisplay(); playerPreview.Hide(); }
+        if (!searching) { Refresh(); selectingPage = true; UpdatePlayerPreview(); selectingPage = false; return; }
         foreach (var f in model.Fields.Values.Where(f => Matches(f.Label + " " + f.Id + " " + f.SearchTerms + " " + SettingsDraft.PageName(f.Page), query)))
         {
             var field = f;
-            var b = Button(f.Label + " · " + SettingsDraft.PageName(f.Page), delegate {
-                SelectPage(field.Page); Control input; if (editors.TryGetValue(field.Id, out input)) { input.BringIntoView(); input.Focus(); var pathInput = input as TextBox; if (pathInput != null) pathInput.SelectAll(); }
+            var b = SearchResult(f.Label, SettingsDraft.PageName(f.Page), delegate {
+                search.Clear(); SelectPage(field.Page); Control input; if (editors.TryGetValue(field.Id, out input)) { input.BringIntoView(); input.Focus(); var pathInput = input as TextBox; if (pathInput != null) pathInput.SelectAll(); }
             }); b.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(b);
         }
         foreach (var item in ActionCatalog.Where(a => Matches(a[0] + " " + a[1] + " " + SettingsDraft.PageName(a[2]), query))) {
-            string[] action = item; var button = Button(action[0] + " · " + SettingsDraft.PageName(action[2]), delegate { SelectPage(action[2]); actionButtons[action[1]].BringIntoView(); actionButtons[action[1]].Focus(); }); button.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(button);
+            string[] action = item; var button = SearchResult(action[0], SettingsDraft.PageName(action[2]), delegate { search.Clear(); SelectPage(action[2]); actionButtons[action[1]].BringIntoView(); actionButtons[action[1]].Focus(); }); button.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(button);
         }
+        foreach (var match in shortcuts.Search(query)) { var target = match; var button = SearchResult(target.Label, "快捷键 / " + target.Group, delegate { search.Clear(); SelectPage("shortcuts"); shortcuts.Locate(target.Id); }); button.HorizontalContentAlignment = HorizontalAlignment.Left; button.Margin = new Thickness(0,0,0,8); results.Children.Add(button); }
+        Refresh();
         if (results.Children.Count == 0) results.Children.Add(new TextBlock { Text = "没有匹配的设置", Margin = new Thickness(0, 0, 0, 16) });
     }
     void Preview(SettingsDraft.Field f)
@@ -514,7 +524,7 @@ public sealed class SettingsEditor : Window
     void UpdatePlayerPreview()
     {
         if (previewArea == null || validation) return;
-        bool enabled = AppearancePage && !disconnected;
+        bool enabled = AppearancePage && !disconnected && !overlayOpen && search.Text.Trim().Length == 0;
         object position = SettingsDraft.Value(latest, "preview_subtitle_position");
         string message = playerPreview.Update(this, previewArea, parent, enabled, fullPreview ? "full" : page,
             position == null ? 100 : Convert.ToDouble(position, CultureInfo.InvariantCulture));
@@ -523,11 +533,12 @@ public sealed class SettingsEditor : Window
         previewMessage.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         DisplayAvailability(available);
     }
-    void Reset() { if (saving) return; model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && x.Previewable)) Preview(f); Refresh(); }
-    void Revert() { if (saving) return; Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
+    void Reset() { if (saving || shortcuts.Saving) return; if (page == "shortcuts") { shortcuts.Reset(); return; } model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && x.Previewable)) Preview(f); Refresh(); }
+    void Revert() { if (saving || shortcuts.Saving) return; if (page == "shortcuts") { shortcuts.Revert(); return; } Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
     void Save()
     {
         if (!save.IsEnabled) return;
+        if (page == "shortcuts") { shortcuts.Save(); return; }
         Dictionary<string, object> values;
         try { values = model.Values(page); } catch (Exception e) { localError = e.Message; Refresh(); return; }
         saving = true; pendingPage = page; pendingRevision = model.Revisions[page]; pendingSerial = serial; saveStarted = DateTime.UtcNow; localError = "";
@@ -540,14 +551,17 @@ public sealed class SettingsEditor : Window
             var text = item.Value as TextBox;
             if (text != null) text.Text = model.Fields[item.Key].Text;
             else if (item.Value is ComboBox) SelectChoice((ComboBox)item.Value, model.Fields[item.Key]);
-            else SetSlider((Slider)item.Value, model.Fields[item.Key]);
+            else if (item.Value is Slider) SetSlider((Slider)item.Value, model.Fields[item.Key]);
+            else if (item.Value is CheckBox) ((CheckBox)item.Value).IsChecked = model.Fields[item.Key].Text == "true";
+            else if (item.Key == "sub-font") ((Button)item.Value).Content = FontLabel(model.Fields[item.Key].Text);
+            else if (languageLists.ContainsKey(item.Key)) RefreshLanguages(model.Fields[item.Key]);
             item.Value.ToolTip = FieldDetails(model.Fields[item.Key]);
         }
-        syncing = false;
+        syncing = false; UpdateSubtitleExample();
     }
     void Refresh()
     {
-        foreach (var item in categories) { item.Value.Content = SettingsDraft.PageName(item.Key) + (model.Dirty(item.Key) ? " *" : ""); item.Value.BorderBrush = item.Key == page ? Brush("#1287bb") : Brushes.Transparent; item.Value.Background = item.Key == page ? Brush("#242424") : Brushes.Transparent; item.Value.Foreground = Brush(item.Key == page ? "#F2F2F2" : "#ABABAB"); }
+        foreach (var item in categories) { item.Value.Content = NavigationContent(item.Key, item.Key == "shortcuts" ? shortcuts.Dirty : model.Dirty(item.Key)); item.Value.BorderBrush = item.Key == page && search.Text.Trim().Length == 0 ? Brush("#1287bb") : Brushes.Transparent; item.Value.Background = item.Key == page && search.Text.Trim().Length == 0 ? Brush("#242424") : Brushes.Transparent; item.Value.Foreground = Brush(item.Key == page ? "#F2F2F2" : "#ABABAB"); }
         foreach (var item in scaleValues)
         {
             var f = model.Fields[item.Key];
@@ -578,7 +592,10 @@ public sealed class SettingsEditor : Window
         save.IsEnabled = !saving && !disconnected && model.Dirty(page) && !stale && error.Length == 0 && valid;
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));
         reset.IsEnabled = !saving && !disconnected && model.Fields.Values.Any(f => f.Page == page) && error.Length == 0; reset.Visibility = page == "advanced" || page == "shortcuts" ? Visibility.Collapsed : Visibility.Visible;
-        content.IsEnabled = !saving;
+        if (page == "shortcuts") { notice.Text = disconnected ? localError : shortcuts.Notice; notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed; save.IsEnabled = !saving && !disconnected && shortcuts.CanSave; undo.IsEnabled = !saving && !disconnected && !shortcuts.Saving; reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving; }
+        else if (shortcuts.Saving) { save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false; }
+        footerPanel.Visibility = search.Text.Trim().Length > 0 || page == "advanced" ? Visibility.Collapsed : Visibility.Visible;
+        content.IsEnabled = !saving && !shortcuts.Saving; shortcuts.IsEnabled = !saving && !disconnected;
     }
     static string DisplayField(SettingsDraft.Field field, object value)
     {
@@ -641,6 +658,7 @@ public sealed class SettingsEditor : Window
         try
         {
             if (parent.HasExited) { forceClose = true; Close(); return; }
+            shortcuts.Tick();
             if (disconnected) return;
             UpdatePlayerPreview();
             int count = 0;
@@ -650,6 +668,7 @@ public sealed class SettingsEditor : Window
                 var message = UserPreferencesStorage.Object(json.DeserializeObject(read.Result));
                 string eventName = SettingsDraft.Str(message, "event"); object data = SettingsDraft.Value(message, "data");
                 if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/settings" && data is Dictionary<string, object>) State((Dictionary<string, object>)data);
+                else if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/shortcuts" && data is Dictionary<string, object>) { shortcuts.Adopt((Dictionary<string,object>)data); if (search.Text.Trim().Length > 0) Search(); }
                 else if (eventName == "shutdown") { forceClose = true; Close(); return; }
                 else if (eventName == "client-message")
                 {
@@ -667,23 +686,11 @@ public sealed class SettingsEditor : Window
         }
         catch { Disconnect(); }
     }
-    bool ConfirmDiscard()
-    {
-        string[] pages = model.DirtyPages(); if (pages.Length == 0) return true;
-        var dialog = new Window { Title = "关闭设置", Owner = this, Width = 470, SizeToContent = SizeToContent.Height,
-            ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background, Foreground = Foreground, FontFamily = FontFamily, FontSize = FontSize, Resources = Resources };
-        var panel = new StackPanel { Margin = new Thickness(24) }; dialog.Content = panel;
-        panel.Children.Add(new TextBlock { Text = "以下分类有未保存修改：\n" + String.Join("、", pages.Select(SettingsDraft.PageName)), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 20) });
-        var actions = new WrapPanel(); panel.Children.Add(actions);
-        var back = Button("返回设置", delegate { dialog.DialogResult = false; }); back.IsCancel = true; back.IsDefault = true;
-        actions.Children.Add(back); actions.Children.Add(Button("放弃修改并关闭", delegate { dialog.DialogResult = true; }));
-        return dialog.ShowDialog() == true;
-    }
+    string[] DirtyPages() { return model.DirtyPages().Concat(shortcuts.Dirty ? new[]{"shortcuts"} : new string[0]).Distinct().ToArray(); }
     void OnClosing(object sender, CancelEventArgs e)
     {
-        if (!forceClose && saving) { e.Cancel = true; return; }
-        if (!forceClose && !validation && !ConfirmDiscard()) { e.Cancel = true; return; }
+        if (!forceClose && (saving || shortcuts.Saving)) { e.Cancel = true; return; }
+        if (!forceClose && !validation && DirtyPages().Length > 0) { e.Cancel = true; if (!overlayOpen) Confirm("放弃未保存的修改？", "以下分类的修改尚未保存：\n" + String.Join("、", DirtyPages().Select(SettingsDraft.PageName)), delegate { forceClose = true; Close(); }); return; }
         EndDisplay(); playerPreview.Hide();
         try { Action("editor-close"); } catch { }
     }
@@ -725,12 +732,20 @@ public sealed class SettingsEditor : Window
                 var slider = (SettingsSlider)editors[id]; var track = slider.ValueTrack;
                 slider.SetPointerPosition(new Point(Convert.ToDouble(step["x"]) * track.ActualWidth, Convert.ToDouble(step["y"])), 0);
             }
-            else if (op == "choose") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((ComboBox)editors[id]).SelectedIndex = Convert.ToInt32(step["index"]); }
+            else if (op == "choose") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); if (editors[id] is ComboBox) ((ComboBox)editors[id]).SelectedIndex = Convert.ToInt32(step["index"]); else ((CheckBox)editors[id]).IsChecked = Convert.ToInt32(step["index"]) == 1; }
             else if (op == "inherit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); Inherit(model.Fields[id]); }
             else if (op == "action") { string id = SettingsDraft.Str(step, "id"); actionButtons[id].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
             else if (op == "locate") { int index = Convert.ToInt32(step["index"]); results.Children.OfType<Button>().ElementAt(index).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
             else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
+            else if (op == "shortcuts-state") shortcuts.Adopt(UserPreferencesStorage.Object(step["state"]));
+            else if (op == "font-picker") FontPicker(model.Fields["sub-font"]);
+            else if (op == "picker-query") VisualChildren<TextBox>(overlay).Single().Text = SettingsDraft.Str(step,"text");
+            else if (op == "invoke-control") {
+                LayoutForValidation(); string name = SettingsDraft.Str(step,"name");
+                VisualChildren<Button>(rootPanel).First(b => System.Windows.Automation.AutomationProperties.GetName(b) == name).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            }
+            else if (op == "close-overlay") CloseOverlay();
             else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
             else if (op == "save") Save(); else if (op == "reset") Reset(); else if (op == "undo") Revert();
             else if (op == "disconnect") Disconnect();
@@ -740,6 +755,7 @@ public sealed class SettingsEditor : Window
         // NoShow deliberately has no native Window presentation source; measure
         // its actual content tree rather than assume Window is a visual ancestor.
         var layoutRoot = LayoutForValidation();
+        search.ApplyTemplate(); var searchViewport = search.Template.FindName("PART_ContentHost", search) as FrameworkElement;
         var previewBounds = previewArea.TransformToAncestor(layoutRoot).TransformBounds(new Rect(previewArea.RenderSize));
         var saveBounds = save.TransformToAncestor(layoutRoot).TransformBounds(new Rect(save.RenderSize));
         var hits = new Dictionary<string, object>();
@@ -760,14 +776,19 @@ public sealed class SettingsEditor : Window
         string renderPath = SettingsDraft.Str(request, "validation_render_path");
         if (renderPath.Length > 0) RenderValidation(renderPath);
         return new { ok = true, shown = IsVisible, page = page, pages = SettingsDraft.Pages,
+            search_viewport_height = searchViewport.ActualHeight, overlay_open = overlayOpen,
+            body_enabled = bodyPanel.IsEnabled, subtitle_sample = subtitleSample == null ? "" : subtitleSample.Text,
+            ordinary_content_visible = previewLayout.Visibility == Visibility.Visible,
+            embedded_shortcuts_visible = shortcuts.Visibility == Visibility.Visible,
+            picker_items = overlayOpen ? VisualChildren<Button>(overlay).Select(b => System.Windows.Automation.AutomationProperties.GetName(b)).Where(n => n.Length > 0).ToArray() : new string[0],
             action_ids = actionButtons.Keys.ToArray(),
             row_alignment = settingRows.Values.All(r => {
                 var control = (FrameworkElement)r.Children[1]; var bounds = control.TransformToAncestor(r).TransformBounds(new Rect(control.RenderSize));
                 return Math.Abs(bounds.Left - (page == "paths" ? 154 : 136)) < 1 && bounds.Width >= 100 && bounds.Right <= r.ActualWidth + 1;
-            }), dirty_pages = model.DirtyPages(),
+            }), dirty_pages = DirtyPages(),
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
-            preview_visible = previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
+            preview_visible = subtitleExample != null || previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
             full_preview = fullPreview, scale_labels = scaleValues.ToDictionary(x => x.Key, x => x.Value.Text),
             editor_types = editors.ToDictionary(x => x.Key, x => x.Value.GetType().Name),
             field_details = editors.ToDictionary(x => x.Key, x => (string)x.Value.ToolTip),
@@ -777,6 +798,6 @@ public sealed class SettingsEditor : Window
                 (!AppearancePage || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
             preview_column = Grid.GetColumn(previewPane),
             preview_fit = SettingsPreview.Fit(new Rect(0, 0, 600, 300), 1920, 1080).ToString(CultureInfo.InvariantCulture),
-            search_results = results.Children.OfType<Button>().Select(b => (string)b.Content).ToArray(), sent = sent };
+            search_results = results.Children.OfType<Button>().Select(b => (string)(b.Tag ?? b.Content)).ToArray(), sent = sent };
     }
 }
