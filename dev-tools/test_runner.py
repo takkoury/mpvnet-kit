@@ -39,6 +39,7 @@ PROFILES = {
         'test_user_preferences.UserPreferences', 'test_settings_storage.SettingsStorage',
         'test_settings_window.SettingsWindow', 'test_settings_preview.SettingsPreviewGeometry',
         'test_settings_shortcuts.SettingsShortcutsPanelTests',
+        'test_settings_close.SettingsCloseTests', 'test_settings_chrome.SettingsChrome',
     ),
     'install': (
         'test_install_targets.InstallTargets', 'test_legacy_backup.LegacyBackup',

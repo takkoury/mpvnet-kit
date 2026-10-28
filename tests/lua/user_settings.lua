@@ -197,6 +197,46 @@ end
 local function save(host,page,value)
     host.send('save',host.state().editor_token,page=='paths' and host.state().paths_revision or host.state().revision,page,value)
 end
+
+function editor_refresh_reads_external_without_writing_or_changing_session()
+    local host=instance(90);local token=host.open()
+    eq(host.state().refresh_id,'')
+    local revision=host.state().revision;local count=#requests
+    local raw='{"schema":1,"settings":{"sub-scale":2},"shortcuts":{"playback.pause":["F2"]}}'
+    files[user_path]=raw
+    local original={};for path,text in pairs(files) do original[path]=text end
+    host.send('editor-refresh',token,'close-1')
+    eq(host.state().refresh_id,'close-1');assert(host.state().revision~=revision)
+    eq(host.field('sub-scale').saved,2);eq(host.state().save_serial,0);eq(host.state().saving,false)
+    eq(host.state().editor_token,token);eq(host.state().editor_visible,true);eq(#requests,count)
+    for path,text in pairs(files) do eq(text,original[path]) end
+    for path,text in pairs(original) do eq(files[path],text) end
+    revision=host.state().revision
+    host.send('editor-refresh',token,'close-2')
+    eq(host.state().refresh_id,'close-2');eq(host.state().revision,revision);eq(#requests,count)
+    -- The acknowledgement does not authorize overwriting a later external edit.
+    files[user_path]='{"schema":1,"settings":{"sub-scale":3}}'
+    host.send('save',token,revision,'subtitles','{"sub-scale":4}')
+    eq(host.state().save_ok,false);eq(host.field('sub-scale').saved,3);eq(#requests,count)
+end
+
+function editor_refresh_rejects_invalid_busy_and_closed_requests()
+    local host=instance(91);local token=host.open();local initial=host.state()
+    files[user_path]='{"schema":1,"settings":{"sub-scale":2}}'
+    host.send('editor-refresh','wrong','valid-1');eq(host.state(),initial)
+    for _,id in ipairs({'','bad_id','bad id','bad/id','中文',string.rep('a',65),false,123}) do
+        host.send('editor-refresh',token,id);eq(host.state(),initial)
+    end
+    host.send('editor-refresh',token,nil);eq(host.state(),initial)
+    host.send('editor-refresh',token,string.rep('a',64));eq(host.state().refresh_id,string.rep('a',64))
+    save(host,'subtitles','{"sub-scale":3}');eq(host.state().saving,true)
+    local busy=host.state();local count=#requests
+    host.send('editor-refresh',token,'busy-1');eq(host.state(),busy);eq(#requests,count)
+    writer('writer-failed');host.send('editor-close',token)
+    local closed=host.state();host.send('editor-refresh',token,'closed-1');eq(host.state(),closed)
+    host.event('shutdown');closed=host.state()
+    host.send('editor-refresh',token,'shutdown-1');eq(host.state(),closed)
+end
 function raw_patch_preserves_other_pages_and_unknowns()
     local raw='{"schema":1,"shortcuts":{"playback.pause":["x"]},"future":9007199254740993,"settings":{"future":{"a":null}, "modernz.scalewindowed":1.5, "sub-scale":2.0}}'
     local document=assert(model.document(raw,decode,parser))

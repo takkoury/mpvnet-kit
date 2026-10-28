@@ -37,7 +37,11 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 路径仍只写 `script-opts/mpvnet-local.conf`，使用独立 revision，不提供双文件事务。[settings-storage.ps1](../config/helpers/settings-storage.ps1) 的 `SaveLocal` 只接受四个已知路径键，保留未知行、注释及未改行；空值删除覆盖，重复已知键或非法新路径拒绝保存。Capture 新任务重读输出根，已开始任务的 payload 保持；程序路径在实例启动时读取。
 
-窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。正常关闭有草稿时列出分类并确认放弃，保存期间禁止关闭；IPC 中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)及[窗口](../tests/test_settings_window.py)。
+窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。[settings-chrome.cs](../config/helpers/settings-chrome.cs)通过WindowChrome提供同底色标题栏、系统拖动／缩放和最大化／关闭按钮，ShowInTaskbar=false；取得并校验父PID对应的MainWindowHandle后设置原生owner，不使用Topmost。验证和NoShow模式不创建窗口句柄。IPC中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)、[窗口](../tests/test_settings_window.py)及[标题栏](../tests/test_settings_chrome.py)。
+
+[settings-close.cs](../config/helpers/settings-close.cs)在关闭有草稿时提供等宽“保存／不保存／取消”。保存先校验已知冲突与输入，再依分类顺序执行现有独立保存，全部确认成功才关闭；不是跨文件事务。每页写入前发送该模块的editor-refresh(token, nonce)，等待发布状态中的refresh_id匹配，再从已更新基线发起save，避免同一窗口跨JSON域保存时被尚未轮询的旧revision误拒。两控制层仅在合法token且非保存／关闭中接受有限格式nonce，刷新不写盘或改变生命周期。
+
+逐页完成后清除对应草稿；任一失败停止后续保存，保留窗口与未保存草稿，列出已成功保存分类。保存期间阻止重入关闭。结果超时则停止自动推进并禁止重复提交，保留“不保存／取消”的退出路径，明确先前请求仍可能完成；迟到回执只更新已确认状态，不重新启动关闭流程。“不保存”只放弃未提交草稿，不回滚已成功保存的分类；“取消”只返回编辑。关闭流程与跨域确认回归见[SettingsCloseTests](../tests/test_settings_close.py)。
 
 窗口展示由 [settings-window.cs](../config/helpers/settings-window.cs)协调，[settings-controls.cs](../config/helpers/settings-controls.cs)提供语言排序、字体选择器、固定字幕示例、路径浏览和窗口内确认层。这些控件只修改草稿，仍由原控制层保存和预览。字幕示例使用本机字体和草稿比例，不依赖媒体字幕，不保证与ASS／位图字幕排版一致。关闭确认同时统计设置和快捷键草稿；模态层禁用底层输入，关闭时恢复焦点。
 

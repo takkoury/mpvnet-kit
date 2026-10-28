@@ -39,6 +39,12 @@ class UserShortcuts(unittest.TestCase):
     def test_catalog_comes_from_managed_input(self):
         self.run_case('catalog_defaults')
 
+    def test_editor_refresh_reads_external_without_writing_or_changing_session(self):
+        self.run_case('editor_refresh_reads_external_without_writing_or_changing_session')
+
+    def test_editor_refresh_rejects_invalid_busy_and_shutdown_requests(self):
+        self.run_case('editor_refresh_rejects_invalid_busy_and_shutdown_requests')
+
     def test_every_native_default_command_has_exact_or_semantic_mapping(self):
         self.run_case('native_catalog_coverage')
 

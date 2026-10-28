@@ -65,8 +65,12 @@ public sealed class SettingsShortcutsPanel : Grid
 
     public bool Dirty { get { return draft.Count != baseline.Count || draft.Any(p => !baseline.ContainsKey(p.Key) || !p.Value.SequenceEqual(baseline[p.Key])); } }
     public bool Saving { get { return saving; } }
+    public bool LastSaveSucceeded { get; private set; }
+    public bool SaveUnconfirmed { get; private set; }
+    public string RefreshId { get { return Text(latest,"refresh_id"); } }
+    public void RequestRefresh(string refreshId) { send(new object[] { "script-message-to", "user_shortcuts", "editor-refresh", token, refreshId }); }
     bool ReadOnly { get { return invalid || Flag(latest, "read_only") || (latest != null && Text(latest, "error").Length > 0 && !Flag(latest, "repairable")); } }
-    bool Editable { get { return IsEnabled && latest != null && !saving && !stale && !ReadOnly; } }
+    bool Editable { get { return IsEnabled && latest != null && !saving && !SaveUnconfirmed && !stale && !ReadOnly; } }
     public bool CanSave { get { return Editable && !Flag(latest, "saving") && Dirty && Conflict().Length == 0; } }
     public string Notice { get {
         if (saving) return "正在保存并应用…";
@@ -354,12 +358,13 @@ public sealed class SettingsShortcutsPanel : Grid
             Dictionary<string, string[]> next; var updated = ParseRows(state, out next);
             invalid = false;
             int serial = Number(state, "save_serial", 0);
+            if (SaveUnconfirmed && serial > pendingSerial && !Flag(state,"saving")) SaveUnconfirmed = false;
             bool completed = saving && serial > pendingSerial && !Flag(state, "saving");
             if (completed) {
                 saving = false;
                 string error = Text(state, "save_error");
                 if (error.Length > 0) { localError = error; if (Text(state, "revision") != revision) stale = true; }
-                else if (submitted != null && submitted.Count == next.Count && submitted.All(p => next.ContainsKey(p.Key) && p.Value.SequenceEqual(next[p.Key]))) { Load(state, updated, next); localNotice = "已保存并应用。"; }
+                else if (submitted != null && submitted.Count == next.Count && submitted.All(p => next.ContainsKey(p.Key) && p.Value.SequenceEqual(next[p.Key]))) { Load(state, updated, next); LastSaveSucceeded = true; localNotice = "已保存并应用。"; }
                 else { stale = true; localError = "保存完成后键位又发生变化，草稿已保留。撤销可载入最新键位。"; }
                 submitted = null;
             }
@@ -379,6 +384,7 @@ public sealed class SettingsShortcutsPanel : Grid
     public void Save()
     {
         if (!CanSave) return;
+        LastSaveSucceeded = false;
         var overrides = new Dictionary<string, object>();
         foreach (var row in rows) if (!draft[row.Id].SequenceEqual(row.Defaults)) overrides[row.Id] = draft[row.Id];
         submitted = draft.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.Ordinal);
@@ -389,7 +395,7 @@ public sealed class SettingsShortcutsPanel : Grid
     }
     public void Revert()
     {
-        if (saving || latest == null) return;
+        if (saving || SaveUnconfirmed || latest == null) return;
         if (stale || invalid) {
             try { Dictionary<string, string[]> next; var updated = ParseRows(latest, out next); Load(latest, updated, next); }
             catch (InvalidDataException error) { invalid = true; localError = error.Message; Refresh(); return; }
@@ -410,7 +416,7 @@ public sealed class SettingsShortcutsPanel : Grid
     public void Tick()
     {
         if (saving && DateTime.UtcNow.Subtract(saveStarted).TotalSeconds > 15) {
-            saving = false; stale = true; submitted = null; localError = "保存未收到完成结果，草稿已保留。撤销可重新载入并确认当前键位。"; Refresh();
+            saving = false; SaveUnconfirmed = true; stale = true; submitted = null; localError = "保存结果尚未确认，草稿已保留。可等待回执或关闭窗口；关闭不会撤回已提交的保存请求。"; Refresh();
         }
     }
     static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

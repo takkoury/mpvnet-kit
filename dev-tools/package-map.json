@@ -489,6 +489,18 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/settings-chrome.cs",
+      "destination": "config/helpers/settings-chrome.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-close.cs",
+      "destination": "config/helpers/settings-close.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/helpers/settings-window.cs",
       "destination": "config/helpers/settings-window.cs",
       "component": "author",

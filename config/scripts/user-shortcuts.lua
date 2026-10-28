@@ -15,6 +15,7 @@ local document, effective, catalog
 local repairable, editable_actions = false, nil
 local error_text, save_error = '', ''
 local saving, editor_running, editor_visible, closing = false, false, false, false
+local refresh_id = ''
 local owned = {}
 
 local function encode(value) return utils.format_json(value) end
@@ -37,7 +38,7 @@ local function publish()
     mp.set_property_native('user-data/mpvnet/shortcuts', {
         schema=1, revision=revision, actions=state.actions, forward_keys=state.forward_keys,
         opening_keys=state.opening_keys, error=error_text, save_error=save_error, saving=saving,
-        save_serial=save_serial, editor_token=token, editor_visible=editor_visible,
+        save_serial=save_serial, editor_token=token, editor_visible=editor_visible, refresh_id=refresh_id,
         repairable=repairable, editable_actions=editable_actions or state.actions,
     })
 end
@@ -180,6 +181,11 @@ end
 mp.add_key_binding(nil, 'open', open)
 mp.register_script_message('editor-ready', function(received_token)
     if received_token == token and not closing then editor_visible = true; publish() end
+end)
+mp.register_script_message('editor-refresh', function(received_token, id)
+    if received_token ~= token or closing or saving or type(id) ~= 'string' or #id < 1 or #id > 64
+        or not id:match('^[A-Za-z0-9%-]+$') then return end
+    refresh_id = id; reload(false); publish()
 end)
 mp.register_script_message('editor-close', function(received_token)
     if received_token == token then editor_visible = false; publish() end

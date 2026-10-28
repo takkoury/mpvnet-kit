@@ -54,6 +54,12 @@ class UserSettings(unittest.TestCase):
     def test_raw_patch_preserves_unknown_fields_shortcuts_and_other_pages(self):
         self.run_case('raw_patch_preserves_other_pages_and_unknowns')
 
+    def test_editor_refresh_reads_external_without_writing_or_changing_session(self):
+        self.run_case('editor_refresh_reads_external_without_writing_or_changing_session')
+
+    def test_editor_refresh_rejects_invalid_busy_and_closed_requests(self):
+        self.run_case('editor_refresh_rejects_invalid_busy_and_closed_requests')
+
     def test_production_scripts_start_in_either_load_order(self):
         self.run_case('script_load_order_and_startup_saved_values')
 

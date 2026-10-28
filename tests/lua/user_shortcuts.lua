@@ -404,6 +404,45 @@ function save_success()
     assert(contains(state().opening_keys,'Ctrl+i'));assert(contains(state().opening_keys,'Tab'))
 end
 
+function editor_refresh_reads_external_without_writing_or_changing_session()
+    bindings.open();local token=state().editor_token
+    eq(state().refresh_id,'')
+    local revision=state().revision;local count=#requests
+    local raw='{"schema":1,"settings":{"sub-scale":2},"shortcuts":{"playback.pause":["F2"]}}'
+    files[user_path]=raw
+    local original={};for path,text in pairs(files) do original[path]=text end
+    messages['editor-refresh'](token,'close-1')
+    eq(state().refresh_id,'close-1');assert(state().revision~=revision)
+    eq(action(state(),'playback.pause').keys[1],'F2');eq(state().save_serial,0);eq(state().saving,false)
+    eq(state().editor_token,token);eq(state().editor_visible,true);eq(#requests,count)
+    for path,text in pairs(files) do eq(text,original[path]) end
+    for path,text in pairs(original) do eq(files[path],text) end
+    revision=state().revision;local before=state()
+    messages['editor-refresh'](token,'close-2')
+    eq(state().refresh_id,'close-2');eq(state().revision,revision);assert(state()~=before);eq(#requests,count)
+    files[user_path]='{"schema":1,"shortcuts":{"playback.pause":["F3"]}}'
+    messages.save(token,revision,'{"playback.pause":["F4"]}')
+    eq(state().saving,false);assert(state().save_error~='')
+    eq(action(state(),'playback.pause').keys[1],'F3');eq(#requests,count)
+end
+
+function editor_refresh_rejects_invalid_busy_and_shutdown_requests()
+    bindings.open();local token=state().editor_token;local initial=state()
+    files[user_path]='{"schema":1,"shortcuts":{"playback.pause":["F2"]}}'
+    messages['editor-refresh']('wrong','valid-1');eq(state(),initial)
+    for _,id in ipairs({'','bad_id','bad id','bad/id','中文',string.rep('a',65),false,123}) do
+        messages['editor-refresh'](token,id);eq(state(),initial)
+    end
+    messages['editor-refresh'](token,nil);eq(state(),initial)
+    messages['editor-refresh'](token,string.rep('a',64));eq(state().refresh_id,string.rep('a',64))
+    save('{"playback.pause":["F3"]}');eq(state().saving,true)
+    local busy=state();local count=#requests
+    messages['editor-refresh'](token,'busy-1');eq(state(),busy);eq(#requests,count)
+    local job=request();job.callback(false,{status=1,stdout='writer-failed'})
+    events.shutdown();local closed=state()
+    messages['editor-refresh'](token,'shutdown-1');eq(state(),closed)
+end
+
 function save_failures_and_stale()
     local before=state().revision
     save('{"playback.pause":["F2"]}')

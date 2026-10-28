@@ -125,10 +125,11 @@ public sealed partial class SettingsEditor
     {
         if (overlayOpen) CloseOverlay(); overlayReturn = Keyboard.FocusedElement as FrameworkElement;
         overlay = new Border { Background = new SolidColorBrush(Color.FromArgb(160,0,0,0)) }; Grid.SetColumnSpan(overlay, 2);
+        Grid.SetRow(overlay,1);
         var dialog = new Border { Width = 440, MaxHeight = Math.Max(300, (ActualHeight > 0 ? ActualHeight : Height) - 80), Padding = new Thickness(24), CornerRadius = new CornerRadius(7), BorderThickness = new Thickness(1), BorderBrush = Brush("#484848"), Background = Brush("#1B1B1B"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Child = panel };
         KeyboardNavigation.SetTabNavigation(dialog, KeyboardNavigationMode.Cycle); overlay.Child = dialog;
         bodyPanel.IsEnabled = false; overlayOpen = true; rootPanel.Children.Add(overlay); playerPreview.Hide(); EndDisplay();
-        overlay.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { CloseOverlay(); e.Handled = true; } };
+        overlay.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { if (!closeSaveRunning) CloseOverlay(); e.Handled = true; } };
         Dispatcher.BeginInvoke(new Action(delegate { if (overlayOpen) focus.Focus(); }));
     }
     void CloseOverlay()

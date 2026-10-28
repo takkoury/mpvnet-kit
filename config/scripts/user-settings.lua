@@ -20,6 +20,7 @@ local token,editor_running,editor_visible,closing='',false,false,false
 local saving,saving_page,save_serial,save_page,save_error,save_ok,save_revision=false,'',0,'','',false,''
 local preview_serial,preview_error=0,''
 local action_serial,action_error=0,''
+local refresh_id=''
 local owned={}
 local encode,decode=utils.format_json,utils.parse_json
 local function read(path)
@@ -64,7 +65,7 @@ local function publish()
             apply_error='',default_source='自动选择',search_terms=id=='mpv_path' and '缩略图 进度条 预览 播放器 路径 mpv' or ''}
     end
     mp.set_property_native('user-data/mpvnet/settings',{schema=1,editor_token=token,
-        editor_visible=editor_visible,revision=revision,paths_revision=paths_revision,error=error_text,
+        editor_visible=editor_visible,refresh_id=refresh_id,revision=revision,paths_revision=paths_revision,error=error_text,
         paths_error=paths_error,saving=saving,saving_page=saving_page,save_serial=save_serial,
         save_page=save_page,save_error=save_error,save_ok=save_ok,save_revision=save_revision,
         fields=fields,pages=model.pages,actions=model.actions,action_serial=action_serial,action_error=action_error,
@@ -243,6 +244,10 @@ local function open()
 end
 mp.add_key_binding(nil,'open',open)
 mp.register_script_message('editor-ready',function(received) if current(received) then editor_visible=true;publish() end end)
+mp.register_script_message('editor-refresh',function(received,id)
+    if not current(received) or saving or type(id)~='string' or #id<1 or #id>64 or not id:match('^[A-Za-z0-9%-]+$') then return end
+    refresh_id=id;reload(false)
+end)
 mp.register_script_message('editor-close',function(received)
     if current(received) then
         display_preview(received,'end')

@@ -235,6 +235,7 @@ public sealed partial class SettingsEditor : Window
         Closing += OnClosing;
         Closed += delegate { Finish(); if (!validation && Application.Current != null) Application.Current.Shutdown(); };
         SourceInitialized += delegate {
+            AttachPlayerOwner();
             try { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); } catch { }
         };
         KeyDown += delegate(object sender, KeyEventArgs e) {
@@ -321,7 +322,7 @@ public sealed partial class SettingsEditor : Window
         search.TextChanged += delegate { shortcuts.CancelCapture(); Search(); };
         search.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Down || e.Key == Key.Return) { var first = results.Children.OfType<Button>().FirstOrDefault(); if (first != null) { first.Focus(); if (e.Key == Key.Return) first.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); e.Handled = true; } } };
         SizeChanged += delegate { ArrangePreview(); UpdateSubtitleExample(); UpdatePlayerPreview(); }; main.SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); }; StateChanged += delegate { UpdatePlayerPreview(); };
-        SelectPage(page); Refresh();
+        ConfigureChrome(); SelectPage(page); Refresh();
     }
     void SelectPage(string id)
     {
@@ -540,11 +541,11 @@ public sealed partial class SettingsEditor : Window
         DisplayAvailability(available);
     }
     void Reset() { if (saving || shortcuts.Saving) return; if (page == "shortcuts") { shortcuts.Reset(); return; } model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && x.Previewable)) Preview(f); Refresh(); }
-    void Revert() { if (saving || shortcuts.Saving) return; if (page == "shortcuts") { shortcuts.Revert(); return; } Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
+    void Revert() { if (saving || shortcuts.Saving) return; if (page == "shortcuts") { localError = ""; shortcuts.Revert(); return; } Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
     void Save()
     {
         if (!save.IsEnabled) return;
-        if (page == "shortcuts") { shortcuts.Save(); return; }
+        if (page == "shortcuts") { localError = ""; shortcuts.Save(); return; }
         Dictionary<string, object> values;
         try { values = model.Values(page); } catch (Exception e) { localError = e.Message; Refresh(); return; }
         saving = true; pendingPage = page; pendingRevision = model.Revisions[page]; pendingSerial = serial; saveStarted = DateTime.UtcNow; localError = "";
@@ -598,10 +599,11 @@ public sealed partial class SettingsEditor : Window
         save.IsEnabled = !saving && !disconnected && model.Dirty(page) && !stale && error.Length == 0 && valid;
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));
         reset.IsEnabled = !saving && !disconnected && model.Fields.Values.Any(f => f.Page == page) && error.Length == 0; reset.Visibility = page == "advanced" || page == "shortcuts" ? Visibility.Collapsed : Visibility.Visible;
-        if (page == "shortcuts") { notice.Text = disconnected ? localError : shortcuts.Notice; notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed; save.IsEnabled = !saving && !disconnected && shortcuts.CanSave; undo.IsEnabled = !saving && !disconnected && !shortcuts.Saving; reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving; }
+        if (page == "shortcuts") { notice.Text = localError.Length > 0 ? localError : shortcuts.Notice; notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed; save.IsEnabled = !saving && !disconnected && shortcuts.CanSave; undo.IsEnabled = !saving && !disconnected && !shortcuts.Saving; reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving; }
         else if (shortcuts.Saving) { save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false; }
         footerPanel.Visibility = search.Text.Trim().Length > 0 || page == "advanced" ? Visibility.Collapsed : Visibility.Visible;
-        content.IsEnabled = !saving && !shortcuts.Saving; shortcuts.IsEnabled = !saving && !disconnected;
+        if (settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed) save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false;
+        content.IsEnabled = !saving && !shortcuts.Saving && !settingsSaveUnconfirmed && !shortcuts.SaveUnconfirmed; shortcuts.IsEnabled = !saving && !disconnected && !settingsSaveUnconfirmed;
     }
     static string DisplayField(SettingsDraft.Field field, object value)
     {
@@ -624,8 +626,10 @@ public sealed partial class SettingsEditor : Window
         if (SettingsDraft.Str(state, "editor_token") != token) return;
         int nextSerial = Convert.ToInt32(SettingsDraft.Value(state, "save_serial") ?? 0);
         string committed = null;
-        if (saving && nextSerial > pendingSerial && SettingsDraft.Str(state, "save_page") == pendingPage)
+        bool completed = (saving || settingsSaveUnconfirmed) && nextSerial > pendingSerial && SettingsDraft.Str(state, "save_page") == pendingPage;
+        if (completed)
         {
+            if (settingsSaveUnconfirmed) { settingsSaveUnconfirmed = false; localError = ""; }
             if (SettingsDraft.Flag(state, "save_ok"))
             {
                 string revision = SettingsDraft.Str(state, pendingPage == "paths" ? "paths_revision" : "revision");
@@ -637,6 +641,16 @@ public sealed partial class SettingsEditor : Window
         bool first = model.Fields.Count == 0;
         latest = state; serial = nextSerial; model.Adopt(state, committed, pendingRevision);
         if (first) { SelectPage(page); Search(); } else { SyncInputs(); Refresh(); }
+        if (completed && closeSaveRunning && closeSavePhase == "save" && closeSavePage == pendingPage) {
+            string error = SettingsDraft.Str(state,"save_error");
+            if (committed == null && localError.Length > 0) error = localError;
+            if (committed != null) {
+                string apply = String.Join("；",model.Fields.Values.Where(f => f.Page == committed && f.ApplyError.Length > 0).Select(f => f.Label + "：" + f.ApplyError));
+                if (apply.Length > 0) error = "文件已保存，但应用失败：" + apply;
+            }
+            ClosePageSaved(committed != null,error);
+        }
+        CloseRefreshReceived("settings",SettingsDraft.Str(state,"refresh_id"));
     }
     void Send(object[] command)
     {
@@ -657,14 +671,17 @@ public sealed partial class SettingsEditor : Window
         disconnected = true;
         EndDisplay(); playerPreview.Hide(); displayAvailable = false;
         localError = "播放器连接中断，草稿已保留。请核对保存结果后关闭并重新打开设置。";
-        saving = false; Refresh();
+        if (saving) settingsSaveUnconfirmed = true;
+        saving = false; if (closeSaveRunning) StopCloseSave(localError); Refresh();
     }
     void Tick(object sender, EventArgs e)
     {
         try
         {
             if (parent.HasExited) { forceClose = true; Close(); return; }
+            AttachPlayerOwner();
             shortcuts.Tick();
+            PollCloseSave();
             if (disconnected) return;
             UpdatePlayerPreview();
             int count = 0;
@@ -674,7 +691,7 @@ public sealed partial class SettingsEditor : Window
                 var message = UserPreferencesStorage.Object(json.DeserializeObject(read.Result));
                 string eventName = SettingsDraft.Str(message, "event"); object data = SettingsDraft.Value(message, "data");
                 if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/settings" && data is Dictionary<string, object>) State((Dictionary<string, object>)data);
-                else if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/shortcuts" && data is Dictionary<string, object>) { shortcuts.Adopt((Dictionary<string,object>)data); if (search.Text.Trim().Length > 0) Search(); }
+                else if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/shortcuts" && data is Dictionary<string, object>) ShortcutsState((Dictionary<string,object>)data);
                 else if (eventName == "shutdown") { forceClose = true; Close(); return; }
                 else if (eventName == "client-message")
                 {
@@ -688,15 +705,16 @@ public sealed partial class SettingsEditor : Window
                 read = reader.ReadLineAsync();
             }
             if (saving && (DateTime.UtcNow - saveStarted).TotalSeconds > 20)
-            { localError = "保存结果尚未返回，请等待；关闭播放器前先确认配置。"; Refresh(); }
+            { MarkSettingsSaveUnconfirmed(); }
         }
         catch { Disconnect(); }
     }
     string[] DirtyPages() { return model.DirtyPages().Concat(shortcuts.Dirty ? new[]{"shortcuts"} : new string[0]).Distinct().ToArray(); }
     void OnClosing(object sender, CancelEventArgs e)
     {
-        if (!forceClose && (saving || shortcuts.Saving)) { e.Cancel = true; return; }
-        if (!forceClose && !validation && DirtyPages().Length > 0) { e.Cancel = true; if (!overlayOpen) Confirm("放弃未保存的修改？", "以下分类的修改尚未保存：\n" + String.Join("、", DirtyPages().Select(SettingsDraft.PageName)), delegate { forceClose = true; Close(); }); return; }
+        if (!forceClose && (saving || shortcuts.Saving || closeSaveRunning)) { e.Cancel = true; return; }
+        if (!forceClose && DirtyPages().Length > 0) { e.Cancel = true; if (!overlayOpen) ShowClosePrompt(); return; }
+        closeAccepted = true;
         EndDisplay(); playerPreview.Hide();
         try { Action("editor-close"); } catch { }
     }
@@ -744,7 +762,12 @@ public sealed partial class SettingsEditor : Window
             else if (op == "locate") { int index = Convert.ToInt32(step["index"]); results.Children.OfType<Button>().ElementAt(index).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
             else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
-            else if (op == "shortcuts-state") shortcuts.Adopt(UserPreferencesStorage.Object(step["state"]));
+            else if (op == "shortcuts-state") { var incoming = UserPreferencesStorage.Object(step["state"]); if (SettingsDraft.Flag(step,"current_refresh")) incoming["refresh_id"] = closeRefreshId; ShortcutsState(incoming); }
+            else if (op == "shortcut-edit") typeof(SettingsShortcutsPanel).GetMethod("ChangeKey",System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(shortcuts,new object[] { SettingsDraft.Str(step,"id"), 0, SettingsDraft.Str(step,"key") });
+            else if (op == "request-close") OnClosing(this,new CancelEventArgs());
+            else if (op == "close-choice") { LayoutForValidation(); VisualChildren<Button>(rootPanel).First(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b) == SettingsDraft.Str(step,"id")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
+            else if (op == "close-timeout") { closeStepStarted = DateTime.UtcNow.AddSeconds(-21); PollCloseSave(); }
+            else if (op == "shortcuts-timeout") { typeof(SettingsShortcutsPanel).GetField("saveStarted",System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(shortcuts,DateTime.UtcNow.AddSeconds(-21)); shortcuts.Tick(); PollCloseSave(); }
             else if (op == "font-picker") FontPicker(model.Fields["sub-font"]);
             else if (op == "picker-query") VisualChildren<TextBox>(overlay).Single().Text = SettingsDraft.Str(step,"text");
             else if (op == "invoke-control") {
@@ -752,7 +775,7 @@ public sealed partial class SettingsEditor : Window
                 VisualChildren<Button>(rootPanel).First(b => System.Windows.Automation.AutomationProperties.GetName(b) == name).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             }
             else if (op == "close-overlay") CloseOverlay();
-            else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
+            else if (op == "state") { var incoming = UserPreferencesStorage.Object(step["state"]); if (SettingsDraft.Flag(step,"current_refresh")) incoming["refresh_id"] = closeRefreshId; State(incoming); }
             else if (op == "save") Save(); else if (op == "reset") Reset(); else if (op == "undo") Revert();
             else if (op == "disconnect") Disconnect();
             else if (op == "display-available") DisplayAvailability(SettingsDraft.Flag(step, "value"));
@@ -782,6 +805,9 @@ public sealed partial class SettingsEditor : Window
         string renderPath = SettingsDraft.Str(request, "validation_render_path");
         if (renderPath.Length > 0) RenderValidation(renderPath);
         return new { ok = true, shown = IsVisible, page = page, pages = SettingsDraft.Pages,
+            show_in_taskbar = ShowInTaskbar, window_style = WindowStyle.ToString(), caption_height = System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight,
+            close_accepted = closeAccepted, close_saving = closeSaveRunning, close_save_phase = closeSavePhase, close_saved_pages = closeSavedPages.ToArray(), save_unconfirmed = settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed,
+            close_buttons = VisualChildren<Button>(rootPanel).Where(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b).StartsWith("Close",StringComparison.Ordinal)).Select(b => new { label = b.Content as string, width = b.ActualWidth, height = b.ActualHeight, background = b.Background.ToString(), enabled = b.IsEnabled }).ToArray(),
             search_viewport_height = searchViewport.ActualHeight, overlay_open = overlayOpen,
             body_enabled = bodyPanel.IsEnabled, subtitle_sample = subtitleSample == null ? "" : subtitleSample.Text,
             ordinary_content_visible = previewLayout.Visibility == Visibility.Visible,

@@ -42,6 +42,8 @@
 - `config/helpers/settings-window.cs`
 - `config/helpers/settings-controls.cs`
 - `config/helpers/settings-shortcuts.cs`
+- `config/helpers/settings-chrome.cs`
+- `config/helpers/settings-close.cs`
 - `config/helpers/settings-preview.cs`
 - `config/input.conf`
 - `config/mpv.conf`
