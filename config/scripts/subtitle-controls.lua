@@ -5,6 +5,7 @@ local adjusting = false
 local saved_adjustment
 local position
 local settings_owner
+local position_owner
 -- User-confirmed steps; no settings file is written by these actions.
 local delay_step, position_step, scale_step = 0.1, 1, 0.05
 
@@ -104,6 +105,7 @@ end
 
 local function adjust_position(amount, single)
     if not adjusting and not single then return end
+    if position_owner then position_owner.invalidate() end
     set_position(position + amount)
     show_adjustment()
 end
@@ -148,6 +150,7 @@ end
 
 local function reset_adjustment()
     if settings_owner then settings_owner.invalidate() end
+    if position_owner then position_owner.invalidate() end
     local had_adjustment = saved_adjustment ~= nil
     reset_for_file()
     mp.osd_message(had_adjustment and "SUB ADJUST: RESET" or "SUB ADJUST: NO CHANGES", 1)
@@ -200,4 +203,25 @@ settings_owner = settings_model.owner(mp, {
     read=function() return mp.get_property_number('sub-scale',1) end,
     write=function(value) return mp.set_property_number('sub-scale',value) end,
     committed=function(value) if saved_adjustment then saved_adjustment.scale=value end end,
+})
+
+settings_model.owner(mp,{
+    id='sub-font',property='sub-font',default_source='播放器启动配置',
+    read=function() return mp.get_property('sub-font','sans-serif') end,
+    write=function(value) return mp.set_property('sub-font',value) end,
+})
+position_owner=settings_model.owner(mp,{
+    id='sub-pos',property='user-data/mpvnet/subtitle-base-pos',default_source='播放器启动配置',
+    -- OSC avoidance is temporary geometry, not a manual preference change.
+    read=function() return mp.get_property_number('user-data/mpvnet/subtitle-base-pos',mp.get_property_number('sub-pos',100)) end,
+    write=function(value,reason)
+        local ok=mp.set_property_number('sub-pos',value)
+        if not ok then return false end
+        mp.set_property_number('user-data/mpvnet/subtitle-base-pos',value)
+        if saved_adjustment then position=value end
+        mp.commandv('script-message-to','modernz',
+            (reason=='preview' or saved_adjustment) and 'subtitle-adjust-position' or 'subtitle-adjust-reset',value)
+        return true
+    end,
+    committed=function(value) if saved_adjustment then saved_adjustment.pos=value end end,
 })

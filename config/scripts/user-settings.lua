@@ -12,12 +12,14 @@ local sequence,revision_number,local_number,session=0,0,0,0
 local revision,paths_revision='', ''
 local observed_raw,observed_exists,observed_error,local_raw,local_exists,local_error
 local document,error_text,paths_error=nil,'',''
+local startup_snapshot
 local local_values={}
 local runtime={}
 local retired={}
 local token,editor_running,editor_visible,closing='',false,false,false
 local saving,saving_page,save_serial,save_page,save_error,save_ok,save_revision=false,'',0,'','',false,''
 local preview_serial,preview_error=0,''
+local action_serial,action_error=0,''
 local owned={}
 local encode,decode=utils.format_json,utils.parse_json
 local function read(path)
@@ -33,28 +35,31 @@ local function read(path)
 end
 local function defaults()
     local values={}
-    for _,field in ipairs(model.fields) do values[field.id]=runtime[field.id] and runtime[field.id].default or field.default end
+    for _,field in ipairs(model.fields) do values[field.id]=model.value_or(runtime[field.id] and runtime[field.id].default,field.default) end
     return values
 end
 local function publish()
     local fields={}
     for _,field in ipairs(model.fields) do
         local owner=runtime[field.id] or {}
-        local default=owner.default or field.default
+        local default=model.value_or(owner.default,field.default)
         local override=document and document.values[field.id]
         local status=owner.status or 'unavailable'
-        if status=='effective' and not model.same_number(owner.effective,override or default) then status='pending-media' end
+        if status=='effective' and not model.same(owner.effective,model.value_or(override,default)) then
+            status=field.timing=='startup' and 'pending-startup' or 'pending-media'
+        end
         fields[#fields+1]={id=field.id,page=field.page,label=field.label,search_terms=field.search_terms,default=default,
-            saved=override or default,has_override=override~=nil,effective=owner.effective,
+            saved=model.value_or(override,default),has_override=override~=nil,effective=owner.effective,
             status=status,apply_error=owner.apply_error or '',can_cancel=(owner.preview_owner or '')~='',
             min=field.min,max=field.max,slider_min=field.slider_min,slider_max=field.slider_max,
-            step=field.step,default_source=owner.default_source or '等待功能模块'}
+            step=field.step,kind=field.kind,display=field.display,timing=field.first_media and 'first-media' or field.timing,first_media=field.first_media,section=field.section,choices=field.choices,
+            default_source=owner.default_source or '等待功能模块'}
     end
     local labels={capture_root='截图与片段目录',ffmpeg_path='FFmpeg 路径',python_path='Python 路径',mpv_path='缩略图播放器路径'}
     for _,id in ipairs(model.path_fields) do
         local saved=local_values[id] or ''
         local effective=id=='capture_root' and saved or paths.options[id] or ''
-        fields[#fields+1]={id=id,page='paths',label=labels[id],default='',saved=saved,
+        fields[#fields+1]={id=id,page='paths',label=labels[id],kind='string',timing=id=='capture_root' and 'next-task' or 'restart',default='',saved=saved,
             has_override=saved~='',effective=effective,status=saved==effective and 'effective' or 'pending-restart',
             apply_error='',default_source='自动选择'}
     end
@@ -62,7 +67,8 @@ local function publish()
         editor_visible=editor_visible,revision=revision,paths_revision=paths_revision,error=error_text,
         paths_error=paths_error,saving=saving,saving_page=saving_page,save_serial=save_serial,
         save_page=save_page,save_error=save_error,save_ok=save_ok,save_revision=save_revision,
-        fields=fields,pages=model.pages,preview_serial=preview_serial,preview_error=preview_error,
+        fields=fields,pages=model.pages,actions=model.actions,action_serial=action_serial,action_error=action_error,
+        preview_serial=preview_serial,preview_error=preview_error,
         preview_subtitle_position=mp.get_property_number('sub-pos',100)})
 end
 local function reload(force)
@@ -77,7 +83,12 @@ local function reload(force)
             else parsed,err=model.document(raw,decode,parser) end
         end
         document,error_text=parsed,err or ''
-        if parsed then mp.set_property_native('user-data/mpvnet/settings-values',{schema=1,revision=revision,values=parsed.values}) end
+        local first_read=startup_snapshot==nil
+        if first_read then startup_snapshot={available=parsed~=nil,values=parsed and parsed.values or {}} end
+        if parsed or first_read then
+            mp.set_property_native('user-data/mpvnet/settings-values',
+                {schema=1,revision=revision,values=parsed and parsed.values or nil,startup=startup_snapshot})
+        end
     end
     raw,exists,err=read(local_path)
     if force==true or force=='paths' or raw~=local_raw or exists~=local_exists or err~=local_error then
@@ -126,11 +137,11 @@ end
 local function cancel(page,owner)
     for _,field in ipairs(model.fields) do
         if not page or field.page==page then
-            mp.commandv('script-message-to',field.script,'settings-cancel',owner)
+            mp.commandv('script-message-to',field.script,'settings-cancel',owner,field.id)
             local old=retired[field.id]
             local value=mp.get_property_native('user-data/mpvnet/settings-runtime/'..field.id) or runtime[field.id] or {}
             if old and value.preview_owner==old.owner then
-                if old.owner~=owner then mp.commandv('script-message-to',field.script,'settings-cancel',old.owner) end
+                if old.owner~=owner then mp.commandv('script-message-to',field.script,'settings-cancel',old.owner,field.id) end
             elseif old then retired[field.id]=nil end
         end
     end
@@ -141,7 +152,9 @@ local function finish(page,message,ok,written_revision)
 end
 local function save(received,expected,page,proposed)
     if not current(received) then return end
-    if page~='paths' and page~='subtitles' and page~='controlbar' then return end
+    local allowed=page=='paths'
+    for _,field in ipairs(model.fields) do if field.page==page then allowed=true end end
+    if not allowed then return end
     if saving then
         save_page=page;save_error='上一项保存仍在进行，请稍后重试';save_ok=false;save_serial=save_serial+1;publish();return
     end
@@ -183,7 +196,7 @@ local function save(received,expected,page,proposed)
         local written=ours and (page=='paths' and paths_revision or revision) or ''
         if page~='paths' and document and ours and current(received) then
             for _,field in ipairs(model.fields) do
-                if field.page==page then mp.commandv('script-message-to',field.script,'settings-commit',received,revision) end
+                if field.page==page then mp.commandv('script-message-to',field.script,'settings-commit',received,revision,field.id) end
             end
         end
         finish(page,(page=='paths' and paths_error or error_text)~='' and '文件已保存，但重新载入失败' or '',true,written)
@@ -191,16 +204,17 @@ local function save(received,expected,page,proposed)
 end
 local function preview(received,id,value)
     if not current(received) then return end
-    local field=model.field(id);if not field then return end
+    local field=model.field(id);if not field or field.timing~='preview' then return end
     local root,err=parser.parse(value or '',decode)
-    if not root or (root.kind~='null' and (root.kind~='number' or not model.valid(field,root.value))) then
+    if not root or (root.kind~='null' and (not model.valid_node(field,root))) then
         preview_error=err or '预览值超出允许范围';preview_serial=preview_serial+1;publish();return
     end
     preview_error='';preview_serial=preview_serial+1
     local old=retired[id]
     local value=mp.get_property_native('user-data/mpvnet/settings-runtime/'..id) or runtime[id] or {}
     local previous_owner=old and value.preview_owner==old.owner and old.owner or ''
-    mp.commandv('script-message-to',field.script,'settings-preview',received,root.kind=='null' and 'null' or tostring(root.value),previous_owner)
+    local wire=root.kind=='null' and 'null' or field.kind=='string' and 'string:'..root.value or tostring(root.value)
+    mp.commandv('script-message-to',field.script,'settings-preview',received,wire,previous_owner,id)
     publish()
 end
 local function open()
@@ -239,6 +253,21 @@ mp.register_script_message('preview-display',function(received,page)
     if not current(received) then return end
     local operation=({controlbar='begin',none='end',renew='renew'})[page]
     if operation then display_preview(received,operation) end
+end)
+-- Fixed actions only: the editor cannot send paths, shell text or mpv commands.
+local actions={
+    ['shortcuts.open']={'script-binding','user_shortcuts/open'},
+    ['edit.mpv.conf']={'script-message-to','mpvnet','edit-conf-file','mpv.conf'},
+    ['edit.input.conf']={'script-message-to','mpvnet','edit-conf-file','input.conf'},
+    ['edit.modernz.conf']={'script-message-to','mpvnet','edit-conf-file','script-opts/modernz.conf'},
+    ['open.config-folder']={'script-message-to','mpvnet','open-conf-folder'},
+}
+mp.register_script_message('open-action',function(received,id)
+    if not current(received) or not actions[id] then return end
+    local ok,result=pcall(mp.commandv,unpack(actions[id]))
+    action_error=(not ok or result==nil or result==false) and '无法打开此项目' or ''
+    action_serial=action_serial+1;publish()
+    if action_error~='' then mp.osd_message(action_error,3) end
 end)
 mp.register_script_message('save',save)
 mp.register_script_message('preview',preview)

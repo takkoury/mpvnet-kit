@@ -447,6 +447,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/scripts/settings-options.lua",
+      "destination": "config/scripts/settings-options.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/scripts/user-settings.lua",
       "destination": "config/scripts/user-settings.lua",
       "component": "author",

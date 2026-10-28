@@ -23,9 +23,13 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ### 常用设置基础
 
-[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)目前贯通字幕缩放、窗口控制栏缩放及独立路径页。入口为 `user_settings/open`；正式菜单接入与其他设置属于后续批次。
+[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置试用开发版)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。
 
-`mpvnet-user.json` 继续使用 schema 1，新增平面 `settings` 对象，字段为 `sub-scale` 和 `modernz.scalewindowed`。窗口持各页草稿和载入时 revision；模型复用快捷键的原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。恢复默认先改草稿，保存后删除对应覆盖；默认取功能模块启动时的真实配置。
+`mpvnet-user.json` 继续使用 schema 1 和平面 `settings` 对象。字段类型、数值范围、选项、搜索词、分组和时机由 Lua 模型定义；窗口按元数据构造控件并持各页草稿和载入 revision。模型复用原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。false、0、空字符串是显式值，保存请求中的 null 表示删除覆盖；新字段即使等于当前默认也保留显式选择，只有原有两项缩放继续沿用等默认省略的兼容行为。恢复默认先改草稿，保存后删除覆盖，不写受管配置。
+
+[settings-options.lua](../config/scripts/settings-options.lua)持有播放选项的应用边界。语言、默认字幕显隐与硬解只在 `on_load` 写 `file-local-options`，位于当前文件选轨／创建解码器之前；保存和轮询不写当前解码器。全屏与置顶仅初始化一次。音量／静音为避免 mpv.net `Player_Initialized` 记忆值与 Lua 初始化竞争，冻结控制层第一次加载的启动快照，到本实例首次 `on_load` 读取宿主最终基线并应用一次；继承不写，之后的保存、轮询和换媒体不改变这一启动目标。首次损坏配置也冻结无覆盖，之后修复留待下一实例。
+
+同一功能脚本内的多个 owner 共用分发器，内部 preview/cancel/commit 追加稳定字段 ID，避免消息注册互相覆盖。owner 支持数字、布尔和字符串；字幕位置与 ModernZ 自动避让、临时字幕调整共享基线，控制栏各选项由 ModernZ 自己同步内部布局／暂停／时间格式状态。高级工具只接受稳定白名单动作，复用宿主原有文件编辑与目录命令；不接受任意文件路径或命令。
 
 控制层发布 `user-data/mpvnet/settings`，包含已保存值、实际值、默认来源、待生效及错误状态。功能模块通过 `user-settings.owner` 管理预览所有者、媒体代次、应用版本及条件恢复；字幕由 subtitle-controls 写属性，控制栏由 ModernZ 改自己的选项和几何。保存值总线 `settings-values` 只同步长期值；其他实例在下一媒体应用，保存实例显式 commit。提交处理主动读取最新总线，避免消息先于属性通知到达时漏应用。保存成功与运行应用失败分别报告。
 

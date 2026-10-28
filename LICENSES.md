@@ -36,6 +36,7 @@
 - `config/helpers/user-preferences-storage.cs`
 - `config/script-modules/user-settings.lua`
 - `config/scripts/user-settings.lua`
+- `config/scripts/settings-options.lua`
 - `config/helpers/settings-storage.ps1`
 - `config/helpers/settings-window.ps1`
 - `config/helpers/settings-window.cs`

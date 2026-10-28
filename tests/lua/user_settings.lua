@@ -48,12 +48,19 @@ os.getenv=function(name) if name=='TEMP' then return 'X:/temp' end end
 os.remove=function(path) removed[#removed+1]=path;files[path]=nil;return true end
 local function instance(pid,order)
     local host={properties={pid=pid,['options/input-ipc-server']='',['sub-scale']=1.25,
-        ['sub-pos']=80,['user-data/mpvnet/subtitle-base-pos']=80,sid=1,
-        ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},osd={},fail=false}
+        ['sub-pos']=80,['sub-font']='Default Font',['sub-visibility']=true,slang='eng',alang='jpn',hwdec='auto-safe',
+        volume=75,mute=true,fullscreen=false,ontop=false,['user-data/mpvnet/subtitle-base-pos']=80,sid=1,
+        ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},writes={},hooks={},local_options={},osd={},fail=false}
     local script
     local function get(name,fallback) local value=host.properties[name];if value~=nil then return value end;return fallback end
     local function set(name,value)
-        if host.fail and name=='sub-scale' then return nil end
+        host.writes[#host.writes+1]={name,value}
+        local option=name:match('^file%-local%-options/(.+)$')
+        if option then
+            if not host.local_options[option] then host.local_options[option]={value=get(option)} end
+            name=option
+        end
+        if host.fail and name=='sub-scale' or host.fail_audio and (name=='volume' or name=='mute') then return nil end
         if host.float and name=='sub-scale' then value=math.floor(value*8388608+0.5)/8388608 end
         host.properties[name]=value
         for _,callback in ipairs(host.observers[name] or {}) do
@@ -84,12 +91,21 @@ local function instance(pid,order)
             host.observers[name]=host.observers[name] or {};table.insert(host.observers[name],callback)
             callback(name,host.properties[name])
         end,
+        add_hook=function(name,_,callback) host.hooks[name]=host.hooks[name] or {};table.insert(host.hooks[name],callback) end,
         register_event=function(name,callback) host.events[name]=host.events[name] or {};table.insert(host.events[name],callback) end,
         add_periodic_timer=function(_,callback) host.timers[#host.timers+1]=callback end,
         osd_message=function(text) host.osd[#host.osd+1]=text end,msg={warn=function() end},
     }
     host.set=set
-    function host.event(name) for _,callback in ipairs(host.events[name] or {}) do callback() end end
+    function host.event(name)
+        for _,callback in ipairs(host.events[name] or {}) do callback() end
+        if name=='end-file' then
+            for id,old in pairs(host.local_options) do set(id,old.value) end
+            host.local_options={}
+        end
+    end
+    function host.hook(name) for _,callback in ipairs(host.hooks[name] or {}) do callback() end end
+    function host.media() host.event('end-file');host.event('start-file');host.hook('on_load');host.event('file-loaded') end
     function host.poll() for _,callback in ipairs(host.timers) do callback() end end
     function host.flush() local pending=host.pending or {};host.pending={};for _,callback in ipairs(pending) do callback() end end
     function host.state() return host.properties['user-data/mpvnet/settings'] end
@@ -124,16 +140,34 @@ local function instance(pid,order)
             (function()
 -- SUBTITLE SOURCE
             end)()
+        elseif name=='settings_options' then
+            (function()
+-- OPTIONS SOURCE
+            end)()
         elseif name=='modernz' then
-            local user_opts={scalewindowed=1.1}
+            local user_opts={scalewindowed=1.1,scalefullscreen=1,hidetimeout=1500,keeponpause='no',chapter_fmt='Chapter %s',timecurrent=true,timems=false,persistent_progress=false,showonpause=true}
+            local state={pause=false}
             local settings_owner
+            local settings_owners={}
+            local settings_showonpause
+            local function set_time_styles(current,ms)
+                if current then state.tc_left_rem=not user_opts.timecurrent end
+                if ms then state.tc_ms=user_opts.timems end
+            end
+            local function apply_pause_policy() host.pause_policy=(host.pause_policy or 0)+1 end
+            local function visibility_mode() end
             local request_init=function() host.modernz_inits=(host.modernz_inits or 0)+1 end
             local request_tick=function() end
 -- MODERNZ INTEGRATION
-            host.modernz_value=function() return user_opts.scalewindowed end
+            host.modernz_value=function(name) return user_opts[name or 'scalewindowed'] end
+            host.modernz_state=state
+            local ne={eventresponder={}}
+-- MODERNZ TIME ACTION
+            host.modernz_manual_time=ne.eventresponder.mbtn_left_up
+-- MODERNZ PROGRESS ACTION
         end
     end
-    for _,name in ipairs(order or {'user_settings','subtitle_controls','modernz'}) do host.load(name) end
+    for _,name in ipairs(order or {'user_settings','subtitle_controls','modernz','settings_options'}) do host.load(name) end
     return host
 end
 local function writer(result,job)
@@ -409,4 +443,294 @@ function display_preview_editor_lifecycle()
         eq(commands[2][4],token);eq(commands[2][5],'end')
         host.send('preview-display',token,'controlbar');eq(#display_commands(host),2)
     end
+end
+
+-- M2-C fields exercise production model, controller, subtitle and option adapters.
+function typed_values_and_raw_page_patch()
+    local raw='{"schema":1,"settings":{"mute":false,"sub-visibility":false,"sub-font":"null","slang":"","future":{"exact":9007199254740993}},"extra":1e99}'
+    local doc=assert(model.document(raw,decode,parser))
+    eq(doc.values.mute,false);eq(doc.values['sub-visibility'],false);eq(doc.values.slang,'')
+    eq(doc.values['sub-font'],'null')
+    local next_raw=assert(model.prepare(doc,'audio','{"mute":false,"volume":0,"alang":"eng,jpn"}',decode,encode,parser,{mute=true,volume=75,alang='jpn'}))
+    local parsed=assert(model.document(next_raw,decode,parser))
+    eq(parsed.values.mute,false);eq(parsed.values.volume,0);eq(parsed.values.alang,'eng,jpn')
+    assert(next_raw:find('"future":{"exact":9007199254740993}',1,true));assert(next_raw:find('"extra":1e99',1,true))
+    next_raw=assert(model.prepare(parsed,'audio','{"mute":null}',decode,encode,parser,{mute=true}))
+    eq(model.document(next_raw,decode,parser).values.mute,nil)
+    for _,bad in ipairs({'{"mute":"false"}','{"volume":false}','{"alang":true}'}) do assert(not model.proposed('audio',bad,decode,parser)) end
+    assert(not model.proposed('decoding','{"hwdec":"arbitrary"}',decode,parser))
+    assert(not model.proposed('subtitles','{"sub-font":"bad\\nfont"}',decode,parser))
+end
+function all_fields_publish_their_type_timing_and_page()
+    local host=instance(71)
+    eq(#host.state().fields,23);eq(#host.state().pages,8);eq(#host.state().actions,5)
+    for _,field in ipairs(host.state().fields) do
+        assert(field.kind=='number' or field.kind=='string' or field.kind=='boolean' or field.kind=='choice')
+        assert(field.timing and field.default~=nil and field.saved~=nil and field.status)
+        if field.kind=='choice' then assert(#field.choices>0) end
+    end
+    eq(host.field('mute').default,true);eq(host.field('modernz.timems').default,false)
+    eq(host.field('modernz.timems').saved,false);eq(host.field('sub-pos').display,'position')
+end
+function multiple_preview_fields_restore_independently()
+    local host=instance(72);local token=host.open()
+    host.send('preview',token,'sub-font','"New Font"')
+    host.send('preview',token,'sub-pos','60')
+    host.send('preview',token,'sub-scale','1.8')
+    eq(host.field('sub-font').effective,'New Font');eq(host.field('sub-pos').effective,60);eq(host.field('sub-scale').effective,1.8)
+    host.set('user-data/mpvnet/subtitle-base-pos',61);host.set('sub-pos',61)
+    host.send('cancel',token,'subtitles')
+    eq(host.field('sub-font').effective,'Default Font');eq(host.field('sub-pos').effective,61);eq(host.field('sub-scale').effective,1.25)
+    host.send('preview',token,'sub-font','"null"');eq(host.field('sub-font').effective,'null')
+    host.send('preview',token,'sub-font','""');eq(host.field('sub-font').effective,'')
+    host.send('cancel',token,'subtitles');eq(host.field('sub-font').effective,'Default Font')
+end
+function next_media_options_run_before_selection_and_never_at_save()
+    local host=instance(73);local token=host.open()
+    save(host,'subtitles','{"slang":"zho,eng","sub-visibility":false}');writer('writer-ok')
+    save(host,'audio','{"alang":"eng,jpn"}');writer('writer-ok')
+    save(host,'decoding','{"hwdec":"no"}');writer('writer-ok')
+    eq(host.field('slang').effective,'eng');eq(host.field('sub-visibility').effective,true)
+    eq(host.field('alang').effective,'jpn');eq(host.field('hwdec').effective,'auto-safe')
+    eq(host.field('hwdec').status,'pending-media')
+    for _,write in ipairs(host.writes) do assert(write[1]~='hwdec' and not write[1]:find('file-local-options/',1,true)) end
+    host.send('preview',token,'hwdec','"no"');eq(host.field('hwdec').effective,'auto-safe')
+    host.event('start-file');eq(host.field('hwdec').effective,'auto-safe')
+    host.hook('on_load')
+    -- These assertions precede file-loaded: selection/decoder construction sees
+    -- the options already applied, not a late property change after decoding.
+    eq(host.field('slang').effective,'zho,eng');eq(host.field('sub-visibility').effective,false)
+    eq(host.field('alang').effective,'eng,jpn');eq(host.field('hwdec').effective,'no')
+    local count=0
+    for _,write in ipairs(host.writes) do if write[1]=='file-local-options/hwdec' then count=count+1 end end
+    eq(count,1);host.event('file-loaded');host.poll()
+    local next_count=0
+    for _,write in ipairs(host.writes) do if write[1]=='file-local-options/hwdec' then next_count=next_count+1 end end
+    eq(next_count,count)
+    save(host,'decoding','{"hwdec":null}');writer('writer-ok');eq(host.field('hwdec').effective,'no')
+    host.media();eq(host.field('hwdec').effective,'auto-safe')
+    -- Inheritance avoids writing any option, preserving file-specific choices.
+    host.set('hwdec','nvdec');host.hook('on_load');eq(host.field('hwdec').effective,'nvdec')
+end
+function startup_overrides_initialize_once_and_false_is_not_missing()
+    files[user_path]='{"schema":1,"settings":{"volume":0,"mute":false,"fullscreen":true,"ontop":true}}'
+    local host=instance(74);host.open()
+    eq(host.field('volume').effective,75);eq(host.field('mute').effective,true)
+    eq(host.field('volume').status,'pending-startup');eq(host.field('volume').timing,'first-media')
+    host.hook('on_load');eq(host.field('volume').effective,0);eq(host.field('mute').effective,false)
+    eq(host.field('mute').saved,false);eq(host.field('mute').has_override,true)
+    eq(host.field('fullscreen').effective,true);eq(host.field('ontop').effective,true)
+    host.set('volume',33);host.set('mute',true);host.set('fullscreen',false);host.set('ontop',false)
+    host.media();host.poll();host.media()
+    eq(host.field('volume').effective,33);eq(host.field('mute').effective,true)
+    eq(host.field('fullscreen').effective,false);eq(host.field('ontop').effective,false)
+    save(host,'audio','{"volume":50,"mute":false}');writer('writer-ok')
+    save(host,'window','{"fullscreen":true,"ontop":true}');writer('writer-ok')
+    eq(host.field('volume').effective,33);eq(host.field('mute').effective,true)
+    eq(host.field('volume').status,'pending-startup');eq(host.field('fullscreen').effective,false)
+    local fresh=instance(75)
+    eq(fresh.field('volume').effective,75);fresh.hook('on_load')
+    eq(fresh.field('volume').effective,50);eq(fresh.field('mute').effective,false)
+    eq(fresh.field('fullscreen').effective,true);eq(fresh.field('ontop').effective,true)
+end
+function options_observers_can_be_delayed_and_external_changes_defer()
+    local first,second=instance(76),instance(77);first.open();second.open();second.defer=true
+    save(first,'subtitles','{"slang":"zho","sub-visibility":false}');writer('writer-ok')
+    save(first,'decoding','{"hwdec":"no"}');writer('writer-ok')
+    save(first,'audio','{"mute":false}');writer('writer-ok')
+    second.poll();eq(second.field('hwdec').saved,'no');eq(second.field('hwdec').effective,'auto-safe')
+    second.media();eq(second.field('hwdec').effective,'no');eq(second.field('slang').effective,'zho')
+    eq(second.field('sub-visibility').effective,false);eq(second.field('mute').effective,true)
+    second.flush();eq(second.field('mute').saved,false);eq(second.field('hwdec').effective,'no')
+end
+function all_modernz_fields_apply_preview_and_cancel()
+    local host=instance(78);local token=host.open()
+    local changes={scalewindowed='1.5',scalefullscreen='1.8',hidetimeout='2.5',keeponpause='"both"',chapter_fmt='false',timecurrent='false',timems='true',persistent_progress='true'}
+    for id,value in pairs(changes) do host.send('preview',token,'modernz.'..id,value) end
+    eq(host.modernz_value('scalewindowed'),1.5);eq(host.modernz_value('scalefullscreen'),1.8)
+    eq(host.modernz_value('hidetimeout'),2500);eq(host.modernz_value('keeponpause'),'both')
+    eq(host.modernz_value('chapter_fmt'),'no');eq(host.modernz_state.tc_left_rem,true)
+    eq(host.modernz_state.tc_ms,true);eq(host.modernz_state.persistent_progress_toggle,true)
+    for id in pairs(changes) do eq(host.field('modernz.'..id).status,'preview') end
+    host.send('cancel',token,'controlbar')
+    eq(host.modernz_value('scalewindowed'),1.1);eq(host.modernz_value('hidetimeout'),1500)
+    eq(host.modernz_value('chapter_fmt'),'Chapter %s');eq(host.modernz_value('timems'),false)
+    eq(host.modernz_state.persistent_progress_toggle,false);eq(host.modernz_value('keeponpause'),'no')
+    for id in pairs(changes) do eq(host.field('modernz.'..id).can_cancel,false) end
+end
+function actions_require_current_token_and_fixed_allowlist()
+    local host=instance(79);local token=host.open();local before=#host.commands
+    host.send('open-action','stale','shortcuts.open')
+    host.send('open-action',token,'edit.anything');eq(#host.commands,before)
+    for _,action in ipairs(host.state().actions) do host.send('open-action',token,action.id) end
+    eq(#host.commands,before+5)
+    eq(host.commands[before+1][1],'script-binding');eq(host.commands[before+1][2],'user_shortcuts/open')
+    eq(host.commands[before+2][2],'mpvnet');eq(host.commands[before+2][4],'mpv.conf')
+    host.send('editor-close',token);before=#host.commands
+    host.send('open-action',token,'open.config-folder');eq(#host.commands,before)
+end
+
+function explicit_values_equal_to_baseline_keep_the_override()
+    local host=instance(80);host.open()
+    save(host,'audio','{"volume":75,"mute":true,"alang":"jpn"}');writer('writer-ok')
+    save(host,'subtitles','{"sub-visibility":true,"slang":"eng","sub-font":"Default Font"}');writer('writer-ok')
+    save(host,'window','{"fullscreen":false,"ontop":false}');writer('writer-ok')
+    save(host,'controlbar','{"modernz.timems":false,"modernz.chapter_fmt":true,"modernz.keeponpause":"no"}');writer('writer-ok')
+    local saved=assert(model.document(files[user_path],decode,parser)).values
+    eq(saved.volume,75);eq(saved.mute,true);eq(saved.fullscreen,false);eq(saved['modernz.timems'],false)
+    eq(host.field('fullscreen').has_override,true);eq(host.field('modernz.timems').has_override,true)
+    local fresh=instance(81,{'user_settings'})
+    fresh.set('volume',100);fresh.set('mute',false);fresh.set('fullscreen',true);fresh.set('ontop',true)
+    fresh.load('settings_options')
+    eq(fresh.field('volume').effective,100);eq(fresh.field('mute').effective,false)
+    fresh.hook('on_load')
+    eq(fresh.field('volume').default,100);eq(fresh.field('volume').effective,75)
+    eq(fresh.field('mute').effective,true);eq(fresh.field('fullscreen').effective,false);eq(fresh.field('ontop').effective,false)
+    fresh.open();save(fresh,'audio','{"mute":false}');writer('writer-ok')
+    eq(fresh.field('mute').default,false);eq(fresh.field('mute').has_override,true)
+    local another=instance(85);eq(another.field('mute').default,true);eq(another.field('mute').effective,true)
+    another.hook('on_load');eq(another.field('mute').effective,false)
+    save(fresh,'window','{"fullscreen":null}');writer('writer-ok')
+    eq(fresh.field('fullscreen').has_override,false);eq(fresh.field('fullscreen').effective,false)
+end
+function first_media_hook_reads_snapshot_before_delayed_notifications()
+    files[user_path]='{"schema":1,"settings":{"slang":"zho","alang":"eng","sub-visibility":false,"hwdec":"no","volume":25,"mute":false}}'
+    local host=instance(82,{'settings_options'})
+    host.defer=true;host.load('user_settings')
+    eq(host.field('hwdec').effective,'auto-safe');eq(host.field('volume').effective,75)
+    host.event('start-file');host.hook('on_load')
+    eq(host.field('hwdec').effective,'no');eq(host.field('slang').effective,'zho')
+    eq(host.field('sub-visibility').effective,false);eq(host.field('alang').effective,'eng')
+    eq(host.field('volume').effective,25);eq(host.field('mute').effective,false)
+    host.set('volume',40);host.flush();host.event('file-loaded');host.poll();host.hook('on_load')
+    eq(host.field('volume').effective,40)
+    -- If no valid preference existed at startup, repairing it later cannot
+    -- suddenly reset playback's volume or mute halfway through this instance.
+    files[user_path]='{"schema":7}'
+    local broken=instance(83);broken.event('start-file');broken.hook('on_load')
+    files[user_path]='{"schema":1,"settings":{"volume":10,"mute":false}}';broken.poll()
+    eq(broken.field('volume').saved,10);eq(broken.field('volume').effective,75)
+    eq(broken.field('mute').effective,true)
+end
+
+function manual_modernz_actions_invalidate_owned_preview()
+    local host=instance(84);local token=host.open()
+    host.send('preview',token,'modernz.timecurrent','false')
+    eq(host.modernz_state.tc_left_rem,true)
+    host.modernz_manual_time();eq(host.modernz_state.tc_left_rem,false)
+    host.send('cancel',token,'controlbar');eq(host.modernz_state.tc_left_rem,false)
+    eq(host.field('modernz.timecurrent').can_cancel,false)
+    host.send('preview',token,'modernz.persistent_progress','true')
+    host.bindings['modernz/progress-toggle']();eq(host.modernz_state.persistent_progress_toggle,false)
+    host.send('cancel',token,'controlbar');eq(host.modernz_state.persistent_progress_toggle,false)
+    eq(host.field('modernz.persistent_progress').can_cancel,false)
+end
+
+function saved_modernz_booleans_and_strings_defer_other_instances()
+    local first,second=instance(86),instance(87);local token=first.open()
+    save(first,'controlbar','{"modernz.chapter_fmt":false,"modernz.timecurrent":false,"modernz.timems":true,"modernz.persistent_progress":true,"modernz.keeponpause":"bottombar","modernz.scalefullscreen":1.8,"modernz.hidetimeout":2}');writer('writer-ok')
+    eq(first.field('modernz.chapter_fmt').saved,false);eq(first.modernz_value('chapter_fmt'),'no')
+    eq(first.modernz_state.tc_left_rem,true);eq(first.modernz_state.tc_ms,true)
+    eq(first.modernz_state.persistent_progress_toggle,true)
+    first.send('cancel',token,'controlbar');eq(first.modernz_value('chapter_fmt'),'no')
+    second.poll();eq(second.field('modernz.chapter_fmt').saved,false)
+    eq(second.modernz_value('chapter_fmt'),'Chapter %s');eq(second.field('modernz.chapter_fmt').status,'pending-media')
+    second.media();eq(second.modernz_value('chapter_fmt'),'no');eq(second.modernz_state.tc_left_rem,true)
+    eq(second.modernz_state.tc_ms,true);eq(second.modernz_state.persistent_progress_toggle,true)
+    eq(second.modernz_value('keeponpause'),'bottombar');eq(second.modernz_value('scalefullscreen'),1.8)
+    eq(second.modernz_value('hidetimeout'),2000)
+end
+
+function host_remember_volume_orders_apply_only_at_first_load()
+    for index,order in ipairs({'scripts-first','host-first'}) do
+        files[user_path]='{"schema":1,"settings":{"volume":0,"mute":false}}'
+        local load_order
+        if order=='host-first' then load_order={'user_settings'} end
+        local host=instance(90+index,load_order)
+        host.set('volume',87);host.set('mute',true)
+        if order=='host-first' then host.load('settings_options') end
+        eq(host.field('volume').effective,87);eq(host.field('mute').effective,true)
+        eq(host.field('volume').default,87);eq(host.field('volume').saved,0)
+        eq(host.field('volume').status,'pending-startup');eq(host.field('mute').status,'pending-startup')
+        eq(host.field('volume').default_source,'宿主首次播放前设置')
+        local function audio_writes()
+            local count=0
+            for _,write in ipairs(host.writes) do if write[1]=='volume' or write[1]=='mute' then count=count+1 end end
+            return count
+        end
+        local writes=audio_writes()
+        host.event('start-file');eq(audio_writes(),writes)
+        host.hook('on_load');eq(host.field('volume').effective,0);eq(host.field('mute').effective,false)
+        eq(audio_writes(),writes+2)
+        eq(host.field('volume').default,87);eq(host.field('mute').default,true)
+        eq(host.field('volume').status,'effective');eq(host.field('mute').status,'effective')
+        host.set('volume',33);host.set('mute',true);host.media();host.poll();host.media()
+        eq(audio_writes(),writes+4)
+        eq(host.field('volume').effective,33);eq(host.field('mute').effective,true)
+    end
+end
+function first_load_uses_frozen_startup_snapshot_despite_new_save()
+    files[user_path]='{"schema":1,"settings":{"volume":25,"mute":false}}'
+    local host=instance(93);host.open()
+    save(host,'audio','{"volume":40,"mute":true}');writer('writer-ok')
+    eq(host.field('volume').saved,40);eq(host.field('volume').effective,75)
+    host.hook('on_load')
+    eq(host.field('volume').effective,25);eq(host.field('mute').effective,false)
+    eq(host.field('volume').saved,40);eq(host.field('mute').saved,true)
+    eq(host.field('volume').status,'pending-startup');eq(host.field('mute').status,'pending-startup')
+    host.poll();host.media();eq(host.field('volume').effective,25);eq(host.field('mute').effective,false)
+    local next_host=instance(94);next_host.hook('on_load')
+    eq(next_host.field('volume').effective,40);eq(next_host.field('mute').effective,true)
+end
+function inherited_startup_stays_inherited_when_saved_before_first_load()
+    local host=instance(95);host.open()
+    save(host,'audio','{"volume":0,"mute":false}');writer('writer-ok')
+    host.set('volume',88);host.set('mute',true)
+    eq(host.field('volume').default,88);eq(host.field('volume').saved,0)
+    local count=0
+    for _,write in ipairs(host.writes) do if write[1]=='volume' or write[1]=='mute' then count=count+1 end end
+    host.hook('on_load')
+    eq(host.field('volume').effective,88);eq(host.field('mute').effective,true)
+    local after=0
+    for _,write in ipairs(host.writes) do if write[1]=='volume' or write[1]=='mute' then after=after+1 end end
+    eq(after,count);eq(host.field('volume').status,'pending-startup')
+end
+function invalid_bootstrap_cannot_be_repaired_into_this_startup()
+    for index,late in ipairs({false,true}) do
+        files[user_path]='{"schema":7}'
+        local host=instance(96+index,late and {'user_settings'} or nil)
+        files[user_path]='{"schema":1,"settings":{"volume":0,"mute":false}}';host.poll()
+        if late then host.load('settings_options') end
+        eq(host.field('volume').saved,0);eq(host.field('mute').saved,false)
+        host.hook('on_load');eq(host.field('volume').effective,75);eq(host.field('mute').effective,true)
+        eq(host.field('volume').status,'pending-startup');eq(host.field('mute').status,'pending-startup')
+        -- A later malformed edit preserves the already published valid bus.
+        local bus=host.properties['user-data/mpvnet/settings-values']
+        files[user_path]='{"schema":8}';host.poll()
+        eq(host.properties['user-data/mpvnet/settings-values'],bus)
+        host.media();eq(host.properties.volume,75);eq(host.properties.mute,true)
+    end
+end
+function equal_startup_override_is_pending_until_first_load_and_baseline_refreshes()
+    files[user_path]='{"schema":1,"settings":{"volume":75,"mute":false}}'
+    local host=instance(99)
+    eq(host.field('volume').effective,75);eq(host.field('volume').saved,75)
+    eq(host.field('volume').status,'pending-startup')
+    host.set('volume',82);host.set('mute',true)
+    eq(host.field('volume').default,82);eq(host.field('volume').saved,75)
+    host.hook('on_load');eq(host.field('volume').default,82);eq(host.field('volume').effective,75)
+    eq(host.field('mute').default,true);eq(host.field('mute').effective,false)
+end
+
+function failed_first_media_initialization_is_not_retried_on_media_change()
+    files[user_path]='{"schema":1,"settings":{"volume":0,"mute":false}}'
+    local host=instance(100);host.fail_audio=true;host.hook('on_load')
+    eq(host.field('volume').status,'apply-failed');eq(host.field('mute').status,'apply-failed')
+    eq(host.field('volume').effective,75);eq(host.field('mute').effective,true)
+    host.fail_audio=false;host.poll();host.media();host.media()
+    eq(host.field('volume').effective,75);eq(host.field('mute').effective,true)
+    eq(host.field('volume').status,'apply-failed')
+    local count=0
+    for _,write in ipairs(host.writes) do if write[1]=='volume' or write[1]=='mute' then count=count+1 end end
+    eq(count,2)
 end

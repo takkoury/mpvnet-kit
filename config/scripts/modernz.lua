@@ -23,7 +23,8 @@ local assdraw = require "mp.assdraw"
 local msg = require "mp.msg"
 local opt = require "mp.options"
 local utils = require "mp.utils"
-local settings_owner
+local settings_owners={}
+local settings_showonpause
 local settings_display
 mp.set_property("osc", "no")
 
@@ -4649,7 +4650,10 @@ local function osc_init()
         return prefix .. format_time(playtime_remaining) .. " / " .. format_time(state.duration)
     end
     ne.eventresponder["mbtn_left_up"] = function()
+        if settings_owners and settings_owners.timecurrent then settings_owners.timecurrent.invalidate() end
         state.tc_left_rem = not state.tc_left_rem
+        user_opts.timecurrent = not state.tc_left_rem
+        if settings_owners and settings_owners.timecurrent then settings_owners.timecurrent.refresh() end
         request_init()
     end
     ne.eventresponder["mbtn_right_up"] = function()
@@ -5614,7 +5618,7 @@ local function idlescreen_visibility(mode, no_osd)
     request_tick()
 end
 
-mp.observe_property("pause", "bool", function(_, enabled)
+local function apply_pause_policy(_, enabled)
     state.pause = (enabled == true)
     request_tick()
     if user_opts.showonpause and user_opts.visibility ~= "never" then
@@ -5650,7 +5654,8 @@ mp.observe_property("pause", "bool", function(_, enabled)
         end
     end
     settings_display.hold()
-end)
+end
+mp.observe_property("pause", "bool", apply_pause_policy)
 
 mp.register_script_message("osc-visibility", manual_visibility_mode)
 mp.add_key_binding(nil, "fullscreen-video-double-click", function()
@@ -5670,8 +5675,10 @@ mp.register_script_message("osc-hide", function()
 end)
 mp.add_key_binding(nil, "visibility", function() manual_visibility_mode("cycle") end)
 mp.add_key_binding(nil, "progress-toggle", function()
+    if settings_owners.persistent_progress then settings_owners.persistent_progress.invalidate() end
     user_opts.persistent_progress = not user_opts.persistent_progress
     state.persistent_progress_toggle = user_opts.persistent_progress
+    if settings_owners.persistent_progress then settings_owners.persistent_progress.refresh() end
     request_init()
 end)
 mp.register_script_message("osc-idlescreen", idlescreen_visibility)
@@ -5774,8 +5781,9 @@ opt.read_options(user_opts, "modernz", function(changed)
         manual_visibility_mode(user_opts.visibility, true)
     end
     request_init()
-    if settings_owner then
-        if changed.scalewindowed then settings_owner.invalidate() else settings_owner.refresh() end
+    if changed.showonpause then settings_showonpause=user_opts.showonpause end
+    for name,owner in pairs(settings_owners) do
+        if changed[name] or name=="keeponpause" and changed.showonpause then owner.invalidate() else owner.refresh() end
     end
 end)
 
@@ -5791,15 +5799,40 @@ visibility_mode(user_opts.visibility, true)
 -- ModernZ applies its own live option and geometry; the settings controller
 -- never edits script-opts or reaches into ModernZ's option table.
 local settings_model = dofile(mp.command_native({'expand-path','~~/script-modules/user-settings.lua'}))
-settings_owner = settings_model.owner(mp, {
-    id='modernz.scalewindowed',default_source='ModernZ 启动配置',
-    read=function() return user_opts.scalewindowed end,
-    write=function(value)
-        user_opts.scalewindowed=value
-        request_init();request_tick()
-        return true
-    end,
-})
+local chapter_format=user_opts.chapter_fmt~='no' and user_opts.chapter_fmt or '%s'
+settings_showonpause=user_opts.showonpause
+for _,name in ipairs({'scalewindowed','scalefullscreen','hidetimeout','keeponpause','chapter_fmt','timecurrent','timems','persistent_progress'}) do
+    local option=name
+    settings_owners[option]=settings_model.owner(mp,{
+        id='modernz.'..option,default_source='ModernZ 启动配置',
+        read=function()
+            if option=='hidetimeout' then return user_opts[option]/1000 end
+            if option=='chapter_fmt' then return user_opts[option]~='no' end
+            return user_opts[option]
+        end,
+        write=function(value)
+            if option=='hidetimeout' then user_opts[option]=value*1000
+            elseif option=='chapter_fmt' then
+                if user_opts[option]~='no' then chapter_format=user_opts[option] end
+                user_opts[option]=value and chapter_format or 'no'
+            else user_opts[option]=value end
+            if option=='timecurrent' or option=='timems' then set_time_styles(option=='timecurrent',option=='timems') end
+            if option=='persistent_progress' then state.persistent_progress_toggle=value end
+            if option=='keeponpause' then
+                -- End the old paused policy before evaluating the new one. The
+                -- preview lease stays independent and continues to hold the bar.
+                state.keeponpause_active=false
+                if state.keeponpause_restore then
+                    visibility_mode(state.keeponpause_restore,true);state.keeponpause_restore=nil
+                end
+                user_opts.showonpause=value~='no' or settings_showonpause
+                apply_pause_policy(nil,state.pause)
+            end
+            request_init();request_tick()
+            return true
+        end,
+    })
+end
 
 set_virt_mouse_area(0, 0, 0, 0, "input")
 set_virt_mouse_area(0, 0, 0, 0, "input_wheel")

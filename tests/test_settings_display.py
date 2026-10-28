@@ -26,15 +26,22 @@ class SettingsDisplay(unittest.TestCase):
             'local function autohide()\nlocal now=mp.get_time()\n' +
             fragment(source, '    -- autohide\n', '    -- actual rendering\n') + '\nend',
             fragment(source, 'local function always_on(', 'local function idlescreen_visibility('),
-            fragment(source, 'mp.observe_property("pause", "bool", function', 'mp.add_key_binding(nil, "progress-toggle"'),
+            fragment(source, 'local function apply_pause_policy(', 'mp.add_key_binding(nil, "progress-toggle"'),
             fragment(source, 'mp.register_event("shutdown", function()', 'mp.observe_property("track-list"'),
             fragment(source, 'observe_cached("idle-active", function()', 'mp.observe_property("display-fps"'),
             fragment(source, '-- read options from config and command-line', '\nload_locale_file()'),
+            'local settings_model_fixture=(function()\n' +
+            (ROOT / 'config/script-modules/user-settings.lua').read_text(encoding='utf-8') + '\nend)()',
+            'local function install_settings_owners()\nlocal dofile=function() return settings_model_fixture end\n' +
+            fragment(source, '-- ModernZ applies its own live option', '\nset_virt_mouse_area(') + '\nend',
             cases,
         ])
 
     def run_case(self, name):
         self.lua.execute(self.source + '\n' + name + '()', name='settings-display/' + name)
+
+    def test_live_pause_previews_update_real_policy_and_restore_advanced_showonpause(self):
+        self.run_case('live_pause_previews_restore_policy')
 
     def test_modes_keep_the_bottom_bar_visible_without_changing_visibility(self):
         self.run_case('modes_and_mouse_leave')

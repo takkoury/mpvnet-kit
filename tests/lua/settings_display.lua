@@ -1,6 +1,8 @@
 -- Only mpv, clocks, input regions and unrelated drawing are doubles. Visibility,
 -- lease, mouse-leave, autohide, pause and media handlers are production source.
 local state,settings_display,settings_owner
+local settings_owners={}
+local settings_showonpause
 local now,properties,messages,observers,events,timers,bindings
 local option_callback
 local thumbfast={width=0,height=0,available=false}
@@ -15,6 +17,9 @@ local mp={
     set_property=function(name,value) properties[name]=value end,
     del_property=function(name) properties[name]=nil end,
     commandv=noop,osd_message=noop,enable_key_bindings=noop,disable_key_bindings=noop,
+    command_native=function() return '' end,
+    get_script_name=function() return 'modernz' end,
+    get_property_native=function(name,default) local value=properties[name];if value~=nil then return value end;return default end,
     register_script_message=function(name,callback) messages[name]=callback end,
     register_event=function(name,callback) events[name]=callback end,
     observe_property=function(name,_,callback) observers[name]=callback end,
@@ -175,4 +180,18 @@ function idle_and_console()
     fixture();send('begin');observers['user-data/mpv/console/open']('',true)
     eq(settings_display.active(),false);eq(state.osc_visible,false)
     send('renew');eq(settings_display.active(),false)
+end
+
+function live_pause_previews_restore_policy()
+    fixture('auto');user_opts.showonpause=false;pause(true)
+    install_settings_owners();send('begin')
+    messages['settings-preview']('editor-1','both','','modernz.keeponpause')
+    eq(user_opts.keeponpause,'both');eq(user_opts.showonpause,true)
+    eq(user_opts.visibility,'always');eq(state.keeponpause_restore,'auto');visible()
+    messages['settings-preview']('editor-1','bottombar','','modernz.keeponpause')
+    eq(user_opts.visibility,'auto');eq(state.keeponpause_restore,nil);eq(state.keeponpause_active,true)
+    messages['settings-cancel']('editor-1','modernz.keeponpause')
+    eq(user_opts.keeponpause,'no');eq(user_opts.showonpause,false)
+    eq(user_opts.visibility,'auto');eq(state.keeponpause_active,false);eq(state.keeponpause_restore,nil)
+    visible();send('end');pause(false);eq(user_opts.visibility,'auto')
 end

@@ -18,12 +18,19 @@ class UserSettings(unittest.TestCase):
             ('PATHS SOURCE', 'config/script-modules/mpvnet-paths.lua'),
             ('CONTROLLER SOURCE', 'config/scripts/user-settings.lua'),
             ('SUBTITLE SOURCE', 'config/scripts/subtitle-controls.lua'),
+            ('OPTIONS SOURCE', 'config/scripts/settings-options.lua'),
         ):
             cls.source = cls.source.replace('-- ' + marker, (ROOT / path).read_text(encoding='utf-8'))
         modernz = (ROOT / 'config/scripts/modernz.lua').read_text(encoding='utf-8')
         start = modernz.index('-- ModernZ applies its own live option')
         end = modernz.index('\nset_virt_mouse_area(', start)
         cls.source = cls.source.replace('-- MODERNZ INTEGRATION', modernz[start:end])
+        start = modernz.index('    ne.eventresponder["mbtn_left_up"]', modernz.index('    -- Time codes display'))
+        end = modernz.index('    ne.eventresponder["mbtn_right_up"]', start)
+        cls.source = cls.source.replace('-- MODERNZ TIME ACTION', modernz[start:end])
+        start = modernz.index('mp.add_key_binding(nil, "progress-toggle"')
+        end = modernz.index('mp.register_script_message("osc-idlescreen"', start)
+        cls.source = cls.source.replace('-- MODERNZ PROGRESS ACTION', modernz[start:end])
 
     def run_case(self, name):
         self.lua.execute(self.source + '\n' + name + '()', name='user-settings/' + name)
@@ -97,9 +104,63 @@ class UserSettings(unittest.TestCase):
     def test_display_preview_finishes_on_close_helper_exit_and_shutdown(self):
         self.run_case('display_preview_editor_lifecycle')
 
+    def test_typed_false_empty_string_null_and_raw_unknown_values(self):
+        self.run_case('typed_values_and_raw_page_patch')
+
+    def test_complete_fields_publish_editor_metadata(self):
+        self.run_case('all_fields_publish_their_type_timing_and_page')
+
+    def test_one_feature_dispatches_multiple_preview_owners_without_overwriting(self):
+        self.run_case('multiple_preview_fields_restore_independently')
+
+    def test_language_visibility_and_decode_apply_in_on_load_before_selection(self):
+        self.run_case('next_media_options_run_before_selection_and_never_at_save')
+
+    def test_startup_settings_apply_once_and_saved_false_remains_an_override(self):
+        self.run_case('startup_overrides_initialize_once_and_false_is_not_missing')
+
+    def test_deferred_observers_and_external_updates_follow_each_fields_timing(self):
+        self.run_case('options_observers_can_be_delayed_and_external_changes_defer')
+
+    def test_all_modernz_fields_preview_restore_and_update_internal_display_state(self):
+        self.run_case('all_modernz_fields_apply_preview_and_cancel')
+
+    def test_open_actions_allow_only_fixed_ids_from_the_current_editor(self):
+        self.run_case('actions_require_current_token_and_fixed_allowlist')
+
+    def test_explicit_baseline_equal_values_survive_different_host_defaults(self):
+        self.run_case('explicit_values_equal_to_baseline_keep_the_override')
+
+    def test_first_on_load_reads_preferences_before_delayed_observers(self):
+        self.run_case('first_media_hook_reads_snapshot_before_delayed_notifications')
+
+    def test_manual_time_and_progress_actions_invalidate_their_preview_owners(self):
+        self.run_case('manual_modernz_actions_invalidate_owned_preview')
+
+    def test_saved_modernz_values_apply_locally_and_defer_picture_changes_elsewhere(self):
+        self.run_case('saved_modernz_booleans_and_strings_defer_other_instances')
+
+    def test_both_host_remember_orders_initialize_volume_and_mute_at_first_load_once(self):
+        self.run_case('host_remember_volume_orders_apply_only_at_first_load')
+
+    def test_new_save_before_first_media_does_not_change_frozen_startup_target(self):
+        self.run_case('first_load_uses_frozen_startup_snapshot_despite_new_save')
+
+    def test_first_media_inheritance_does_not_apply_values_saved_during_idle(self):
+        self.run_case('inherited_startup_stays_inherited_when_saved_before_first_load')
+
+    def test_repair_before_first_media_cannot_replace_an_invalid_bootstrap(self):
+        self.run_case('invalid_bootstrap_cannot_be_repaired_into_this_startup')
+
+    def test_idle_status_and_default_follow_host_until_first_media_initializes(self):
+        self.run_case('equal_startup_override_is_pending_until_first_load_and_baseline_refreshes')
+
+    def test_failed_first_media_initialization_reports_failure_without_retrying_next_media(self):
+        self.run_case('failed_first_media_initialization_is_not_retried_on_media_change')
+
     def test_complete_production_lua_syntax(self):
         for path in ('config/script-modules/user-settings.lua', 'config/scripts/user-settings.lua',
-                     'config/scripts/modernz.lua', 'config/scripts/subtitle-controls.lua',
+                     'config/scripts/modernz.lua', 'config/scripts/subtitle-controls.lua', 'config/scripts/settings-options.lua',
                      'config/script-modules/mpvnet-paths.lua'):
             self.lua.check_syntax(ROOT / path)
 

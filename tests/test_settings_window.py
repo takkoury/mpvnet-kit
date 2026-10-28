@@ -29,14 +29,49 @@ def state(**changes):
     return result
 
 
+def complete_state():
+    result = state()
+    for f in result['fields'][:2]:
+        f.update(kind='number', display='percent', timing='preview', section='字幕外观' if f['page'] == 'subtitles' else '显示比例')
+    def add(key, page, label, kind, default, timing, **metadata):
+        f = dict(id=key, page=page, label=label, kind=kind, default=default, saved=default,
+                 has_override=False, effective=default, status='effective', apply_error='',
+                 timing=timing, section={'audio': '启动时', 'window': '启动时', 'decoding': '下一媒体'}.get(page, '显示方式'), default_source='启动配置')
+        f.update(metadata)
+        result['fields'].append(f)
+    add('slang', 'subtitles', '字幕语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
+    add('sub-visibility', 'subtitles', '默认显示字幕', 'boolean', True, 'next-media', section='下一媒体')
+    add('sub-font', 'subtitles', '字幕字体', 'string', 'sans-serif', 'preview', section='字幕外观')
+    add('sub-pos', 'subtitles', '字幕位置', 'number', 100, 'preview', display='position', min=0, max=100, slider_min=0, slider_max=100, step=1, section='字幕外观')
+    add('alang', 'audio', '音轨语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
+    add('volume', 'audio', '启动音量', 'number', 80, 'startup', display='number', min=0, max=1000, slider_min=0, slider_max=100, step=1)
+    add('mute', 'audio', '启动静音', 'boolean', False, 'startup')
+    add('fullscreen', 'window', '默认全屏', 'boolean', False, 'startup')
+    add('ontop', 'window', '默认置顶', 'boolean', False, 'startup')
+    add('modernz.scalefullscreen', 'controlbar', '全屏控制栏缩放', 'number', 1, 'preview', display='percent', min=.25, max=4, slider_min=.5, slider_max=2, step=.05)
+    add('modernz.hidetimeout', 'controlbar', '自动隐藏时间', 'number', 1.5, 'preview', display='seconds', min=0, max=60, slider_min=0, slider_max=10, step=.1)
+    add('modernz.keeponpause', 'controlbar', '暂停时显示', 'choice', 'bottombar', 'preview', choices=[dict(value='no', label='不保持'), dict(value='bottombar', label='显示控制栏'), dict(value='both', label='显示全部')])
+    for key, label in [('chapter_fmt', '显示章节标题'), ('timecurrent', '显示当前时间'), ('timems', '时间显示毫秒'), ('persistent_progress', '常驻进度线')]:
+        add('modernz.' + key, 'controlbar', label, 'boolean', False, 'preview')
+    add('hwdec', 'decoding', '硬件解码', 'choice', 'auto-copy', 'next-media', choices=[dict(value='auto-safe', label='自动安全硬解'), dict(value='no', label='关闭硬解')])
+    for f in result['fields']:
+        if f['page'] == 'paths': f.update(kind='string', timing='next-task' if f['id'] == 'capture_root' else 'restart', section='输出目录' if f['id'] == 'capture_root' else '外部程序')
+    order = ['slang', 'sub-visibility', 'sub-font', 'sub-pos', 'sub-scale', 'alang', 'volume', 'mute', 'fullscreen', 'ontop',
+             'modernz.scalewindowed', 'modernz.scalefullscreen', 'modernz.hidetimeout', 'modernz.keeponpause', 'modernz.chapter_fmt',
+             'modernz.persistent_progress', 'modernz.timecurrent', 'modernz.timems', 'hwdec', 'capture_root', 'ffmpeg_path', 'python_path', 'mpv_path']
+    result['fields'].sort(key=lambda field: order.index(field['id']))
+    return result
+
+
 @unittest.skipUnless(os.name == 'nt', 'Requires Windows PowerShell/WPF')
 class SettingsWindow(unittest.TestCase):
-    def run_window(self, steps=(), initial=None, width=1100, height=720):
+    def run_window(self, steps=(), initial=None, width=1100, height=720, render=False):
         with tempfile.TemporaryDirectory(prefix='mpvnet-settings-window-') as temp:
             request = Path(temp) / 'request.json'
             request.write_text(json.dumps(dict(schema=1, token=TOKEN, script='user_settings',
                 parent_pid=os.getpid(), pipe='fixture-unused', validation_state=initial or state(),
-                validation_steps=list(steps), validation_width=width, validation_height=height), ensure_ascii=False), encoding='utf-8')
+                validation_steps=list(steps), validation_width=width, validation_height=height,
+                validation_render_path=str(Path(temp) / 'render.png') if render else ''), ensure_ascii=False), encoding='utf-8')
             result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
                 '-File', str(ROOT / 'config/helpers/settings-window.ps1'), '-RequestPath', str(request),
                 '-ValidateOnly', '-NoShow'], capture_output=True, timeout=30)
@@ -45,6 +80,8 @@ class SettingsWindow(unittest.TestCase):
             self.assertEqual(result.returncode, 0, data)
             self.assertTrue(data['ok'])
             self.assertFalse(data['shown'])
+            if render:
+                self.assertEqual((Path(temp) / 'render.png').read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
             return data
 
     def test_native_controls_initial_state(self):
@@ -256,3 +293,114 @@ class SettingsWindow(unittest.TestCase):
             with self.subTest(x=x, y=y):
                 data = self.run_window([dict(op='pointer-position', id='sub-scale', x=x, y=y)])
                 self.assertEqual(data['scale_labels']['sub-scale'], expected)
+
+
+    def test_complete_catalog_renders_every_page_with_correct_controls(self):
+        expected = {
+            'subtitles': {'slang': 'TextBox', 'sub-visibility': 'ComboBox', 'sub-font': 'TextBox', 'sub-pos': 'SettingsSlider'},
+            'audio': {'alang': 'TextBox', 'volume': 'SettingsSlider', 'mute': 'ComboBox'},
+            'window': {'fullscreen': 'ComboBox', 'ontop': 'ComboBox'},
+            'controlbar': {'modernz.hidetimeout': 'SettingsSlider', 'modernz.keeponpause': 'ComboBox', 'modernz.timems': 'ComboBox'},
+            'decoding': {'hwdec': 'ComboBox'}, 'paths': {'capture_root': 'TextBox'}, 'shortcuts': {}, 'advanced': {}
+        }
+        for page, controls in expected.items():
+            with self.subTest(page=page):
+                data = self.run_window([dict(op='page', page=page)], complete_state(), width=760, height=640)
+                self.assertEqual(data['pages'], list(expected))
+                for key, kind in controls.items(): self.assertEqual(data['editor_types'][key], kind)
+                self.assertEqual(data['preview_visible'], page in ('subtitles', 'controlbar'))
+                self.assertTrue(data['row_alignment'])
+                self.assertTrue(data['layout_valid'])
+
+    def test_boolean_false_is_explicit_json_false_and_inherit_is_null(self):
+        explicit = self.run_window([dict(op='page', page='window'), dict(op='choose', id='fullscreen', index=2), dict(op='save')], complete_state())
+        self.assertIs(json.loads(explicit['sent'][-1][-1])['fullscreen'], False)
+        self.assertTrue(explicit['drafts']['fullscreen']['overridden'])
+        initial = complete_state()
+        next(f for f in initial['fields'] if f['id'] == 'fullscreen').update(saved=True, effective=True, has_override=True)
+        inherited = self.run_window([dict(op='choose', id='fullscreen', index=0), dict(op='save')], initial)
+        self.assertIsNone(json.loads(inherited['sent'][-1][-1])['fullscreen'])
+        self.assertEqual([c[2] for c in inherited['sent']], ['save'])
+
+    def test_non_preview_fields_never_send_preview_and_keep_number_units(self):
+        data = self.run_window([dict(op='edit', id='alang', text='ja,zh'), dict(op='edit', id='volume', text='85'), dict(op='save')], complete_state())
+        self.assertEqual(data['scale_labels']['volume'], '85')
+        self.assertEqual([c[2] for c in data['sent']], ['save'])
+        self.assertEqual(json.loads(data['sent'][-1][-1])['volume'], 85)
+        self.assertEqual(json.loads(data['sent'][-1][-1])['alang'], 'ja,zh')
+
+    def test_position_and_timeout_keep_native_units(self):
+        position = self.run_window([dict(op='slide', id='sub-pos', percent=92)], complete_state())
+        self.assertEqual(position['scale_labels']['sub-pos'], '92%')
+        self.assertEqual(position['sent'][-1][2:], ['preview', TOKEN, 'sub-pos', '92'])
+        timeout = self.run_window([dict(op='slide', id='modernz.hidetimeout', percent=2.3)], complete_state())
+        self.assertEqual(timeout['scale_labels']['modernz.hidetimeout'], '2.3 秒')
+        self.assertEqual(timeout['sent'][-1][2:], ['preview', TOKEN, 'modernz.hidetimeout', '2.3'])
+
+    def test_choice_advanced_inherited_default_is_preserved_until_explicit_selection(self):
+        data = self.run_window([dict(op='page', page='decoding')], complete_state())
+        self.assertEqual(data['drafts']['hwdec']['text'], 'auto-copy')
+        self.assertFalse(data['drafts']['hwdec']['overridden'])
+        changed = self.run_window([dict(op='choose', id='hwdec', index=2), dict(op='save')], complete_state())
+        self.assertEqual(json.loads(changed['sent'][-1][-1])['hwdec'], 'no')
+        self.assertEqual([c[2] for c in changed['sent']], ['save'])
+
+    def test_empty_string_is_distinct_from_inherit(self):
+        data = self.run_window([dict(op='edit', id='slang', text=''), dict(op='save')], complete_state())
+        self.assertEqual(json.loads(data['sent'][-1][-1])['slang'], '')
+        self.assertTrue(data['drafts']['slang']['overridden'])
+
+    def test_search_locates_all_types_and_actions_without_losing_drafts(self):
+        data = self.run_window([dict(op='edit', id='sub-font', text='Microsoft YaHei'), dict(op='search', text='硬件 解码'), dict(op='locate', index=0)], complete_state())
+        self.assertEqual(data['page'], 'decoding')
+        self.assertEqual(data['dirty_pages'], ['subtitles'])
+        self.assertEqual(data['drafts']['sub-font']['text'], 'Microsoft YaHei')
+        action = self.run_window([dict(op='search', text='input.conf'), dict(op='locate', index=0)], complete_state())
+        self.assertEqual(action['page'], 'advanced')
+        self.assertEqual(action['sent'], [])
+        self.assertEqual(len(action['action_ids']), 4)
+
+    def test_action_buttons_only_send_stable_action_id(self):
+        for page, action in [('shortcuts', 'shortcuts.open'), ('advanced', 'edit.mpv.conf'), ('advanced', 'open.config-folder')]:
+            with self.subTest(action=action):
+                data = self.run_window([dict(op='page', page=page), dict(op='action', id=action)], complete_state())
+                self.assertEqual(data['sent'][-1][2:], ['open-action', TOKEN, action])
+                self.assertFalse(data['can_save'])
+
+
+    def test_offscreen_render_writes_actual_content_without_showing_window(self):
+        data = self.run_window(initial=complete_state(), render=True)
+        self.assertTrue(data['row_alignment'])
+        self.assertTrue(data['layout_valid'])
+
+
+    def test_startup_slider_can_explicitly_choose_inherited_number(self):
+        data = self.run_window([dict(op='page', page='audio'), dict(op='slide-release', id='volume'), dict(op='save')], complete_state())
+        self.assertTrue(data['drafts']['volume']['overridden'])
+        self.assertEqual(json.loads(data['sent'][-1][-1])['volume'], 80)
+        self.assertEqual([c[2] for c in data['sent']], ['save'])
+
+
+    def test_action_failure_remains_visible_in_settings(self):
+        initial = complete_state()
+        initial.update(action_serial=1, action_error='无法打开此项目')
+        data = self.run_window([dict(op='page', page='advanced')], initial)
+        self.assertIn('无法打开此项目', data['notice'])
+
+
+    def test_regular_string_limits_match_utf8_bytes_and_ascii_controls(self):
+        data = self.run_window([dict(op='edit', id='slang', text='中' * 171),
+            dict(op='edit', id='alang', text='zh\tja'), dict(op='edit', id='sub-font', text='font\x7f'), dict(op='save')], complete_state())
+        for key in ['slang', 'alang', 'sub-font']:
+            self.assertFalse(data['valid_fields'][key])
+        self.assertFalse(data['can_save'])
+        self.assertEqual(data['sent'], [])
+        self.assertIn('512 字节', data['notice'])
+
+    def test_language_and_font_examples_are_available_only_in_tooltips(self):
+        subtitles = self.run_window(initial=complete_state())
+        self.assertIn('按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en', subtitles['field_details']['slang'])
+        self.assertIn('填写已安装字体名称，例如 Microsoft YaHei UI', subtitles['field_details']['sub-font'])
+        audio = self.run_window([dict(op='page', page='audio')], complete_state())
+        self.assertIn('按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en', audio['field_details']['alang'])
+        self.assertEqual(audio['notice'], '')

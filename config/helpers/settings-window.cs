@@ -18,6 +18,7 @@ using System.Windows.Media;
 using System.Windows.Markup;
 using System.Windows.Threading;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 
 // Drafts belong to the editor; persistence, preview ownership and application
 // belong to Lua. This model contains no WPF objects or filesystem writes.
@@ -25,7 +26,10 @@ public sealed class SettingsDraft
 {
     public sealed class Field
     {
-        public string Id, Page, Label, SearchTerms, Text, BaselineText, Status, ApplyError, Source;
+        public string Id, Page, Label, SearchTerms, Text, BaselineText, Status, ApplyError, Source, Kind, Display, Timing, Section;
+        public object[] Choices = new object[0];
+        public double DisplayScale { get { return Display == "percent" ? 100 : 1; } }
+        public bool Previewable { get { return Timing == "preview"; } }
         public object Default, Saved, Effective;
         public bool Override, BaselineOverride, CanCancel;
         public double Min, Max, SliderMin, SliderMax, Step;
@@ -33,10 +37,10 @@ public sealed class SettingsDraft
     }
     public readonly Dictionary<string, Field> Fields = new Dictionary<string, Field>();
     public readonly Dictionary<string, string> Revisions = new Dictionary<string, string>();
-    public static readonly string[] Pages = { "subtitles", "controlbar", "paths" };
-    public static readonly string[] PageNames = { "字幕", "控制栏", "输出与组件" };
+    public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "decoding", "paths", "shortcuts", "advanced" };
+    public static readonly string[] PageNames = { "字幕", "声音与音轨", "窗口", "控制栏", "解码", "输出与组件", "快捷键", "高级" };
     public static string PageName(string page) { int i = Array.IndexOf(Pages, page); return i < 0 ? page : PageNames[i]; }
-    public static string Text(object value) { return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture); }
+    public static string Text(object value) { return value == null ? "" : value is bool ? ((bool)value ? "true" : "false") : Convert.ToString(value, CultureInfo.InvariantCulture); }
     public static string Str(Dictionary<string, object> data, string key) { object v; return data.TryGetValue(key, out v) ? Text(v) : ""; }
     public static bool Flag(Dictionary<string, object> data, string key) { object v; return data.TryGetValue(key, out v) && v is bool && (bool)v; }
     public static object Value(Dictionary<string, object> data, string key) { object v; data.TryGetValue(key, out v); return v; }
@@ -58,6 +62,10 @@ public sealed class SettingsDraft
             f.Saved = Value(row, "saved"); f.Effective = Value(row, "effective");
             f.Status = Str(row, "status"); f.ApplyError = Str(row, "apply_error"); f.Source = Str(row, "default_source");
             f.CanCancel = Flag(row, "can_cancel");
+            f.Kind = Str(row, "kind"); if (f.Kind.Length == 0) f.Kind = page == "paths" ? "string" : "number";
+            f.Display = Str(row, "display"); if (f.Display.Length == 0 && f.Kind == "number") f.Display = "percent";
+            f.Timing = Str(row, "timing"); if (f.Timing.Length == 0) f.Timing = page == "paths" ? "restart" : "preview";
+            f.Section = Str(row, "section"); f.Choices = Value(row, "choices") as object[] ?? new object[0];
             f.Min = row.ContainsKey("min") ? Convert.ToDouble(row["min"], CultureInfo.InvariantCulture) : 0;
             f.Max = row.ContainsKey("max") ? Convert.ToDouble(row["max"], CultureInfo.InvariantCulture) : 0;
             f.SliderMin = row.ContainsKey("slider_min") ? Convert.ToDouble(row["slider_min"], CultureInfo.InvariantCulture) : 0.5;
@@ -92,6 +100,9 @@ public sealed class SettingsDraft
         value = null;
         if (f.Page == "paths") { value = f.Text; return f.Text.IndexOfAny(new[] { '\r', '\n', '\0' }) < 0; }
         if (!f.Override) return true;
+        if (f.Kind == "boolean") { bool flag; if (!Boolean.TryParse(f.Text, out flag)) return false; value = flag; return true; }
+        if (f.Kind == "string") { value = f.Text; return Encoding.UTF8.GetByteCount(f.Text) <= 512 && !f.Text.Any(c => c < 32 || c == 127); }
+        if (f.Kind == "choice") { value = f.Text; return f.Choices.Any(c => Text(Value(UserPreferencesStorage.Object(c), "value")) == f.Text); }
         double number;
         if (!Double.TryParse(f.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out number) ||
             Double.IsNaN(number) || Double.IsInfinity(number) || number < f.Min || number > f.Max) return false;
@@ -187,6 +198,9 @@ public sealed class SettingsEditor : Window
     Dictionary<string, object> latest = new Dictionary<string, object>();
     NamedPipeClientStream pipe; StreamReader reader; StreamWriter writer; Task<string> read;
     TextBox search; StackPanel content, results; TextBlock notice, heading; Button save, undo, reset;
+    readonly Dictionary<string, Grid> settingRows = new Dictionary<string, Grid>();
+    readonly Dictionary<string, Button> actionButtons = new Dictionary<string, Button>();
+    Grid mainShell; ScrollViewer resultScroll;
     Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage, previewTitle; Button previewMode;
     bool fullPreview;
     string page = "subtitles", pendingPage, pendingRevision, localError = "";
@@ -243,128 +257,190 @@ public sealed class SettingsEditor : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14; Background = Brush("#111111"); Foreground = Brushes.White;
         Resources = (ResourceDictionary)XamlReader.Parse(@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
-<Style TargetType='Button'><Setter Property='Background' Value='#262626'/><Setter Property='Foreground' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-<Style TargetType='Label'><Setter Property='Foreground' Value='White'/></Style>
+<Style TargetType='Button'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType='Label'><Setter Property='Foreground' Value='#F2F2F2'/></Style>
 <Style TargetType='Slider'><Setter Property='Height' Value='40'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Slider'><Border x:Name='focus' Background='Transparent' BorderBrush='Transparent' BorderThickness='1' Padding='4' CornerRadius='3'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' Orientation='Horizontal'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#1287bb' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb Width='16' Height='16'><Thumb.Template><ControlTemplate TargetType='Thumb'><Ellipse Fill='#1287bb' Stroke='White' StrokeThickness='1'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#555555' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Border><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='focus' Property='BorderBrush' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-<Style TargetType='TextBox'><Setter Property='Background' Value='#1b1b1b'/><Setter Property='Foreground' Value='White'/><Setter Property='CaretBrush' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='8'/><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287bb'/></Trigger></Style.Triggers></Style>
+<Style TargetType='TextBox'><Setter Property='VerticalContentAlignment' Value='Center'/><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='CaretBrush' Value='#F2F2F2'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='8'/><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287bb'/></Trigger></Style.Triggers></Style>
+
+<Style TargetType='TextBlock'><Setter Property='Foreground' Value='#F2F2F2'/></Style>
+<Style TargetType='ToolTip'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='10'/></Style>
+<Style TargetType='ContextMenu'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='BorderBrush' Value='#555555'/></Style>
+<Style TargetType='ComboBoxItem'><Setter Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='Padding' Value='10,7'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBoxItem'><Border x:Name='row' Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='row' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsSelected' Value='True'><Setter TargetName='row' Property='Background' Value='#1287bb'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType='ComboBox'><Setter Property='Foreground' Value='#F2F2F2'/><Setter Property='Background' Value='#242424'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='HorizontalContentAlignment' Value='Left'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBox'><Grid><ToggleButton x:Name='toggle' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Focusable='False' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}' ClickMode='Press'><ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border x:Name='outline' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3'><Path Data='M 0 0 L 4 4 L 8 0' Stroke='#ABABAB' StrokeThickness='1.5' HorizontalAlignment='Right' VerticalAlignment='Center' Margin='0,0,12,0'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='outline' Property='Background' Value='#303030'/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><ContentPresenter Content='{TemplateBinding SelectionBoxItem}' ContentTemplate='{TemplateBinding SelectionBoxItemTemplate}' IsHitTestVisible='False' HorizontalAlignment='Left' VerticalAlignment='Center' Margin='10,0,30,0'/><Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' AllowsTransparency='True' Focusable='False'><Border Background='#242424' BorderBrush='#555555' BorderThickness='1' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='300'><ScrollViewer CanContentScroll='True'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup></Grid><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='toggle' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='toggle' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType='ScrollBar'><Setter Property='Width' Value='10'/><Setter Property='Background' Value='#151515'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ScrollBar'><Grid Background='{TemplateBinding Background}'><Track x:Name='PART_Track' IsDirectionReversed='True' Orientation='Vertical' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' ViewportSize='{TemplateBinding ViewportSize}'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageUpCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Background='#555555' CornerRadius='3' Margin='2'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageDownCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
+<Style x:Key='SearchBox' TargetType='TextBox' BasedOn='{StaticResource {x:Type TextBox}}'><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='TextBox'><Border x:Name='outline' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='3' Padding='{TemplateBinding Padding}'><Grid><ScrollViewer x:Name='PART_ContentHost'/><TextBlock x:Name='watermark' Text='{TemplateBinding Tag}' Foreground='#ABABAB' IsHitTestVisible='False' Visibility='Collapsed'/></Grid></Border><ControlTemplate.Triggers><Trigger Property='Text' Value=''><Setter TargetName='watermark' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='outline' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='outline' Property='BorderThickness' Value='2'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 </ResourceDictionary>");
-        var root = new Grid { Margin = new Thickness(24) }; Content = root;
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition()); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var top = new StackPanel(); root.Children.Add(top);
-        top.Children.Add(new TextBlock { Text = "设置", FontSize = 26, Margin = new Thickness(0, 0, 0, 12) });
-        search = new TextBox { ToolTip = "搜索设置（Ctrl+F）", Margin = new Thickness(0, 0, 0, 16) };
-        top.Children.Add(new Label { Content = "搜索设置", Target = search, Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 6) });
-        System.Windows.Automation.AutomationProperties.SetName(search, "搜索设置");
-        search.TextChanged += delegate { Search(); }; top.Children.Add(search);
-        var body = new Grid(); Grid.SetRow(body, 1); root.Children.Add(body);
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) }); body.ColumnDefinitions.Add(new ColumnDefinition());
-        var nav = new StackPanel(); body.Children.Add(nav);
+        var root = new Grid { Background = Background }; Content = root;
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(158) }); root.ColumnDefinitions.Add(new ColumnDefinition());
+        var sidebar = new Border { Background = Brush("#151515"), Padding = new Thickness(12, 24, 12, 20) }; root.Children.Add(sidebar);
+        var nav = new StackPanel(); sidebar.Child = nav;
+        nav.Children.Add(new TextBlock { Text = "设置", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, 0, 0, 22) });
         foreach (string id in SettingsDraft.Pages)
         {
             string selected = id; var b = Button(SettingsDraft.PageName(id), delegate { SelectPage(selected); });
-            b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Margin = new Thickness(0, 0, 16, 8); nav.Children.Add(b); categories[id] = b;
+            b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Height = 38; b.Padding = new Thickness(12, 0, 6, 0);
+            b.Margin = new Thickness(0, 0, 0, 4); b.BorderThickness = new Thickness(2, 0, 0, 0); b.Background = Brushes.Transparent;
+            nav.Children.Add(b); categories[id] = b;
         }
-        var main = new Grid(); Grid.SetColumn(main, 1); body.Children.Add(main);
-        previewLayout = main;
+        var shell = new Grid { Margin = new Thickness(28, 24, 28, 0) }; mainShell = shell; Grid.SetColumn(shell, 1); root.Children.Add(shell);
+        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); shell.RowDefinitions.Add(new RowDefinition()); shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 18) }; shell.Children.Add(head);
+        reset = Button("恢复本页默认", Reset); reset.FontSize = 12; reset.Foreground = Brush("#ABABAB"); reset.Background = Brushes.Transparent; reset.BorderThickness = new Thickness(0);
+        reset.Padding = new Thickness(8, 4, 0, 4); reset.Margin = new Thickness(12, 0, 0, 0); DockPanel.SetDock(reset, Dock.Right); head.Children.Add(reset);
+        heading = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }; head.Children.Add(heading);
+        search = new TextBox { ToolTip = "搜索全部设置（Ctrl+F）", Height = 36, Margin = new Thickness(0, 0, 0, 16) };
+        System.Windows.Automation.AutomationProperties.SetName(search, "搜索全部设置");
+        // An in-control watermark keeps search visible without another permanent paragraph.
+        search.Tag = "搜索设置…"; search.Style = (Style)FindResource("SearchBox");
+        search.TextChanged += delegate { Search(); }; Grid.SetRow(search, 1); shell.Children.Add(search);
+        search.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
+            if (e.Key == Key.Down || e.Key == Key.Return) { var first = results.Children.OfType<Button>().FirstOrDefault(); if (first != null) { first.Focus(); if (e.Key == Key.Return) first.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); e.Handled = true; } }
+        };
+        results = new StackPanel(); resultScroll = new ScrollViewer { Content = results, MaxHeight = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 16) };
+        Grid.SetRow(resultScroll, 2); shell.Children.Add(resultScroll);
+        var main = new Grid(); Grid.SetRow(main, 3); shell.Children.Add(main); previewLayout = main;
         main.ColumnDefinitions.Add(new ColumnDefinition()); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition());
-        previewPane = new Grid { Margin = new Thickness(0, 0, 0, 16), VerticalAlignment = VerticalAlignment.Top };
+        previewPane = new Grid { VerticalAlignment = VerticalAlignment.Top };
         previewPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); previewPane.RowDefinitions.Add(new RowDefinition());
         var previewHeader = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        previewMode = Button("完整画面", TogglePreviewMode); previewMode.Padding = new Thickness(8, 4, 8, 4); previewMode.Margin = new Thickness(8, 0, 0, 0);
+        previewMode = Button("完整画面", TogglePreviewMode); previewMode.FontSize = 12; previewMode.Padding = new Thickness(8, 4, 8, 4); previewMode.Margin = new Thickness(8, 0, 0, 0); previewMode.BorderThickness = new Thickness(0); previewMode.Background = Brushes.Transparent;
         DockPanel.SetDock(previewMode, Dock.Right); previewHeader.Children.Add(previewMode);
-        previewTitle = new TextBlock { Foreground = Brush("#bcbcbc"), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        previewTitle = new TextBlock { Foreground = Brush("#ABABAB"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
         previewHeader.Children.Add(previewTitle); previewPane.Children.Add(previewHeader);
-        previewArea = new Border { Height = 230, Background = Brushes.Black, ClipToBounds = true };
-        previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#bcbcbc"), TextWrapping = TextWrapping.Wrap,
+        previewArea = new Border { Height = 150, Background = Brushes.Black, ClipToBounds = true };
+        previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#ABABAB"), TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16) };
         previewArea.Child = previewMessage; Grid.SetRow(previewArea, 1); previewPane.Children.Add(previewArea); main.Children.Add(previewPane);
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        settingsScroll = scroll;
-        Grid.SetRow(scroll, 1); main.Children.Add(scroll);
+        settingsScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Grid.SetRow(settingsScroll, 1); main.Children.Add(settingsScroll);
+        content = new StackPanel(); settingsScroll.Content = content;
         SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
         main.SizeChanged += delegate { ArrangePreview(); UpdatePlayerPreview(); };
         StateChanged += delegate { UpdatePlayerPreview(); };
-        var panel = new StackPanel(); scroll.Content = panel;
-        results = new StackPanel(); panel.Children.Add(results);
-        heading = new TextBlock { FontSize = 20, Margin = new Thickness(0, 0, 0, 16) }; panel.Children.Add(heading);
-        content = new StackPanel(); panel.Children.Add(content);
-        var footer = new StackPanel { Margin = new Thickness(0, 16, 0, 0) }; Grid.SetRow(footer, 2); root.Children.Add(footer);
-        notice = new TextBlock { Text = "正在连接播放器…", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) }; footer.Children.Add(notice);
-        var actions = new WrapPanel(); footer.Children.Add(actions);
-        undo = Button("撤销本页修改", Revert); reset = Button("恢复本页默认", Reset); save = Button("保存本页", Save);
-        save.Background = Brush("#1287bb"); actions.Children.Add(undo); actions.Children.Add(reset); actions.Children.Add(save);
+        var footer = new StackPanel { Margin = new Thickness(0, 16, 0, 0), Background = Brush("#151515") }; Grid.SetRow(footer, 4); shell.Children.Add(footer);
+        notice = new TextBlock { Text = "正在连接播放器…", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 10, 12, 8), Foreground = Brush("#ABABAB") }; footer.Children.Add(notice);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12, 12, 4, 12) }; footer.Children.Add(actions);
+        undo = Button("撤销本页修改", Revert); save = Button("保存本页", Save);
+        undo.Background = Brushes.Transparent; undo.BorderThickness = new Thickness(0); save.Background = Brush("#1287bb"); save.BorderBrush = Brush("#1287bb");
+        actions.Children.Add(undo); actions.Children.Add(save);
         SelectPage(page); Refresh();
     }
     void SelectPage(string id)
     {
         if (page != id && displayRequested) EndDisplay();
         if (page != id) fullPreview = false;
-        page = id; editors.Clear(); scaleValues.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
-        previewPane.Visibility = page == "paths" ? Visibility.Collapsed : Visibility.Visible;
+        if (!SettingsDraft.Pages.Contains(id)) return;
+        page = id; editors.Clear(); settingRows.Clear(); scaleValues.Clear(); actionButtons.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
+        previewPane.Visibility = AppearancePage ? Visibility.Visible : Visibility.Collapsed;
         ArrangePreview();
-        foreach (var f in model.Fields.Values.Where(x => x.Page == page))
+        string section = null;
+        foreach (var f in model.Fields.Values.Where(x => x.Page == page).GroupBy(x => x.Section).SelectMany(group => group))
         {
             var field = f;
-            var title = new Label { Content = f.Label, Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 8) }; content.Children.Add(title);
-            Control input;
-            if (f.Page == "paths")
-            {
-                var pathInput = new TextBox { Text = f.Text, MaxLength = 2048, Margin = new Thickness(0, 0, 0, 8) };
-                pathInput.TextChanged += delegate { if (!syncing) EditField(field, pathInput.Text); };
-                input = pathInput; content.Children.Add(input);
+            if (f.Section.Length > 0 && f.Section != section) {
+                content.Children.Add(new TextBlock { Text = f.Section, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brush("#ABABAB"), Margin = new Thickness(0, section == null ? 4 : 24, 0, 8) }); section = f.Section;
             }
-            else
-            {
-                var slider = new SettingsSlider { Style = (Style)FindResource(typeof(Slider)), Minimum = f.SliderMin * 100, Maximum = f.SliderMax * 100,
-                    SmallChange = f.Step * 100, LargeChange = f.Step * 100, TickFrequency = f.Step * 100,
-                    IsSnapToTickEnabled = true, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 4) };
+            var row = new Grid { MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
+            var title = new Label { Content = f.Label, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; row.Children.Add(title);
+            Control input; FrameworkElement control;
+            if (f.Kind == "boolean" || f.Kind == "choice") {
+                var choice = new ComboBox { MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
+                choice.Items.Add(new ComboBoxItem { Content = "沿用播放器", Tag = null });
+                if (f.Kind == "boolean") { choice.Items.Add(new ComboBoxItem { Content = "开启", Tag = "true" }); choice.Items.Add(new ComboBoxItem { Content = "关闭", Tag = "false" }); }
+                else foreach (var c in f.Choices) { var option = UserPreferencesStorage.Object(c); choice.Items.Add(new ComboBoxItem { Content = SettingsDraft.Str(option, "label"), Tag = SettingsDraft.Text(SettingsDraft.Value(option, "value")) }); }
+                // A currently inherited advanced value remains untouched until an explicit selection.
+                SelectChoice(choice, field);
+                choice.SelectionChanged += delegate { if (!syncing && choice.SelectedItem is ComboBoxItem) { var selected = (ComboBoxItem)choice.SelectedItem; if (selected.Tag == null) Inherit(field); else EditField(field, (string)selected.Tag, true); } };
+                input = choice; control = choice;
+            }
+            else if (f.Kind == "number") {
+                double scale = f.DisplayScale;
+                var slider = new SettingsSlider { Style = (Style)FindResource(typeof(Slider)), Minimum = f.SliderMin * scale, Maximum = f.SliderMax * scale,
+                    SmallChange = f.Step * scale, LargeChange = f.Step * scale, TickFrequency = f.Step * scale, IsSnapToTickEnabled = true, IsMoveToPointEnabled = true };
                 SetSlider(slider, field);
-                slider.ValueChanged += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
-                // An out-of-range retained value can sit beyond a clamped thumb.
-                // An explicit click or Home/End must still be able to choose the endpoint.
+                slider.ValueChanged += delegate { if (!syncing) EditField(field, (slider.Value / field.DisplayScale).ToString("G15", CultureInfo.InvariantCulture)); };
                 slider.PointerReleased += delegate { if (!syncing) ReleaseSlider(field, slider); };
                 slider.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
                     if (e.Key == Key.Space || e.Key == Key.Return) { Preview(field); e.Handled = true; return; }
-                    if (e.Key == Key.Home || e.Key == Key.End) {
-                        slider.Value = e.Key == Key.Home ? slider.Minimum : slider.Maximum;
-                        EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); e.Handled = true;
-                    }
+                    if (e.Key == Key.Home || e.Key == Key.End) { slider.Value = e.Key == Key.Home ? slider.Minimum : slider.Maximum; EditField(field, (slider.Value / field.DisplayScale).ToString("G15", CultureInfo.InvariantCulture), !field.Previewable); e.Handled = true; }
                 };
-                input = slider; content.Children.Add(slider);
-                var percentage = new TextBlock { Margin = new Thickness(0, 0, 0, 12), TextWrapping = TextWrapping.Wrap };
-                scaleValues.Add(f.Id, percentage); content.Children.Add(percentage);
+                var numeric = new Grid(); numeric.ColumnDefinitions.Add(new ColumnDefinition()); numeric.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) }); numeric.Children.Add(slider);
+                var value = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+                Grid.SetColumn(value, 1); numeric.Children.Add(value); scaleValues.Add(f.Id, value); input = slider; control = numeric;
             }
-            title.Target = input; System.Windows.Automation.AutomationProperties.SetName(input, f.Label);
-            System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id);
-            editors.Add(f.Id, input);
+            else {
+                var text = new TextBox { Text = f.Text, MaxLength = f.Page == "paths" ? 2048 : 512, MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
+                text.TextChanged += delegate { if (!syncing) EditField(field, text.Text); }; input = text; control = text;
+            }
+            control.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(control, 1); row.Children.Add(control); content.Children.Add(row); settingRows[field.Id] = row;
+            title.Target = input; input.ToolTip = FieldDetails(field);
+            var menu = new ContextMenu(); var inherit = new MenuItem { Header = "沿用播放器" }; inherit.Click += delegate { Inherit(field); }; menu.Items.Add(inherit); input.ContextMenu = menu;
+            System.Windows.Automation.AutomationProperties.SetName(input, f.Label); System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id); editors.Add(f.Id, input);
         }
+        if (page == "shortcuts") AddAction("管理快捷键", "shortcuts.open");
+        if (page == "advanced") { AddAction("编辑 mpv.conf", "edit.mpv.conf"); AddAction("编辑 input.conf", "edit.input.conf"); AddAction("编辑 modernz.conf", "edit.modernz.conf"); AddAction("打开配置目录", "open.config-folder"); }
         selectingPage = true;
         Refresh();
         UpdatePlayerPreview();
         selectingPage = false;
     }
-    void EditField(SettingsDraft.Field field, string text)
+    bool AppearancePage { get { return page == "subtitles" || page == "controlbar"; } }
+    void AddAction(string label, string id)
+    {
+        var b = Button(label, delegate { Action("open-action", id); }); b.HorizontalAlignment = HorizontalAlignment.Left; b.MinWidth = 220; b.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(b); actionButtons[id] = b;
+    }
+    static string TimingLabel(string timing)
+    {
+        switch (timing) { case "preview": return "当前媒体预览"; case "next-media": return "下一媒体生效"; case "startup": return "新实例启动时生效"; case "first-media": return "新实例首次播放前生效"; case "restart": return "重启播放器生效"; case "next-task": return "新任务生效"; default: return timing; }
+    }
+    static string FieldDetails(SettingsDraft.Field f)
+    {
+        string guidance = f.Id == "slang" || f.Id == "alang" ? "按优先顺序填写语言代码，用逗号分隔，例如 zh,ja,en\n" : f.Id == "sub-font" ? "填写已安装字体名称，例如 Microsoft YaHei UI\n" : "";
+        return guidance + TimingLabel(f.Timing) + "\n默认来源：" + f.Source + "\n已保存：" + DetailValue(f, f.Saved) + "\n当前有效：" + DetailValue(f, f.Effective) + "\n默认：" + DetailValue(f, f.Default) + "\n右键可沿用播放器设置";
+    }
+    static string DetailValue(SettingsDraft.Field f, object value)
+    {
+        if (f.Kind == "number") return DisplayField(f, value);
+        if (f.Kind == "boolean" && value is bool) return (bool)value ? "开启" : "关闭";
+        if (f.Kind == "choice") foreach (var raw in f.Choices) { var choice = UserPreferencesStorage.Object(raw); if (SettingsDraft.Text(SettingsDraft.Value(choice, "value")) == SettingsDraft.Text(value)) return SettingsDraft.Str(choice, "label"); }
+        return Display(value);
+    }
+    void Inherit(SettingsDraft.Field f)
+    {
+        if (saving) return; f.Text = SettingsDraft.Text(f.Default); f.Override = false; localError = ""; SyncInputs(); if (f.Previewable) Preview(f); Refresh();
+    }
+    static void SelectChoice(ComboBox combo, SettingsDraft.Field f)
+    {
+        combo.SelectedIndex = 0;
+        if (f.Override) foreach (ComboBoxItem item in combo.Items) if (item.Tag != null && (string)item.Tag == f.Text) { combo.SelectedItem = item; break; }
+    }
+    void EditField(SettingsDraft.Field field, string text) { EditField(field, text, false); }
+    void EditField(SettingsDraft.Field field, string text, bool forceOverride)
     {
         if (saving) return;
-        if (field.Text == text) return;
+        if (field.Text == text && (!forceOverride || field.Override)) return;
         model.Edit(field.Id, text); localError = "";
         object value;
-        if (field.Page != "paths" && model.TryValue(field, out value)) Preview(field);
+        if (field.Previewable && model.TryValue(field, out value)) Preview(field);
         Refresh();
     }
     void ReleaseSlider(SettingsDraft.Field field, Slider slider)
     {
-        string value = (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture);
-        if (field.Text == value) Preview(field);
+        string value = (slider.Value / field.DisplayScale).ToString("G15", CultureInfo.InvariantCulture);
+        // Startup values have an explicit inherit/override distinction even when
+        // the chosen number equals the current inherited value.
+        if (field.Text == value && !field.Override && !field.Previewable) EditField(field, value, true);
+        else if (field.Text == value) Preview(field);
         else EditField(field, value);
     }
     static void SetSlider(Slider slider, SettingsDraft.Field field)
     {
         double value;
         if (Double.TryParse(field.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !Double.IsNaN(value) && !Double.IsInfinity(value))
-            slider.Value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value * 100));
+            slider.Value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value * field.DisplayScale));
     }
     void TogglePreviewMode()
     {
@@ -375,8 +451,8 @@ public sealed class SettingsEditor : Window
         if (previewLayout == null || settingsScroll == null) return;
         previewTitle.Text = fullPreview ? "完整画面" : page == "controlbar" ? "控制栏局部预览" : "字幕区域预览";
         previewMode.Content = fullPreview ? "局部预览" : "完整画面";
-        bool wide = (ActualWidth > 0 ? ActualWidth : Width) >= 1000 && page != "paths";
-        previewLayout.ColumnDefinitions[0].Width = wide ? new GridLength(280) : new GridLength(1, GridUnitType.Star);
+        bool wide = (ActualWidth > 0 ? ActualWidth : Width) >= 1000 && AppearancePage;
+        previewLayout.ColumnDefinitions[0].Width = wide ? new GridLength(430) : new GridLength(1, GridUnitType.Star);
         previewLayout.ColumnDefinitions[1].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         previewLayout.RowDefinitions[0].Height = wide ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
         previewLayout.RowDefinitions[1].Height = wide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
@@ -388,22 +464,29 @@ public sealed class SettingsEditor : Window
         if (previewLayout.ActualHeight > 0) desired = Math.Min(desired, Math.Max(80, previewLayout.ActualHeight - (wide ? 36 : 150)));
         previewArea.Height = desired;
     }
+    static readonly string[][] ActionCatalog = {
+        new[] { "管理快捷键", "shortcuts.open", "shortcuts" }, new[] { "编辑 mpv.conf", "edit.mpv.conf", "advanced" }, new[] { "编辑 input.conf", "edit.input.conf", "advanced" }, new[] { "编辑 modernz.conf", "edit.modernz.conf", "advanced" }, new[] { "打开配置目录", "open.config-folder", "advanced" }
+    };
+    static bool Matches(string haystack, string query) { return query.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).All(word => haystack.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0); }
     void Search()
     {
-        results.Children.Clear(); string query = search.Text.Trim();
+        results.Children.Clear(); string query = search.Text.Trim(); resultScroll.Visibility = query.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (query.Length == 0) return;
-        foreach (var f in model.Fields.Values.Where(f => (f.Label + " " + f.Id + " " + f.SearchTerms + " " + SettingsDraft.PageName(f.Page)).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+        foreach (var f in model.Fields.Values.Where(f => Matches(f.Label + " " + f.Id + " " + f.SearchTerms + " " + SettingsDraft.PageName(f.Page), query)))
         {
             var field = f;
             var b = Button(f.Label + " · " + SettingsDraft.PageName(f.Page), delegate {
                 SelectPage(field.Page); Control input; if (editors.TryGetValue(field.Id, out input)) { input.BringIntoView(); input.Focus(); var pathInput = input as TextBox; if (pathInput != null) pathInput.SelectAll(); }
             }); b.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(b);
         }
+        foreach (var item in ActionCatalog.Where(a => Matches(a[0] + " " + a[1] + " " + SettingsDraft.PageName(a[2]), query))) {
+            string[] action = item; var button = Button(action[0] + " · " + SettingsDraft.PageName(action[2]), delegate { SelectPage(action[2]); actionButtons[action[1]].BringIntoView(); actionButtons[action[1]].Focus(); }); button.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(button);
+        }
         if (results.Children.Count == 0) results.Children.Add(new TextBlock { Text = "没有匹配的设置", Margin = new Thickness(0, 0, 0, 16) });
     }
     void Preview(SettingsDraft.Field f)
     {
-        if (saving || disconnected) return;
+        if (saving || disconnected || !f.Previewable) return;
         object value;
         if (!model.TryValue(f, out value)) { localError = f.Label + "请输入 " + f.Min + " 至 " + f.Max + " 的数值。"; Refresh(); return; }
         if (f.Page == "controlbar") BeginDisplay();
@@ -431,7 +514,7 @@ public sealed class SettingsEditor : Window
     void UpdatePlayerPreview()
     {
         if (previewArea == null || validation) return;
-        bool enabled = page != "paths" && !disconnected;
+        bool enabled = AppearancePage && !disconnected;
         object position = SettingsDraft.Value(latest, "preview_subtitle_position");
         string message = playerPreview.Update(this, previewArea, parent, enabled, fullPreview ? "full" : page,
             position == null ? 100 : Convert.ToDouble(position, CultureInfo.InvariantCulture));
@@ -440,7 +523,7 @@ public sealed class SettingsEditor : Window
         previewMessage.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         DisplayAvailability(available);
     }
-    void Reset() { if (saving) return; model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && page != "paths")) Preview(f); Refresh(); }
+    void Reset() { if (saving) return; model.Reset(page); SyncInputs(); foreach (var f in model.Fields.Values.Where(x => x.Page == page && x.Previewable)) Preview(f); Refresh(); }
     void Revert() { if (saving) return; Action("cancel", page); model.Revert(page, latest); localError = ""; SyncInputs(); Refresh(); }
     void Save()
     {
@@ -456,13 +539,15 @@ public sealed class SettingsEditor : Window
         foreach (var item in editors) {
             var text = item.Value as TextBox;
             if (text != null) text.Text = model.Fields[item.Key].Text;
+            else if (item.Value is ComboBox) SelectChoice((ComboBox)item.Value, model.Fields[item.Key]);
             else SetSlider((Slider)item.Value, model.Fields[item.Key]);
+            item.Value.ToolTip = FieldDetails(model.Fields[item.Key]);
         }
         syncing = false;
     }
     void Refresh()
     {
-        foreach (var item in categories) { item.Value.Content = SettingsDraft.PageName(item.Key) + (model.Dirty(item.Key) ? " *" : ""); item.Value.BorderBrush = Brush(item.Key == page ? "#1287bb" : "#555555"); }
+        foreach (var item in categories) { item.Value.Content = SettingsDraft.PageName(item.Key) + (model.Dirty(item.Key) ? " *" : ""); item.Value.BorderBrush = item.Key == page ? Brush("#1287bb") : Brushes.Transparent; item.Value.Background = item.Key == page ? Brush("#242424") : Brushes.Transparent; item.Value.Foreground = Brush(item.Key == page ? "#F2F2F2" : "#ABABAB"); }
         foreach (var item in scaleValues)
         {
             var f = model.Fields[item.Key];
@@ -483,12 +568,16 @@ public sealed class SettingsEditor : Window
         foreach (var f in model.Fields.Values.Where(f => f.Page == page && f.ApplyError.Length > 0))
             noticeText += "\n" + f.Label + "：" + f.ApplyError;
         string previewError = SettingsDraft.Str(latest, "preview_error"); if (previewError.Length > 0) noticeText += "\n" + previewError;
+        string actionError = SettingsDraft.Str(latest, "action_error"); if (actionError.Length > 0) noticeText += "\n" + actionError;
+        foreach (var f in model.Fields.Values.Where(f => f.Page == page && f.Kind == "string" && f.Page != "paths" && f.Dirty)) {
+            object value; if (!model.TryValue(f, out value)) noticeText += "\n" + f.Label + "：最多 512 字节，不能包含控制字符。";
+        }
         notice.Text = noticeText.Trim();
         notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         bool valid = model.Fields.Values.Where(f => f.Page == page).All(f => { object v; return model.TryValue(f, out v); });
         save.IsEnabled = !saving && !disconnected && model.Dirty(page) && !stale && error.Length == 0 && valid;
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));
-        reset.IsEnabled = !saving && !disconnected && model.Fields.Count > 0 && error.Length == 0;
+        reset.IsEnabled = !saving && !disconnected && model.Fields.Values.Any(f => f.Page == page) && error.Length == 0; reset.Visibility = page == "advanced" || page == "shortcuts" ? Visibility.Collapsed : Visibility.Visible;
         content.IsEnabled = !saving;
     }
     static string DisplayField(SettingsDraft.Field field, object value)
@@ -496,7 +585,7 @@ public sealed class SettingsEditor : Window
         if (field.Page != "paths") {
             double number;
             if (Double.TryParse(SettingsDraft.Text(value), NumberStyles.Float, CultureInfo.InvariantCulture, out number))
-                return (number * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+                return (number * field.DisplayScale).ToString("0.##", CultureInfo.InvariantCulture) + ((field.Display == "percent" || field.Display == "position") ? "%" : field.Display == "seconds" ? " 秒" : "");
             return "暂不可用";
         }
         return Display(value);
@@ -608,6 +697,15 @@ public sealed class SettingsEditor : Window
         root.Arrange(new Rect(0, 0, Width - 48, Height - 80)); root.UpdateLayout();
         return root;
     }
+    public void RenderValidation(string path)
+    {
+        if (!validation || !noShow) throw new InvalidOperationException("仅离屏验证可生成图片。");
+        string absolute = Path.GetFullPath(path), tempRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!absolute.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase) || Path.GetExtension(absolute).ToLowerInvariant() != ".png") throw new InvalidDataException("离屏图片必须位于临时夹具目录。");
+        var visual = LayoutForValidation();
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth), (int)Math.Ceiling(visual.ActualHeight), 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var output = new FileStream(absolute, FileMode.CreateNew, FileAccess.Write)) encoder.Save(output);
+    }
     public object Validate(Dictionary<string, object> request)
     {
         if (request.ContainsKey("validation_width")) Width = Convert.ToDouble(request["validation_width"]);
@@ -627,6 +725,10 @@ public sealed class SettingsEditor : Window
                 var slider = (SettingsSlider)editors[id]; var track = slider.ValueTrack;
                 slider.SetPointerPosition(new Point(Convert.ToDouble(step["x"]) * track.ActualWidth, Convert.ToDouble(step["y"])), 0);
             }
+            else if (op == "choose") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((ComboBox)editors[id]).SelectedIndex = Convert.ToInt32(step["index"]); }
+            else if (op == "inherit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); Inherit(model.Fields[id]); }
+            else if (op == "action") { string id = SettingsDraft.Str(step, "id"); actionButtons[id].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
+            else if (op == "locate") { int index = Convert.ToInt32(step["index"]); results.Children.OfType<Button>().ElementAt(index).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); }
             else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
             else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
@@ -655,15 +757,24 @@ public sealed class SettingsEditor : Window
             bool grabbed; double offset = slider.GrabOffset(new Point(thumb.Left + thumb.Width / 2 + 5, -5), out grabbed);
             hits[pair.Key] = new { height = slider.ActualHeight, full_row = all, offset = offset, grabbed = grabbed };
         }
-        return new { ok = true, shown = IsVisible, page = page, dirty_pages = model.DirtyPages(),
+        string renderPath = SettingsDraft.Str(request, "validation_render_path");
+        if (renderPath.Length > 0) RenderValidation(renderPath);
+        return new { ok = true, shown = IsVisible, page = page, pages = SettingsDraft.Pages,
+            action_ids = actionButtons.Keys.ToArray(),
+            row_alignment = settingRows.Values.All(r => {
+                var control = (FrameworkElement)r.Children[1]; var bounds = control.TransformToAncestor(r).TransformBounds(new Rect(control.RenderSize));
+                return Math.Abs(bounds.Left - (page == "paths" ? 154 : 136)) < 1 && bounds.Width >= 100 && bounds.Right <= r.ActualWidth + 1;
+            }), dirty_pages = model.DirtyPages(),
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
             preview_visible = previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
             full_preview = fullPreview, scale_labels = scaleValues.ToDictionary(x => x.Key, x => x.Value.Text),
             editor_types = editors.ToDictionary(x => x.Key, x => x.Value.GetType().Name),
+            field_details = editors.ToDictionary(x => x.Key, x => (string)x.Value.ToolTip),
+            valid_fields = model.Fields.ToDictionary(x => x.Key, x => { object value; return model.TryValue(x.Value, out value); }),
             slider_hits = hits,
             layout_valid = saveBounds.Bottom <= layoutRoot.ActualHeight && saveBounds.Right <= layoutRoot.ActualWidth &&
-                (page == "paths" || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
+                (!AppearancePage || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
             preview_column = Grid.GetColumn(previewPane),
             preview_fit = SettingsPreview.Fit(new Rect(0, 0, 600, 300), 1920, 1080).ToString(CultureInfo.InvariantCulture),
             search_results = results.Children.OfType<Button>().Select(b => (string)b.Content).ToArray(), sent = sent };
