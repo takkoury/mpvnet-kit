@@ -21,9 +21,25 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
-项目默认由受管配置文件提供。`mpvnet-user.json` 保存用户快捷键覆盖，`script-opts/mpvnet-local.conf` 保存本机路径；两者都不属于安装器的受管文件集合。快捷键窗口通过互斥锁、原内容比较和原子替换保存；Lua 保存成功后重新读取，其他实例约每秒检查同一文件。未知字段继续保留，损坏文件或不支持的 schema 保持原样。
+### 常用设置基础
 
-JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs](../config/helpers/user-preferences-storage.cs) 的 `UserPreferencesStorage` 提供，不依赖 WPF。快捷键 helper 在保存进程和编辑窗口中编译同一份源码；`-Operation Save -RequestPath` 及其 `{ok, error, conflict}` 返回约定保持。当前 `Save` 仍要求 schema 1 和 `shortcuts` 对象；这次提取没有增加常用设置域或本机路径文件的写入能力。后续窗口可复用此存储实现，扩展文档规则须另有对应验证。
+[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)目前贯通字幕字号、窗口控制栏缩放及独立路径页。入口为 `user_settings/open`；正式菜单接入与其他设置属于后续批次。
+
+`mpvnet-user.json` 继续使用 schema 1，新增平面 `settings` 对象，字段为 `sub-scale` 和 `modernz.scalewindowed`。窗口持各页草稿和载入时 revision；模型复用快捷键的原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。恢复默认先改草稿，保存后删除对应覆盖；默认取功能模块启动时的真实配置。
+
+控制层发布 `user-data/mpvnet/settings`，包含已保存值、实际值、默认来源、待生效及错误状态。功能模块通过 `user-settings.owner` 管理预览所有者、媒体代次、应用版本及条件恢复；字幕由 subtitle-controls 写属性，控制栏由 ModernZ 改自己的选项和几何。保存值总线 `settings-values` 只同步长期值；其他实例在下一媒体应用，保存实例显式 commit。提交处理主动读取最新总线，避免消息先于属性通知到达时漏应用。保存成功与运行应用失败分别报告。
+
+切媒体结束预览而保留窗口草稿；再次预览需用户操作。后续手动变化使旧预览失去恢复权，自有字幕动作会显式失效预览。mpv 未通知的外部同值赋值无法观测，不能据此判断操作所有权。预览恢复失败保留恢复点并报错，可重开设置重试撤销。运行态标识不写入用户 JSON。
+
+路径仍只写 `script-opts/mpvnet-local.conf`，使用独立 revision，不提供双文件事务。[settings-storage.ps1](../config/helpers/settings-storage.ps1) 的 `SaveLocal` 只接受四个已知路径键，保留未知行、注释及未改行；空值删除覆盖，重复已知键或非法新路径拒绝保存。Capture 新任务重读输出根，已开始任务的 payload 保持；程序路径在实例启动时读取。
+
+窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。正常关闭有草稿时列出分类并确认放弃，保存期间禁止关闭；IPC 中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)及[窗口](../tests/test_settings_window.py)。
+
+### 共享保存与既有模块
+
+项目默认由受管配置文件提供。`mpvnet-user.json` 保存用户快捷键与常用设置覆盖，`script-opts/mpvnet-local.conf` 保存本机路径；两者都不属于安装器的受管文件集合。保存使用互斥锁、原内容比较和原子替换；Lua 保存成功后重新读取，其他实例约每秒检查同一文件。未知字段继续保留，损坏文件或不支持的 schema 保持原样。
+
+JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs](../config/helpers/user-preferences-storage.cs) 的 `UserPreferencesStorage` 提供，不依赖 WPF。快捷键原 `Save` 请求及 `{ok, error, conflict}` 回执保持。settings helper 额外请求 `return_written_text`，成功回执包含实际写入文本，回读时精确比对，避免把随后外部保存误认成本次结果。JSON 存储允许缺少域，但出现的 `shortcuts`、`settings` 必须为对象；字段校验由各自模型负责。
 
 播放实例的临时状态与这些长期配置分开。增强选择和导出格式可跨媒体保留，但不跨重启；字幕调整和标记遵从媒体生命周期。观看记录、未知文件和第三方组件数据也不因配置包更新而自动纳管。
 

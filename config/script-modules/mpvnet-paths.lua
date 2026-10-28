@@ -5,15 +5,45 @@ local options = {capture_root = '', ffmpeg_path = '', python_path = '', mpv_path
 require('mp.options').read_options(options, 'mpvnet-local')
 local paths = {options = options}
 
+-- Match mp.options line semantics. Preserve the source file in the storage
+-- helper; this reader only exposes the four supported machine-local values.
+function paths.parse_local(raw)
+    if type(raw)~='string' or #raw>256*1024 then return nil,'本机路径配置无效或超过 256 KiB' end
+    local values,seen={capture_root='',ffmpeg_path='',python_path='',mpv_path=''},{}
+    for line in (raw..'\n'):gmatch('(.-)\n') do
+        line=line:gsub('\r$','')
+        if line:sub(1,1)~='#' then
+            local name,value=line:match('^([^=]+)=(.*)$')
+            if values[name]~=nil then
+                if seen[name] then return nil,'本机路径配置有重复项目；未覆盖原配置' end
+                seen[name]=true;values[name]=value
+            end
+        end
+    end
+    return values
+end
+
+function paths.capture_root()
+    local path=mp.command_native({'expand-path','~~/script-opts/mpvnet-local.conf'})
+    local file,_,errno=io.open(path,'rb')
+    if not file then
+        if errno==2 and not utils.file_info(path) then return '' end
+        return options.capture_root
+    end
+    local raw=file:read(256*1024+1);file:close()
+    local values=paths.parse_local(raw)
+    return values and values.capture_root or options.capture_root
+end
+
 function paths.powershell()
     local root = os.getenv('SystemRoot') or os.getenv('WINDIR')
     return root and utils.join_path(root, 'System32/WindowsPowerShell/v1.0/powershell.exe') or 'powershell.exe'
 end
 
 function paths.capture_payload(payload)
-    for _, name in ipairs({'capture_root', 'ffmpeg_path'}) do
-        if options[name] ~= '' then payload[name] = options[name] end
-    end
+    local root=paths.capture_root()
+    if root~='' then payload.capture_root=root end
+    if options.ffmpeg_path~='' then payload.ffmpeg_path=options.ffmpeg_path end
     return payload
 end
 

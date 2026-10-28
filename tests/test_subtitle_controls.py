@@ -14,6 +14,8 @@ class SubtitleControls(unittest.TestCase):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
         cls.fixture = (ROOT / 'tests/lua/subtitle_controls.lua').read_text(encoding='utf-8')
+        cls.fixture = cls.fixture.replace('-- SETTINGS MODEL IS INSERTED HERE',
+                                          (ROOT / 'config/script-modules/user-settings.lua').read_text(encoding='utf-8'))
 
     def run_case(self, name):
         prelude, cases = self.fixture.split('-- COMPLETE SOURCE IS INSERTED HERE\n', 1)

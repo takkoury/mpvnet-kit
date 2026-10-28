@@ -18,16 +18,26 @@ end
 local mp = {
     get_property=get, get_property_native=get, get_property_number=get, get_property_bool=get,
     set_property=set, set_property_number=set, set_property_bool=set,
+    set_property_native=function(name,value) properties[name]=value;return true end,
     osd_message=function(text, duration) messages[#messages+1]={text,duration} end,
     commandv=function(...) commands[#commands+1]={...} end,
     add_key_binding=function(key, name, fn) bindings[name]=fn;binding_keys[name]=key end,
     add_forced_key_binding=function(key, name, fn) forced[name]={key=key,fn=fn} end,
     remove_key_binding=function(name) forced[name]=nil end,
-    register_event=function(name, fn) events[name]=fn end,
+    register_event=function(name, fn)
+        local old=events[name];events[name]=function(...) if old then old(...) end;fn(...) end
+    end,
+    observe_property=function() end,
+    register_script_message=function() end,
+    command_native=function(args) return args[2] end,
     msg={warn=function() end},
 }
 package.loaded['mp']=mp
 package.loaded['mp.input']={select=function() error('unexpected subtitle selection') end}
+local settings_model=(function()
+-- SETTINGS MODEL IS INSERTED HERE
+end)()
+local dofile=function() return settings_model end
 
 -- COMPLETE SOURCE IS INSERTED HERE
 

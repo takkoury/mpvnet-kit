@@ -439,6 +439,36 @@
       "destination": "tools/maintain.ps1",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-modules/user-settings.lua",
+      "destination": "config/script-modules/user-settings.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/scripts/user-settings.lua",
+      "destination": "config/scripts/user-settings.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-storage.ps1",
+      "destination": "config/helpers/settings-storage.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-window.ps1",
+      "destination": "config/helpers/settings-window.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-window.cs",
+      "destination": "config/helpers/settings-window.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     }
   ]
 }

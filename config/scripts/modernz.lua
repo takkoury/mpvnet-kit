@@ -23,6 +23,7 @@ local assdraw = require "mp.assdraw"
 local msg = require "mp.msg"
 local opt = require "mp.options"
 local utils = require "mp.utils"
+local settings_owner
 mp.set_property("osc", "no")
 
 -- Parameters
@@ -5698,6 +5699,9 @@ opt.read_options(user_opts, "modernz", function(changed)
         visibility_mode(user_opts.visibility, true)
     end
     request_init()
+    if settings_owner then
+        if changed.scalewindowed then settings_owner.invalidate() else settings_owner.refresh() end
+    end
 end)
 
 load_locale_file()
@@ -5708,6 +5712,19 @@ set_osc_styles()
 set_time_styles(true, true)
 set_tick_delay()
 visibility_mode(user_opts.visibility, true)
+
+-- ModernZ applies its own live option and geometry; the settings controller
+-- never edits script-opts or reaches into ModernZ's option table.
+local settings_model = dofile(mp.command_native({'expand-path','~~/script-modules/user-settings.lua'}))
+settings_owner = settings_model.owner(mp, {
+    id='modernz.scalewindowed',default_source='ModernZ 启动配置',
+    read=function() return user_opts.scalewindowed end,
+    write=function(value)
+        user_opts.scalewindowed=value
+        request_init();request_tick()
+        return true
+    end,
+})
 
 set_virt_mouse_area(0, 0, 0, 0, "input")
 set_virt_mouse_area(0, 0, 0, 0, "input_wheel")

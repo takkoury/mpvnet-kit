@@ -129,7 +129,7 @@ class UserPreferences(unittest.TestCase):
         self.assertFalse(self.save(settings_path=str(self.folder / 'missing/mpvnet-user.json'))['ok'])
         self.assertFalse(self.save(settings_path='mpvnet-user.json')['ok'])
         for document in [{'schema': 2, 'shortcuts': {}}, {'schema': 1, 'shortcuts': []},
-                         {'schema': 1, 'shortcuts': None}, {'schema': 1}, []]:
+                         {'schema': 1, 'shortcuts': None}, {'schema': 1, 'settings': []}, []]:
             with self.subTest(document=document):
                 self.assertFalse(self.save(document)['ok'])
                 self.assertFalse(self.settings.exists())

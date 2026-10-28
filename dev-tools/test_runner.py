@@ -31,12 +31,13 @@ PROFILES = {
         'test_failure_feedback.DanmakuFailureFeedback', 'test_modernz.ModernzInteractions',
         'test_playlist_controls.PlaylistControls', 'test_responsive_osc.ResponsiveOsc',
         'test_seekbar_markers.SeekbarMarkers', 'test_subtitle_controls.SubtitleControls',
-        'test_user_shortcuts.UserShortcuts',
+        'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings',
     ),
     'helpers': (
         'test_capture_single_format.CaptureOutputs', 'test_failure_feedback.CaptureHelperReasons',
         'test_playlist_window.PlaylistWindow', 'test_shortcuts_window.ShortcutsWindow',
-        'test_user_preferences.UserPreferences',
+        'test_user_preferences.UserPreferences', 'test_settings_storage.SettingsStorage',
+        'test_settings_window.SettingsWindow',
     ),
     'install': (
         'test_install_targets.InstallTargets', 'test_legacy_backup.LegacyBackup',

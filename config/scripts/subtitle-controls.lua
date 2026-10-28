@@ -4,6 +4,7 @@ local input = require("mp.input")
 local adjusting = false
 local saved_adjustment
 local position
+local settings_owner
 -- User-confirmed steps; no settings file is written by these actions.
 local delay_step, position_step, scale_step = 0.1, 1, 0.05
 
@@ -109,6 +110,7 @@ end
 
 local function adjust_scale(amount, single)
     if not adjusting and not single then return end
+    if settings_owner then settings_owner.invalidate() end
     -- Native ASS danmaku with secondary-sub-ass-override=no does not apply sub-scale.
     mp.set_property_number("sub-scale", math.max(0.05, math.min(100,
         mp.get_property_number("sub-scale", 1) + amount)))
@@ -145,6 +147,7 @@ local function reset_for_file()
 end
 
 local function reset_adjustment()
+    if settings_owner then settings_owner.invalidate() end
     local had_adjustment = saved_adjustment ~= nil
     reset_for_file()
     mp.osd_message(had_adjustment and "SUB ADJUST: RESET" or "SUB ADJUST: NO CHANGES", 1)
@@ -187,3 +190,14 @@ end)
 mp.register_event("start-file", reset_for_file)
 mp.register_event("end-file", reset_for_file)
 mp.register_event("shutdown", reset_for_file)
+
+-- Persistent appearance and temporary per-media adjustment share this feature's
+-- ownership. A successful save becomes the new temporary-adjustment baseline,
+-- so leaving the media cannot restore the previous saved preference over it.
+local settings_model = dofile(mp.command_native({'expand-path', '~~/script-modules/user-settings.lua'}))
+settings_owner = settings_model.owner(mp, {
+    id='sub-scale', property='sub-scale', default_source='播放器启动配置',
+    read=function() return mp.get_property_number('sub-scale',1) end,
+    write=function(value) return mp.set_property_number('sub-scale',value) end,
+    committed=function(value) if saved_adjustment then saved_adjustment.scale=value end end,
+})

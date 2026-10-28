@@ -34,6 +34,11 @@
 - `config/helpers/shortcuts-window.ps1`
 - `config/helpers/shortcut-key-names.cs`
 - `config/helpers/user-preferences-storage.cs`
+- `config/script-modules/user-settings.lua`
+- `config/scripts/user-settings.lua`
+- `config/helpers/settings-storage.ps1`
+- `config/helpers/settings-window.ps1`
+- `config/helpers/settings-window.cs`
 - `config/input.conf`
 - `config/mpv.conf`
 - `config/mpvnet.conf`
