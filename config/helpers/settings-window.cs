@@ -24,10 +24,10 @@ public sealed class SettingsDraft
 {
     public sealed class Field
     {
-        public string Id, Page, Label, Text, BaselineText, Status, ApplyError, Source;
+        public string Id, Page, Label, SearchTerms, Text, BaselineText, Status, ApplyError, Source;
         public object Default, Saved, Effective;
         public bool Override, BaselineOverride, CanCancel;
-        public double Min, Max;
+        public double Min, Max, SliderMin, SliderMax, Step;
         public bool Dirty { get { return Text != BaselineText || Override != BaselineOverride; } }
     }
     public readonly Dictionary<string, Field> Fields = new Dictionary<string, Field>();
@@ -53,12 +53,15 @@ public sealed class SettingsDraft
             if (!Pages.Contains(page)) continue;
             Field f; bool fresh = !Fields.TryGetValue(id, out f);
             if (fresh) { f = new Field { Id = id, Page = page }; Fields.Add(id, f); }
-            f.Label = Str(row, "label"); f.Default = Value(row, "default");
+            f.Label = Str(row, "label"); f.SearchTerms = Str(row, "search_terms"); f.Default = Value(row, "default");
             f.Saved = Value(row, "saved"); f.Effective = Value(row, "effective");
             f.Status = Str(row, "status"); f.ApplyError = Str(row, "apply_error"); f.Source = Str(row, "default_source");
             f.CanCancel = Flag(row, "can_cancel");
             f.Min = row.ContainsKey("min") ? Convert.ToDouble(row["min"], CultureInfo.InvariantCulture) : 0;
             f.Max = row.ContainsKey("max") ? Convert.ToDouble(row["max"], CultureInfo.InvariantCulture) : 0;
+            f.SliderMin = row.ContainsKey("slider_min") ? Convert.ToDouble(row["slider_min"], CultureInfo.InvariantCulture) : 0.5;
+            f.SliderMax = row.ContainsKey("slider_max") ? Convert.ToDouble(row["slider_max"], CultureInfo.InvariantCulture) : 2;
+            f.Step = row.ContainsKey("step") ? Convert.ToDouble(row["step"], CultureInfo.InvariantCulture) : 0.05;
             if (fresh || !dirty[page] || committedPage == page)
             {
                 f.Text = f.BaselineText = Text(f.Saved);
@@ -117,13 +120,15 @@ public sealed class SettingsEditor : Window
     readonly DispatcherTimer timer = new DispatcherTimer();
     readonly SettingsPreview playerPreview = new SettingsPreview();
     readonly List<object> sent = new List<object>();
-    readonly Dictionary<string, TextBox> editors = new Dictionary<string, TextBox>();
+    readonly Dictionary<string, Control> editors = new Dictionary<string, Control>();
+    readonly Dictionary<string, TextBlock> scaleValues = new Dictionary<string, TextBlock>();
     readonly Dictionary<string, TextBlock> descriptions = new Dictionary<string, TextBlock>();
     readonly Dictionary<string, Button> categories = new Dictionary<string, Button>();
     Dictionary<string, object> latest = new Dictionary<string, object>();
     NamedPipeClientStream pipe; StreamReader reader; StreamWriter writer; Task<string> read;
     TextBox search; StackPanel content, results; TextBlock notice, heading; Button save, undo, reset;
-    Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage;
+    Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage, previewTitle; Button previewMode;
+    bool fullPreview;
     string page = "subtitles", pendingPage, pendingRevision, localError = "";
     int pendingSerial, serial, sequence;
     bool syncing, saving, forceClose, finished, disconnected;
@@ -180,6 +185,7 @@ public sealed class SettingsEditor : Window
         Resources = (ResourceDictionary)XamlReader.Parse(@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
 <Style TargetType='Button'><Setter Property='Background' Value='#262626'/><Setter Property='Foreground' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='Label'><Setter Property='Foreground' Value='White'/></Style>
+<Style TargetType='Slider'><Setter Property='Height' Value='32'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Slider'><Border x:Name='focus' BorderBrush='Transparent' BorderThickness='1' Padding='4' CornerRadius='3'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' Orientation='Horizontal'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#1287bb' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb Width='16' Height='16'><Thumb.Template><ControlTemplate TargetType='Thumb'><Ellipse Fill='#1287bb' Stroke='White' StrokeThickness='1'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#555555' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Border><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='focus' Property='BorderBrush' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='TextBox'><Setter Property='Background' Value='#1b1b1b'/><Setter Property='Foreground' Value='White'/><Setter Property='CaretBrush' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='8'/><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287bb'/></Trigger></Style.Triggers></Style>
 </ResourceDictionary>");
         var root = new Grid { Margin = new Thickness(24) }; Content = root;
@@ -205,7 +211,11 @@ public sealed class SettingsEditor : Window
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition());
         previewPane = new Grid { Margin = new Thickness(0, 0, 0, 16), VerticalAlignment = VerticalAlignment.Top };
         previewPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); previewPane.RowDefinitions.Add(new RowDefinition());
-        previewPane.Children.Add(new TextBlock { Text = "当前播放器画面 · 等比例预览", Foreground = Brush("#bcbcbc"), Margin = new Thickness(0, 0, 0, 8) });
+        var previewHeader = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        previewMode = Button("完整画面", TogglePreviewMode); previewMode.Padding = new Thickness(8, 4, 8, 4); previewMode.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(previewMode, Dock.Right); previewHeader.Children.Add(previewMode);
+        previewTitle = new TextBlock { Foreground = Brush("#bcbcbc"), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        previewHeader.Children.Add(previewTitle); previewPane.Children.Add(previewHeader);
         previewArea = new Border { Height = 230, Background = Brushes.Black, ClipToBounds = true };
         previewMessage = new TextBlock { Text = "正在连接播放器画面…", Foreground = Brush("#bcbcbc"), TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16) };
@@ -230,17 +240,46 @@ public sealed class SettingsEditor : Window
     void SelectPage(string id)
     {
         if (page != id && displayRequested) EndDisplay();
-        page = id; editors.Clear(); descriptions.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
+        if (page != id) fullPreview = false;
+        page = id; editors.Clear(); scaleValues.Clear(); descriptions.Clear(); content.Children.Clear(); heading.Text = SettingsDraft.PageName(page);
         previewPane.Visibility = page == "paths" ? Visibility.Collapsed : Visibility.Visible;
         ArrangePreview();
         foreach (var f in model.Fields.Values.Where(x => x.Page == page))
         {
             var field = f;
             var title = new Label { Content = f.Label, Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 8) }; content.Children.Add(title);
-            var input = new TextBox { Text = f.Text, MaxLength = f.Page == "paths" ? 2048 : 16, Margin = new Thickness(0, 0, 0, 8) };
+            Control input;
+            if (f.Page == "paths")
+            {
+                var pathInput = new TextBox { Text = f.Text, MaxLength = 2048, Margin = new Thickness(0, 0, 0, 8) };
+                pathInput.TextChanged += delegate { if (!syncing) EditField(field, pathInput.Text); };
+                input = pathInput; content.Children.Add(input);
+            }
+            else
+            {
+                content.Children.Add(new TextBlock { Text = f.Page == "subtitles" ? "相对原有字幕大小，100% 表示原比例。" : "相对控制栏原有大小，100% 表示原比例。",
+                    Foreground = Brush("#bcbcbc"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
+                var slider = new Slider { Minimum = f.SliderMin * 100, Maximum = f.SliderMax * 100,
+                    SmallChange = f.Step * 100, LargeChange = f.Step * 100, TickFrequency = f.Step * 100,
+                    IsSnapToTickEnabled = true, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 4) };
+                SetSlider(slider, field);
+                slider.ValueChanged += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
+                // An out-of-range retained value can sit beyond a clamped thumb.
+                // An explicit click or Home/End must still be able to choose the endpoint.
+                slider.PreviewMouseLeftButtonUp += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
+                slider.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
+                    if (e.Key == Key.Home || e.Key == Key.End) {
+                        slider.Value = e.Key == Key.Home ? slider.Minimum : slider.Maximum;
+                        EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); e.Handled = true;
+                    }
+                };
+                input = slider; content.Children.Add(slider);
+                var percentage = new TextBlock { Margin = new Thickness(0, 0, 0, 12), TextWrapping = TextWrapping.Wrap };
+                scaleValues.Add(f.Id, percentage); content.Children.Add(percentage);
+            }
             title.Target = input; System.Windows.Automation.AutomationProperties.SetName(input, f.Label);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id);
-            editors.Add(f.Id, input); content.Children.Add(input);
+            editors.Add(f.Id, input);
             var detail = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brush("#bcbcbc"), Margin = new Thickness(0, 0, 0, 8) };
             descriptions.Add(f.Id, detail); content.Children.Add(detail);
             if (f.Page != "paths")
@@ -248,24 +287,36 @@ public sealed class SettingsEditor : Window
                 var preview = Button("重新预览", delegate { Preview(field); }); preview.HorizontalAlignment = HorizontalAlignment.Left;
                 preview.Margin = new Thickness(0, 0, 0, 20); content.Children.Add(preview);
             }
-            input.TextChanged += delegate {
-                if (!syncing)
-                {
-                    model.Edit(field.Id, input.Text); localError = "";
-                    object value;
-                    if (field.Page != "paths" && model.TryValue(field, out value)) Preview(field);
-                    Refresh();
-                }
-            };
         }
         selectingPage = true;
         Refresh();
         UpdatePlayerPreview();
         selectingPage = false;
     }
+    void EditField(SettingsDraft.Field field, string text)
+    {
+        if (saving) return;
+        if (field.Text == text) return;
+        model.Edit(field.Id, text); localError = "";
+        object value;
+        if (field.Page != "paths" && model.TryValue(field, out value)) Preview(field);
+        Refresh();
+    }
+    static void SetSlider(Slider slider, SettingsDraft.Field field)
+    {
+        double value;
+        if (Double.TryParse(field.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !Double.IsNaN(value) && !Double.IsInfinity(value))
+            slider.Value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value * 100));
+    }
+    void TogglePreviewMode()
+    {
+        fullPreview = !fullPreview; ArrangePreview(); UpdatePlayerPreview();
+    }
     void ArrangePreview()
     {
         if (previewLayout == null || settingsScroll == null) return;
+        previewTitle.Text = fullPreview ? "完整画面" : page == "controlbar" ? "控制栏局部预览" : "字幕区域预览";
+        previewMode.Content = fullPreview ? "局部预览" : "完整画面";
         bool wide = (ActualWidth > 0 ? ActualWidth : Width) >= 1000 && page != "paths";
         previewLayout.ColumnDefinitions[0].Width = wide ? new GridLength(280) : new GridLength(1, GridUnitType.Star);
         previewLayout.ColumnDefinitions[1].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
@@ -274,7 +325,8 @@ public sealed class SettingsEditor : Window
         Grid.SetColumn(previewPane, wide ? 1 : 0); Grid.SetRow(settingsScroll, wide ? 0 : 1);
         previewPane.Margin = wide ? new Thickness(20, 0, 0, 0) : new Thickness(0, 0, 0, 16);
         double windowWidth = ActualWidth > 0 ? ActualWidth : Width;
-        double desired = wide ? Math.Max(200, Math.Min(380, (windowWidth - 510) * 9 / 16)) : Math.Max(150, Math.Min(260, ActualHeight * 0.3));
+        double fraction = fullPreview ? 1 : page == "controlbar" ? 0.35 : 0.45;
+        double desired = wide ? Math.Max(100, Math.Min(380, (windowWidth - 510) * 9 / 16 * fraction)) : Math.Max(100, Math.Min(260, ActualHeight * 0.3 * fraction));
         if (previewLayout.ActualHeight > 0) desired = Math.Min(desired, Math.Max(80, previewLayout.ActualHeight - (wide ? 36 : 150)));
         previewArea.Height = desired;
     }
@@ -282,11 +334,11 @@ public sealed class SettingsEditor : Window
     {
         results.Children.Clear(); string query = search.Text.Trim();
         if (query.Length == 0) return;
-        foreach (var f in model.Fields.Values.Where(f => (f.Label + " " + f.Id + " " + SettingsDraft.PageName(f.Page)).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+        foreach (var f in model.Fields.Values.Where(f => (f.Label + " " + f.Id + " " + f.SearchTerms + " " + SettingsDraft.PageName(f.Page)).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
         {
             var field = f;
             var b = Button(f.Label + " · " + SettingsDraft.PageName(f.Page), delegate {
-                SelectPage(field.Page); TextBox input; if (editors.TryGetValue(field.Id, out input)) { input.BringIntoView(); input.Focus(); input.SelectAll(); }
+                SelectPage(field.Page); Control input; if (editors.TryGetValue(field.Id, out input)) { input.BringIntoView(); input.Focus(); var pathInput = input as TextBox; if (pathInput != null) pathInput.SelectAll(); }
             }); b.Margin = new Thickness(0, 0, 0, 8); results.Children.Add(b);
         }
         if (results.Children.Count == 0) results.Children.Add(new TextBlock { Text = "没有匹配的设置", Margin = new Thickness(0, 0, 0, 16) });
@@ -322,7 +374,9 @@ public sealed class SettingsEditor : Window
     {
         if (previewArea == null || validation) return;
         bool enabled = page != "paths" && !disconnected;
-        string message = playerPreview.Update(this, previewArea, parent, enabled);
+        object position = SettingsDraft.Value(latest, "preview_subtitle_position");
+        string message = playerPreview.Update(this, previewArea, parent, enabled, fullPreview ? "full" : page,
+            position == null ? 100 : Convert.ToDouble(position, CultureInfo.InvariantCulture));
         bool available = enabled && playerPreview.Visible;
         previewMessage.Text = message;
         previewMessage.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -338,7 +392,16 @@ public sealed class SettingsEditor : Window
         saving = true; pendingPage = page; pendingRevision = model.Revisions[page]; pendingSerial = serial; saveStarted = DateTime.UtcNow; localError = "";
         Action("save", pendingRevision, page, json.Serialize(values)); Refresh();
     }
-    void SyncInputs() { syncing = true; foreach (var item in editors) item.Value.Text = model.Fields[item.Key].Text; syncing = false; }
+    void SyncInputs()
+    {
+        syncing = true;
+        foreach (var item in editors) {
+            var text = item.Value as TextBox;
+            if (text != null) text.Text = model.Fields[item.Key].Text;
+            else SetSlider((Slider)item.Value, model.Fields[item.Key]);
+        }
+        syncing = false;
+    }
     static string Status(string value)
     {
         switch (value) { case "preview": return "正在预览，仅此播放器"; case "pending-media": return "下一媒体生效";
@@ -350,9 +413,16 @@ public sealed class SettingsEditor : Window
         foreach (var item in descriptions)
         {
             var f = model.Fields[item.Key];
-            item.Value.Text = "已保存：" + Display(f.Saved) + "    当前：" + Display(f.Effective) + "\n" + Status(f.Status) +
+            item.Value.Text = "已保存：" + DisplayField(f, f.Saved) + "    当前：" + DisplayField(f, f.Effective) + "\n" + Status(f.Status) +
                 (f.Override ? "" : " · 沿用默认") + (f.ApplyError.Length > 0 ? "\n" + f.ApplyError : "") +
-                (f.Page == "paths" ? "\n留空沿用默认路径。" : "\n默认：" + Display(f.Default) + "（" + f.Source + "）");
+                (f.Page == "paths" ? "\n留空沿用默认路径。" : "\n默认：" + DisplayField(f, f.Default) + "（" + f.Source + "）");
+        }
+        foreach (var item in scaleValues)
+        {
+            var f = model.Fields[item.Key]; double number;
+            item.Value.Text = DisplayField(f, f.Text);
+            if (Double.TryParse(f.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out number) && (number < f.SliderMin || number > f.SliderMax))
+                item.Value.Text += "（已保留原值；滑块常用范围 " + (f.SliderMin * 100) + "%–" + (f.SliderMax * 100) + "%，移动后采用新值）";
         }
         string error = SettingsDraft.Str(latest, page == "paths" ? "paths_error" : "error");
         string revision = SettingsDraft.Str(latest, page == "paths" ? "paths_revision" : "revision");
@@ -373,6 +443,16 @@ public sealed class SettingsEditor : Window
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));
         reset.IsEnabled = !saving && !disconnected && model.Fields.Count > 0 && error.Length == 0;
         content.IsEnabled = !saving;
+    }
+    static string DisplayField(SettingsDraft.Field field, object value)
+    {
+        if (field.Page != "paths") {
+            double number;
+            if (Double.TryParse(SettingsDraft.Text(value), NumberStyles.Float, CultureInfo.InvariantCulture, out number))
+                return (number * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+            return "暂不可用";
+        }
+        return Display(value);
     }
     static string Display(object value)
     {
@@ -484,7 +564,10 @@ public sealed class SettingsEditor : Window
         {
             var step = UserPreferencesStorage.Object(entry); string op = SettingsDraft.Str(step, "op");
             if (op == "page") SelectPage(SettingsDraft.Str(step, "page"));
-            else if (op == "edit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); editors[id].Text = SettingsDraft.Str(step, "text"); }
+            else if (op == "edit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); EditField(model.Fields[id], SettingsDraft.Str(step, "text")); SyncInputs(); }
+            else if (op == "slide") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((Slider)editors[id]).Value = Convert.ToDouble(step["percent"], CultureInfo.InvariantCulture); }
+            else if (op == "small-step") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); Slider.IncreaseSmall.Execute(null, editors[id]); }
+            else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
             else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
             else if (op == "save") Save(); else if (op == "reset") Reset(); else if (op == "undo") Revert();
@@ -503,6 +586,8 @@ public sealed class SettingsEditor : Window
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
             preview_visible = previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
+            full_preview = fullPreview, scale_labels = scaleValues.ToDictionary(x => x.Key, x => x.Value.Text),
+            editor_types = editors.ToDictionary(x => x.Key, x => x.Value.GetType().Name),
             layout_valid = saveBounds.Bottom <= layoutRoot.ActualHeight && saveBounds.Right <= layoutRoot.ActualWidth &&
                 (page == "paths" || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
             preview_column = Grid.GetColumn(previewPane),

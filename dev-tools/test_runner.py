@@ -37,7 +37,7 @@ PROFILES = {
         'test_capture_single_format.CaptureOutputs', 'test_failure_feedback.CaptureHelperReasons',
         'test_playlist_window.PlaylistWindow', 'test_shortcuts_window.ShortcutsWindow',
         'test_user_preferences.UserPreferences', 'test_settings_storage.SettingsStorage',
-        'test_settings_window.SettingsWindow',
+        'test_settings_window.SettingsWindow', 'test_settings_preview.SettingsPreviewGeometry',
     ),
     'install': (
         'test_install_targets.InstallTargets', 'test_legacy_backup.LegacyBackup',

@@ -12,11 +12,12 @@ TOKEN = 'settings-fixture'
 
 def state(**changes):
     fields = []
-    for key, page, label in [('sub-scale', 'subtitles', '字幕字号'),
+    for key, page, label in [('sub-scale', 'subtitles', '字幕缩放'),
                              ('modernz.scalewindowed', 'controlbar', '窗口控制栏缩放')]:
         fields.append(dict(id=key, page=page, label=label, default=1, saved=1,
+                           search_terms='字幕大小 字号 比例 字体大小' if key == 'sub-scale' else '控制栏大小 比例 OSC',
                            has_override=False, effective=1, status='effective',
-                           apply_error='', min=0.05, max=100, default_source='启动配置'))
+                           apply_error='', min=0.05, max=100, slider_min=0.5, slider_max=2, step=0.05, default_source='启动配置'))
     for key, label in [('capture_root', '截图与片段目录'), ('ffmpeg_path', 'FFmpeg 路径'),
                        ('python_path', 'Python 路径'), ('mpv_path', '缩略图播放器路径')]:
         fields.append(dict(id=key, page='paths', label=label, default='', saved='',
@@ -180,3 +181,47 @@ class SettingsWindow(unittest.TestCase):
                 data = self.run_window(width=width, height=height)
                 self.assertTrue(data['layout_valid'])
                 self.assertEqual(data['preview_column'], column)
+
+    def test_percentage_slider_updates_draft_and_sends_ratio(self):
+        data = self.run_window([dict(op='slide', id='sub-scale', percent=135)])
+        self.assertEqual(data['editor_types']['sub-scale'], 'Slider')
+        self.assertEqual(data['drafts']['sub-scale']['text'], '1.35')
+        self.assertEqual(data['scale_labels']['sub-scale'], '135%')
+        self.assertEqual(data['sent'][-1][2:], ['preview', TOKEN, 'sub-scale', '1.35'])
+
+    def test_extreme_saved_value_is_not_clamped_by_constructing_slider(self):
+        initial = state()
+        initial['fields'][0].update(saved=3, effective=3, has_override=True)
+        data = self.run_window(initial=initial)
+        self.assertEqual(data['drafts']['sub-scale']['text'], '3')
+        self.assertEqual(data['dirty_pages'], [])
+        self.assertEqual(data['sent'], [])
+        self.assertIn('300%', data['scale_labels']['sub-scale'])
+        self.assertIn('已保留原值', data['scale_labels']['sub-scale'])
+        changed = self.run_window([dict(op='slide', id='sub-scale', percent=150)], initial)
+        self.assertEqual(changed['drafts']['sub-scale']['text'], '1.5')
+
+    def test_slider_reset_and_undo_preserve_default_semantics(self):
+        initial = state()
+        initial['fields'][0].update(saved=1.3, effective=1.3, has_override=True)
+        reset = self.run_window([dict(op='reset'), dict(op='save')], initial)
+        self.assertEqual(reset['scale_labels']['sub-scale'], '100%')
+        self.assertIsNone(json.loads(reset['sent'][-1][-1])['sub-scale'])
+        undo = self.run_window([dict(op='slide', id='sub-scale', percent=170), dict(op='undo')], initial)
+        self.assertEqual(undo['scale_labels']['sub-scale'], '130%')
+        self.assertEqual(undo['dirty_pages'], [])
+
+    def test_full_picture_toggle_changes_no_draft_or_preview_value(self):
+        data = self.run_window([dict(op='slide', id='sub-scale', percent=125), dict(op='full-preview')])
+        self.assertTrue(data['full_preview'])
+        self.assertEqual(data['drafts']['sub-scale']['text'], '1.25')
+        self.assertEqual(len(data['sent']), 1)
+
+    def test_slider_keyboard_command_uses_five_percentage_point_step(self):
+        data = self.run_window([dict(op='small-step', id='sub-scale')])
+        self.assertEqual(data['scale_labels']['sub-scale'], '105%')
+        self.assertEqual(data['sent'][-1][2:], ['preview', TOKEN, 'sub-scale', '1.05'])
+
+    def test_previous_font_size_search_still_finds_subtitle_scale(self):
+        data = self.run_window([dict(op='search', text='字号')])
+        self.assertEqual(data['search_results'], ['字幕缩放 · 字幕'])

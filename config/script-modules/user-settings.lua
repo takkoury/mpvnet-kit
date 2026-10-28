@@ -2,8 +2,8 @@
 -- its actual value, media generation and conditional preview restoration.
 local M = {max_bytes=256*1024}
 M.fields = {
-    {id='sub-scale', page='subtitles', label='字幕字号', default=1, min=0.05, max=100, step=0.05, script='subtitle_controls'},
-    {id='modernz.scalewindowed', page='controlbar', label='窗口控制栏缩放', default=1, min=0.25, max=4, step=0.05, script='modernz'},
+    {id='sub-scale', page='subtitles', label='字幕缩放', search_terms='字幕大小 字号 比例 字体大小', default=1, min=0.05, max=100, slider_min=0.5, slider_max=2, step=0.05, script='subtitle_controls'},
+    {id='modernz.scalewindowed', page='controlbar', label='窗口控制栏缩放', search_terms='控制栏大小 比例 OSC', default=1, min=0.25, max=4, slider_min=0.5, slider_max=2, step=0.05, script='modernz'},
 }
 M.path_fields = {'capture_root', 'ffmpeg_path', 'python_path', 'mpv_path'}
 M.pages = {{id='subtitles',label='字幕'},{id='controlbar',label='控制栏'},{id='paths',label='本机路径'}}

@@ -44,10 +44,11 @@ local function publish()
         local override=document and document.values[field.id]
         local status=owner.status or 'unavailable'
         if status=='effective' and not model.same_number(owner.effective,override or default) then status='pending-media' end
-        fields[#fields+1]={id=field.id,page=field.page,label=field.label,default=default,
+        fields[#fields+1]={id=field.id,page=field.page,label=field.label,search_terms=field.search_terms,default=default,
             saved=override or default,has_override=override~=nil,effective=owner.effective,
             status=status,apply_error=owner.apply_error or '',can_cancel=(owner.preview_owner or '')~='',
-            min=field.min,max=field.max,step=field.step,default_source=owner.default_source or '等待功能模块'}
+            min=field.min,max=field.max,slider_min=field.slider_min,slider_max=field.slider_max,
+            step=field.step,default_source=owner.default_source or '等待功能模块'}
     end
     local labels={capture_root='截图与片段目录',ffmpeg_path='FFmpeg 路径',python_path='Python 路径',mpv_path='缩略图播放器路径'}
     for _,id in ipairs(model.path_fields) do
@@ -61,7 +62,8 @@ local function publish()
         editor_visible=editor_visible,revision=revision,paths_revision=paths_revision,error=error_text,
         paths_error=paths_error,saving=saving,saving_page=saving_page,save_serial=save_serial,
         save_page=save_page,save_error=save_error,save_ok=save_ok,save_revision=save_revision,
-        fields=fields,pages=model.pages,preview_serial=preview_serial,preview_error=preview_error})
+        fields=fields,pages=model.pages,preview_serial=preview_serial,preview_error=preview_error,
+        preview_subtitle_position=mp.get_property_number('sub-pos',100)})
 end
 local function reload(force)
     if closing then return end

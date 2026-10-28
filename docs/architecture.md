@@ -23,7 +23,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ### 常用设置基础
 
-[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)目前贯通字幕字号、窗口控制栏缩放及独立路径页。入口为 `user_settings/open`；正式菜单接入与其他设置属于后续批次。
+[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)目前贯通字幕缩放、窗口控制栏缩放及独立路径页。入口为 `user_settings/open`；正式菜单接入与其他设置属于后续批次。
 
 `mpvnet-user.json` 继续使用 schema 1，新增平面 `settings` 对象，字段为 `sub-scale` 和 `modernz.scalewindowed`。窗口持各页草稿和载入时 revision；模型复用快捷键的原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。恢复默认先改草稿，保存后删除对应覆盖；默认取功能模块启动时的真实配置。
 
@@ -36,6 +36,8 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。正常关闭有草稿时列出分类并确认放弃，保存期间禁止关闭；IPC 中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)及[窗口](../tests/test_settings_window.py)。
 
 窗口内画面由 [settings-preview.cs](../config/helpers/settings-preview.cs) 注册所属播放器的 DWM 实时缩略图，校验源窗口 PID，将客户区等比例显示在固定预览区域。它复用当前播放器的字幕和 ModernZ 渲染，不另起解码器、不保存截图、不转发预览区域输入。路径页隐藏画面；设置关闭释放 DWM 句柄，源窗口最小化／不可用时隐藏画面并提示。布局按 WPF 逻辑单位转换到目标客户区，真实跨 DPI、特殊渲染器及最小化恢复仍需各自验证。
+
+缩放编辑使用百分比滑块；模型发布常用滑块范围和步长，底层存储合法范围保持。窗口载入时仅夹紧滑块手柄，不夹紧草稿或保存值；超范围配置明确提示，用户主动操作才换成常用范围内值。字幕标签使用“字幕缩放”，保留“字号”等搜索别名。预览模式为 subtitles/controlbar/full：分别使用源客户区45%高度的字幕附近区域、底部35%区域或全客户区，均保留全宽。控制层提供运行态 `preview_subtitle_position`（sub-pos），不写入偏好。几何只依赖容器、源尺寸、模式与位置，字幕／OSC缩放值不参与自动适配。实际客户区裁切经窗口外框、客户区原点及 DWM 源纹理尺寸映射到 rcSource；完整画面是定位字幕等情况的查看回退，不改变草稿。纯几何检查见 [SettingsPreviewGeometry](../tests/test_settings_preview.py)。
 
 控制栏页通过 `preview-display(token, controlbar|none|renew)` 请求临时显示。控制层校验当前会话后转发 ModernZ 的 `settings-display-preview(token, begin|end|renew)`；ModernZ 持有3秒显示期限，窗口约每秒续期，续期不能重新创建已撤销的显示状态。此机制不写 visibility 偏好，也不改数值预览所有权。离页、关闭、失联超时、切媒体和显式手动显隐结束临时显示，按当前显隐／暂停策略恢复。只有预览期间的手动显隐会使旧暂停恢复点失效；未使用预览时沿用原行为。显隐回归见 [SettingsDisplay](../tests/test_settings_display.py)。
 
