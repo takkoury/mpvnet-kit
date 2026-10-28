@@ -231,3 +231,14 @@ class SettingsWindow(unittest.TestCase):
         data = self.run_window(initial=failed)
         self.assertIn('已保存。', data['notice'])
         self.assertIn('字幕缩放：播放器未能应用此设置', data['notice'])
+
+    def test_slider_click_reapplies_unchanged_draft_after_media_change(self):
+        data = self.run_window([dict(op='slide', id='sub-scale', percent=135),
+            dict(op='state', state=state()), dict(op='slide-release', id='sub-scale')])
+        self.assertEqual(data['drafts']['sub-scale']['text'], '1.35')
+        self.assertEqual([c[2:] for c in data['sent']], [['preview', TOKEN, 'sub-scale', '1.35']] * 2)
+
+    def test_slider_click_on_default_previews_without_creating_dirty_override(self):
+        data = self.run_window([dict(op='slide-release', id='sub-scale')])
+        self.assertEqual(data['dirty_pages'], [])
+        self.assertEqual(data['sent'][-1][2:], ['preview', TOKEN, 'sub-scale', 'null'])

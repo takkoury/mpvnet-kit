@@ -263,8 +263,9 @@ public sealed class SettingsEditor : Window
                 slider.ValueChanged += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
                 // An out-of-range retained value can sit beyond a clamped thumb.
                 // An explicit click or Home/End must still be able to choose the endpoint.
-                slider.PreviewMouseLeftButtonUp += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
+                slider.PreviewMouseLeftButtonUp += delegate { if (!syncing) ReleaseSlider(field, slider); };
                 slider.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
+                    if (e.Key == Key.Space || e.Key == Key.Return) { Preview(field); e.Handled = true; return; }
                     if (e.Key == Key.Home || e.Key == Key.End) {
                         slider.Value = e.Key == Key.Home ? slider.Minimum : slider.Maximum;
                         EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); e.Handled = true;
@@ -277,11 +278,6 @@ public sealed class SettingsEditor : Window
             title.Target = input; System.Windows.Automation.AutomationProperties.SetName(input, f.Label);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id);
             editors.Add(f.Id, input);
-            if (f.Page != "paths")
-            {
-                var preview = Button("重新预览", delegate { Preview(field); }); preview.HorizontalAlignment = HorizontalAlignment.Left;
-                preview.Margin = new Thickness(0, 0, 0, 20); content.Children.Add(preview);
-            }
         }
         selectingPage = true;
         Refresh();
@@ -296,6 +292,12 @@ public sealed class SettingsEditor : Window
         object value;
         if (field.Page != "paths" && model.TryValue(field, out value)) Preview(field);
         Refresh();
+    }
+    void ReleaseSlider(SettingsDraft.Field field, Slider slider)
+    {
+        string value = (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture);
+        if (field.Text == value) Preview(field);
+        else EditField(field, value);
     }
     static void SetSlider(Slider slider, SettingsDraft.Field field)
     {
@@ -550,6 +552,7 @@ public sealed class SettingsEditor : Window
             if (op == "page") SelectPage(SettingsDraft.Str(step, "page"));
             else if (op == "edit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); EditField(model.Fields[id], SettingsDraft.Str(step, "text")); SyncInputs(); }
             else if (op == "slide") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((Slider)editors[id]).Value = Convert.ToDouble(step["percent"], CultureInfo.InvariantCulture); }
+            else if (op == "slide-release") { string id = SettingsDraft.Str(step, "id"); ReleaseSlider(model.Fields[id], (Slider)editors[id]); }
             else if (op == "small-step") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); Slider.IncreaseSmall.Execute(null, editors[id]); }
             else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
