@@ -213,7 +213,7 @@ public sealed class SettingsShortcutsPanel : Grid
     void Refresh()
     {
         foreach (var row in rows) row.Notify();
-        foreach (var pair in filters) { pair.Value.Background = pair.Key == filter ? Brush("#173442") : Brushes.Transparent; pair.Value.Foreground = pair.Key == filter ? Brushes.White : Brush("#ABABAB"); }
+        foreach (var pair in filters) { pair.Value.Background = pair.Key == filter ? Brush("#1287bb") : Brushes.Transparent; pair.Value.Foreground = pair.Key == filter ? Brushes.White : Brush("#ABABAB"); }
         recordingHint.Visibility = captureId.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         changed();
     }

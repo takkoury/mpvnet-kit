@@ -55,13 +55,13 @@ local function publish()
             step=field.step,kind=field.kind,display=field.display,timing=field.first_media and 'first-media' or field.timing,first_media=field.first_media,section=field.section,choices=field.choices,
             default_source=owner.default_source or '等待功能模块'}
     end
-    local labels={capture_root='截图与片段目录',ffmpeg_path='FFmpeg 路径',python_path='Python 路径',mpv_path='缩略图播放器路径'}
+    local labels={capture_root='截图与片段目录',ffmpeg_path='FFmpeg 路径',python_path='Python 路径',mpv_path='进度预览程序'}
     for _,id in ipairs(model.path_fields) do
         local saved=local_values[id] or ''
         local effective=id=='capture_root' and saved or paths.options[id] or ''
         fields[#fields+1]={id=id,page='paths',label=labels[id],kind='string',timing=id=='capture_root' and 'next-task' or 'restart',default='',saved=saved,
             has_override=saved~='',effective=effective,status=saved==effective and 'effective' or 'pending-restart',
-            apply_error='',default_source='自动选择'}
+            apply_error='',default_source='自动选择',search_terms=id=='mpv_path' and '缩略图 进度条 预览 播放器 路径 mpv' or ''}
     end
     mp.set_property_native('user-data/mpvnet/settings',{schema=1,editor_token=token,
         editor_visible=editor_visible,revision=revision,paths_revision=paths_revision,error=error_text,

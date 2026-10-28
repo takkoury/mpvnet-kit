@@ -15,12 +15,12 @@ M.fields = {
     {id='modernz.scalewindowed',page='controlbar',label='窗口控制栏缩放',kind='number',display='percent',search_terms='控制栏大小 比例 OSC',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.scalefullscreen',page='controlbar',label='全屏控制栏缩放',kind='number',display='percent',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.hidetimeout',page='controlbar',label='自动隐藏时间',kind='number',display='seconds',default=1.5,min=0,max=60,slider_min=0,slider_max=10,step=0.1,timing='preview',section='显示',script='modernz'},
-    {id='modernz.keeponpause',page='controlbar',label='暂停时显示',kind='choice',default='no',choices={{value='no',label='不保持'},{value='bottombar',label='显示控制栏'},{value='both',label='显示全部'}},timing='preview',section='显示',script='modernz'},
+    {id='modernz.keeponpause',page='controlbar',label='暂停时控制栏',kind='choice',default='no',choices={{value='no',label='自动隐藏'},{value='bottombar',label='保持底部控制栏'},{value='both',label='保持顶部和底部控制栏'}},timing='preview',section='显示',script='modernz',search_terms='暂停时显示 自动隐藏 顶部 底部'},
     {id='modernz.chapter_fmt',page='controlbar',label='章节标题',kind='boolean',default=true,timing='preview',section='显示',script='modernz'},
     {id='modernz.timecurrent',page='controlbar',label='显示当前时间',kind='boolean',default=true,timing='preview',section='时间',script='modernz'},
     {id='modernz.timems',page='controlbar',label='显示毫秒',kind='boolean',default=false,timing='preview',section='时间',script='modernz'},
-    {id='modernz.persistent_progress',page='controlbar',label='常驻进度线',kind='boolean',default=false,timing='preview',section='显示',script='modernz'},
-    {id='hwdec',page='decoding',label='硬件解码',kind='choice',default='auto-safe',choices={{value='auto-safe',label='自动安全硬解'},{value='no',label='关闭硬解'}},timing='next-media',script='settings_options',search_terms='硬解 软件 解码 hwdec'},
+    {id='modernz.persistent_progress',page='controlbar',label='进度条常驻',kind='boolean',default=false,timing='preview',section='显示',script='modernz',search_terms='常驻进度线 进度条'},
+    {id='hwdec',page='decoding',label='视频解码方式',kind='choice',default='auto-safe',choices={{value='auto-safe',label='自动使用硬件加速'},{value='no',label='仅使用软件解码'}},timing='next-media',script='settings_options',search_terms='硬件解码 硬解 软件 解码 hwdec'},
 }
 M.path_fields = {'capture_root','ffmpeg_path','python_path','mpv_path'}
 M.pages = {{id='subtitles',label='字幕'},{id='audio',label='声音与音轨'},{id='window',label='窗口'},
