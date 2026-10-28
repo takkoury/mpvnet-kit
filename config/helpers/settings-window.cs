@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Web.Script.Serialization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Markup;
@@ -109,6 +110,66 @@ public sealed class SettingsDraft
     }
 }
 
+// Keep the small visual track, but accept pointer input across the whole row.
+// Keyboard commands and range automation remain the standard WPF Slider's.
+public sealed class SettingsSlider : Slider
+{
+    bool dragging;
+    double grabOffset, lastX;
+    public event Action PointerReleased;
+    internal Track ValueTrack { get { ApplyTemplate(); return Template.FindName("PART_Track", this) as Track; } }
+    internal double GrabOffset(Point point, out bool overThumb)
+    {
+        Track track = ValueTrack;
+        Rect thumb = track.Thumb.TransformToAncestor(track).TransformBounds(new Rect(track.Thumb.RenderSize));
+        // The thumb's horizontal band is also forgiving above and below it.
+        overThumb = point.X >= thumb.Left && point.X <= thumb.Right;
+        return overThumb ? point.X - (thumb.Left + thumb.Width / 2) : 0;
+    }
+    internal void SetPointerPosition(Point point, double offset)
+    {
+        if (!IsEnabled) return;
+        Track track = ValueTrack;
+        if (track == null || track.ActualWidth <= 0) return;
+        double value = track.ValueFromPoint(new Point(point.X - offset, track.ActualHeight / 2));
+        if (Double.IsNaN(value) || Double.IsInfinity(value)) return;
+        if (IsSnapToTickEnabled && TickFrequency > 0)
+            value = Minimum + Math.Round((value - Minimum) / TickFrequency, MidpointRounding.AwayFromZero) * TickFrequency;
+        SetCurrentValue(ValueProperty, Math.Max(Minimum, Math.Min(Maximum, value)));
+    }
+    protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        Track track = ValueTrack;
+        if (!IsEnabled || track == null) { base.OnPreviewMouseLeftButtonDown(e); return; }
+        Focus();
+        Point point = e.GetPosition(track); bool overThumb;
+        grabOffset = GrabOffset(point, out overThumb); lastX = point.X;
+        dragging = CaptureMouse();
+        if (!overThumb) SetPointerPosition(point, grabOffset);
+        e.Handled = true;
+    }
+    protected override void OnPreviewMouseMove(MouseEventArgs e)
+    {
+        if (!dragging || e.LeftButton != MouseButtonState.Pressed) { base.OnPreviewMouseMove(e); return; }
+        Point point = e.GetPosition(ValueTrack);
+        if (point.X != lastX) { SetPointerPosition(point, grabOffset); lastX = point.X; }
+        e.Handled = true;
+    }
+    protected override void OnPreviewMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        if (!dragging) { base.OnPreviewMouseLeftButtonUp(e); return; }
+        Point point = e.GetPosition(ValueTrack);
+        if (point.X != lastX) SetPointerPosition(point, grabOffset);
+        dragging = false; ReleaseMouseCapture();
+        if (PointerReleased != null) PointerReleased();
+        e.Handled = true;
+    }
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        dragging = false; base.OnLostMouseCapture(e);
+    }
+}
+
 public sealed class SettingsEditor : Window
 {
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int n);
@@ -184,7 +245,7 @@ public sealed class SettingsEditor : Window
         Resources = (ResourceDictionary)XamlReader.Parse(@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
 <Style TargetType='Button'><Setter Property='Background' Value='#262626'/><Setter Property='Foreground' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='border' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='border' Property='Background' Value='#353535'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='border' Property='BorderBrush' Value='#1287bb'/><Setter TargetName='border' Property='BorderThickness' Value='2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='border' Property='Background' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='Label'><Setter Property='Foreground' Value='White'/></Style>
-<Style TargetType='Slider'><Setter Property='Height' Value='32'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Slider'><Border x:Name='focus' BorderBrush='Transparent' BorderThickness='1' Padding='4' CornerRadius='3'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' Orientation='Horizontal'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#1287bb' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb Width='16' Height='16'><Thumb.Template><ControlTemplate TargetType='Thumb'><Ellipse Fill='#1287bb' Stroke='White' StrokeThickness='1'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#555555' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Border><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='focus' Property='BorderBrush' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType='Slider'><Setter Property='Height' Value='40'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Slider'><Border x:Name='focus' Background='Transparent' BorderBrush='Transparent' BorderThickness='1' Padding='4' CornerRadius='3'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' Orientation='Horizontal'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#1287bb' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb Width='16' Height='16'><Thumb.Template><ControlTemplate TargetType='Thumb'><Ellipse Fill='#1287bb' Stroke='White' StrokeThickness='1'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='#555555' Height='4' CornerRadius='2'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Border><ControlTemplate.Triggers><Trigger Property='IsKeyboardFocusWithin' Value='True'><Setter TargetName='focus' Property='BorderBrush' Value='#1287bb'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 <Style TargetType='TextBox'><Setter Property='Background' Value='#1b1b1b'/><Setter Property='Foreground' Value='White'/><Setter Property='CaretBrush' Value='White'/><Setter Property='BorderBrush' Value='#555555'/><Setter Property='Padding' Value='8'/><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287bb'/></Trigger></Style.Triggers></Style>
 </ResourceDictionary>");
         var root = new Grid { Margin = new Thickness(24) }; Content = root;
@@ -256,14 +317,14 @@ public sealed class SettingsEditor : Window
             }
             else
             {
-                var slider = new Slider { Minimum = f.SliderMin * 100, Maximum = f.SliderMax * 100,
+                var slider = new SettingsSlider { Style = (Style)FindResource(typeof(Slider)), Minimum = f.SliderMin * 100, Maximum = f.SliderMax * 100,
                     SmallChange = f.Step * 100, LargeChange = f.Step * 100, TickFrequency = f.Step * 100,
                     IsSnapToTickEnabled = true, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 4) };
                 SetSlider(slider, field);
                 slider.ValueChanged += delegate { if (!syncing) EditField(field, (slider.Value / 100).ToString("G15", CultureInfo.InvariantCulture)); };
                 // An out-of-range retained value can sit beyond a clamped thumb.
                 // An explicit click or Home/End must still be able to choose the endpoint.
-                slider.PreviewMouseLeftButtonUp += delegate { if (!syncing) ReleaseSlider(field, slider); };
+                slider.PointerReleased += delegate { if (!syncing) ReleaseSlider(field, slider); };
                 slider.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
                     if (e.Key == Key.Space || e.Key == Key.Return) { Preview(field); e.Handled = true; return; }
                     if (e.Key == Key.Home || e.Key == Key.End) {
@@ -540,6 +601,13 @@ public sealed class SettingsEditor : Window
     public void Finish() { if (finished) return; finished = true; timer.Stop(); playerPreview.Dispose(); if (pipe != null) pipe.Dispose(); parent.Dispose(); }
     public void Run() { if (noShow) new Application().Run(); else new Application().Run(this); }
     // Exercises the same draft and control event paths, without player/filesystem IO.
+    FrameworkElement LayoutForValidation()
+    {
+        var root = (FrameworkElement)Content;
+        root.Measure(new Size(Width - 48, Height - 80));
+        root.Arrange(new Rect(0, 0, Width - 48, Height - 80)); root.UpdateLayout();
+        return root;
+    }
     public object Validate(Dictionary<string, object> request)
     {
         if (request.ContainsKey("validation_width")) Width = Convert.ToDouble(request["validation_width"]);
@@ -554,6 +622,11 @@ public sealed class SettingsEditor : Window
             else if (op == "slide") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((Slider)editors[id]).Value = Convert.ToDouble(step["percent"], CultureInfo.InvariantCulture); }
             else if (op == "slide-release") { string id = SettingsDraft.Str(step, "id"); ReleaseSlider(model.Fields[id], (Slider)editors[id]); }
             else if (op == "small-step") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); Slider.IncreaseSmall.Execute(null, editors[id]); }
+            else if (op == "pointer-position") {
+                string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); LayoutForValidation();
+                var slider = (SettingsSlider)editors[id]; var track = slider.ValueTrack;
+                slider.SetPointerPosition(new Point(Convert.ToDouble(step["x"]) * track.ActualWidth, Convert.ToDouble(step["y"])), 0);
+            }
             else if (op == "full-preview") TogglePreviewMode();
             else if (op == "search") search.Text = SettingsDraft.Str(step, "text");
             else if (op == "state") State(UserPreferencesStorage.Object(step["state"]));
@@ -564,17 +637,31 @@ public sealed class SettingsEditor : Window
         }
         // NoShow deliberately has no native Window presentation source; measure
         // its actual content tree rather than assume Window is a visual ancestor.
-        var layoutRoot = (FrameworkElement)Content;
-        layoutRoot.Measure(new Size(Width - 48, Height - 80));
-        layoutRoot.Arrange(new Rect(0, 0, Width - 48, Height - 80)); layoutRoot.UpdateLayout();
+        var layoutRoot = LayoutForValidation();
         var previewBounds = previewArea.TransformToAncestor(layoutRoot).TransformBounds(new Rect(previewArea.RenderSize));
         var saveBounds = save.TransformToAncestor(layoutRoot).TransformBounds(new Rect(save.RenderSize));
+        var hits = new Dictionary<string, object>();
+        foreach (var pair in editors.Where(pair => pair.Value is SettingsSlider)) {
+            var slider = (SettingsSlider)pair.Value; var track = slider.ValueTrack;
+            bool all = true;
+            foreach (double x in new[] { 0.1, 0.5, 0.9 }) foreach (double y in new[] { 1.0, slider.ActualHeight / 2, slider.ActualHeight - 1 }) {
+                var point = new Point(slider.ActualWidth * x, y);
+                // NoShow has IsVisible=false, so InputHitTest rejects everything.
+                // Check the actual rendered hit geometry without pretending this
+                // is physical input dispatch into a visible native window.
+                all &= VisualTreeHelper.HitTest(slider, point) != null;
+            }
+            Rect thumb = track.Thumb.TransformToAncestor(track).TransformBounds(new Rect(track.Thumb.RenderSize));
+            bool grabbed; double offset = slider.GrabOffset(new Point(thumb.Left + thumb.Width / 2 + 5, -5), out grabbed);
+            hits[pair.Key] = new { height = slider.ActualHeight, full_row = all, offset = offset, grabbed = grabbed };
+        }
         return new { ok = true, shown = IsVisible, page = page, dirty_pages = model.DirtyPages(),
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
             preview_visible = previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
             full_preview = fullPreview, scale_labels = scaleValues.ToDictionary(x => x.Key, x => x.Value.Text),
             editor_types = editors.ToDictionary(x => x.Key, x => x.Value.GetType().Name),
+            slider_hits = hits,
             layout_valid = saveBounds.Bottom <= layoutRoot.ActualHeight && saveBounds.Right <= layoutRoot.ActualWidth &&
                 (page == "paths" || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
             preview_column = Grid.GetColumn(previewPane),

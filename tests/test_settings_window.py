@@ -184,7 +184,7 @@ class SettingsWindow(unittest.TestCase):
 
     def test_percentage_slider_updates_draft_and_sends_ratio(self):
         data = self.run_window([dict(op='slide', id='sub-scale', percent=135)])
-        self.assertEqual(data['editor_types']['sub-scale'], 'Slider')
+        self.assertEqual(data['editor_types']['sub-scale'], 'SettingsSlider')
         self.assertEqual(data['drafts']['sub-scale']['text'], '1.35')
         self.assertEqual(data['scale_labels']['sub-scale'], '135%')
         self.assertEqual(data['sent'][-1][2:], ['preview', TOKEN, 'sub-scale', '1.35'])
@@ -242,3 +242,17 @@ class SettingsWindow(unittest.TestCase):
         data = self.run_window([dict(op='slide-release', id='sub-scale')])
         self.assertEqual(data['dirty_pages'], [])
         self.assertEqual(data['sent'][-1][2:], ['preview', TOKEN, 'sub-scale', 'null'])
+
+    def test_slider_transparent_row_receives_hits_above_and_below_track(self):
+        data = self.run_window()
+        hit = data['slider_hits']['sub-scale']
+        self.assertEqual(hit['height'], 40)
+        self.assertTrue(hit['full_row'])
+        self.assertTrue(hit['grabbed'])
+        self.assertAlmostEqual(hit['offset'], 5)
+
+    def test_slider_pointer_ignores_vertical_distance_and_clamps_horizontal_edges(self):
+        for x, y, expected in [(0.5, -20, '125%'), (0.5, 60, '125%'), (-0.2, 0, '50%'), (1.2, 0, '200%')]:
+            with self.subTest(x=x, y=y):
+                data = self.run_window([dict(op='pointer-position', id='sub-scale', x=x, y=y)])
+                self.assertEqual(data['scale_labels']['sub-scale'], expected)
