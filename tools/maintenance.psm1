@@ -231,7 +231,7 @@ function Get-MaintenanceState {
     $view = [ordered]@{ mode = 'preview'; target = ''; targetSource = ''; targetSourceLabel = ''; targetExists = $false; packageVersion = $null; installedVersion = $null;
         action = 'blocked'; eligible = $false; reason = ''; files = @(); changedFiles = 0; addedFiles = 0; backupRoot = ''; planToken = '';
         canRestore = $false; restorePlanToken = ''; restoreManifest = $null; restoreFiles = @(); restoreChangedFiles = 0; restorePreviousVersion = $null;
-        restoreKind = $null; runningProcesses = @(); warnings = @() }
+        restoreKind = $null; runningProcesses = @(); warnings = @(); releaseNotice = '' }
     $state = [pscustomobject]@{ view = $view; context = $null; package = $null; packageContext = $null; backupContext = $null;
         install = $null; legacy = $null; clean = $null; pending = $null; restore = $null; restoreError = ''; processError = ''; kind = '' }
     try {
@@ -242,6 +242,7 @@ function Get-MaintenanceState {
         $backup = Get-KitRoot $BackupRoot; $view.backupRoot = $backup
         $state.backupContext = Get-MaintenanceDirectoryContext $backup
         $package = Get-KitPackage $PackageRoot; $state.package = $package; $view.packageVersion = $package.version
+        $view.releaseNotice = $package.releaseNotice
         $state.packageContext = Get-MaintenanceDirectoryContext $package.root
         & $script:MaintenanceCommon { param($Roots) Assert-KitSeparate $Roots } @($context.target, $package.root, $backup)
         if ((Get-KitPlayer $PlayerPath).StartsWith($context.target.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw '配置目录不能包含播放器程序。' }
@@ -608,6 +609,7 @@ function Write-KitMaintenanceResult($Value, [ValidateSet('Json', 'Text')][string
         if ($data[$pair[0]]) { $lines.Add($pair[1] + '：' + [string]$data[$pair[0]]) }
     }
     if ($data.ContainsKey('changedFiles')) { $lines.Add('变更文件：' + [string]$data['changedFiles']) }
+    if ($data['mode'] -eq 'preview' -and $data['action'] -in @('install','update') -and $data['releaseNotice']) { $lines.Add(''); $lines.Add([string]$data['releaseNotice']); $lines.Add('') }
     foreach ($warning in $data['warnings']) { $lines.Add('提示：' + $warning) }
     foreach ($player in $data['runningProcesses']) { $lines.Add('仍在运行：' + $player.name + '（PID ' + $player.pid + '）') }
     if ($data['planToken']) { $lines.Add('操作校验值：' + $data['planToken']) }

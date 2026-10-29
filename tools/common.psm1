@@ -92,7 +92,7 @@ function Get-KitPackage([string]$PackageRoot) {
     $manifest = $script:KitUtf8.GetString($manifestBytes).TrimStart([char]0xfeff) | ConvertFrom-Json
     Assert-KitFields $manifest @('schema', 'version', 'files')
     if ($manifest.schema -ne 1 -or $manifest.version -isnot [string] -or -not $manifest.version -or @($manifest.files).Count -eq 0) { throw 'Unsupported package manifest.' }
-    $seen = @{}; $runtime = @()
+    $seen = @{}; $runtime = @(); $releaseNotice = ''
     foreach ($file in $manifest.files) {
         Assert-KitFields $file @('path', 'sha256')
         if ($file.path -isnot [string] -or $file.sha256 -notmatch '^[0-9a-f]{64}$' -or $seen.ContainsKey($file.path)) { throw 'Invalid or case-colliding package entry.' }
@@ -100,6 +100,10 @@ function Get-KitPackage([string]$PackageRoot) {
         $path = Get-KitPath $root $file.path
         $bytes = [IO.File]::ReadAllBytes($path)
         if ((Get-KitHashBytes $bytes) -cne $file.sha256) { throw "Package checksum mismatch: $($file.path)" }
+        if ($file.path -ceq 'docs/upgrade-notice.txt') {
+            if ($bytes.Length -gt 4096) { throw 'Package upgrade notice is too long.' }
+            $releaseNotice = $script:KitUtf8.GetString($bytes).TrimStart([char]0xfeff).Trim()
+        }
         if ($file.path.StartsWith('config/', [StringComparison]::Ordinal) -and -not $file.path.EndsWith('.example', [StringComparison]::OrdinalIgnoreCase)) {
             $relative = $file.path.Substring(7)
             if ($relative -eq 'mpvnet-user.json' -or $relative -eq 'script-opts/mpvnet-local.conf' -or $relative -eq $script:ReceiptName -or $relative -eq '.mpvnet-kit-operation.json') { throw 'Private or state files cannot be package runtime files.' }
@@ -107,7 +111,7 @@ function Get-KitPackage([string]$PackageRoot) {
         }
     }
     if ($runtime.Count -eq 0) { throw 'The package has no runtime payload.' }
-    return [pscustomobject]@{ root = $root; version = $manifest.version; manifestSha256 = (Get-KitHashBytes $manifestBytes); runtime = $runtime; verifiedFileCount = @($manifest.files).Count }
+    return [pscustomobject]@{ root = $root; version = $manifest.version; manifestSha256 = (Get-KitHashBytes $manifestBytes); runtime = $runtime; verifiedFileCount = @($manifest.files).Count; releaseNotice = $releaseNotice }
 }
 function Get-KitRecordData($Record) {
     return [ordered]@{ schema = $Record.schema; owner = $Record.owner; kind = $Record.kind; id = $Record.id;

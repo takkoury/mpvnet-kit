@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import subprocess
+import tempfile
 import unittest
 
 
@@ -16,9 +17,15 @@ from support.install_fixtures import (create_fixture_root, checked_fixture_root,
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPT = '.mpvnet-kit-install.json'
-USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "play_pause" : "Ctrl+p",'
-              b' "playlist" : null },\r\n  "unknown" : { "future" : [null, 7] },'
+USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "playback.pause" : ["Ctrl+p"],'
+              b' "playlist.toggle" : [] },\r\n'
+              b'  "settings" : { "mute" : false, "volume" : 0, "alang" : "",'
+              b' "future" : { "disabled" : false, "zero" : 0, "empty" : "" } },\r\n'
+              b'  "unknown" : { "future" : [null, 7] },'
               b' "rawformat" : "\\u4fdd\\u7559"\r\n}\r\n')
+LOCAL_BYTES = ('# 私有路径与注释\r\nfuture_option = keep # 原文\n'
+               'capture_root=D:\\旧输出\r\npython_path=C:/fixture/python.exe\n'
+               '# tail without newline').encode('utf-8')
 
 
 def read(path):
@@ -49,8 +56,8 @@ class UserSettingsUpgrade(unittest.TestCase):
         cls.old_runtime, cls.new_runtime = runtime(cls.old), runtime(cls.new)
         if not cls.old_runtime or not set(cls.old_runtime) < set(cls.new_runtime):
             raise RuntimeError('Expected an additive upgrade with existing runtime preserved')
-        if 'mpvnet-user.json' in cls.new_runtime:
-            raise RuntimeError('New package must not manage user settings')
+        if {'mpvnet-user.json', 'script-opts/mpvnet-local.conf'} & set(cls.new_runtime):
+            raise RuntimeError('New package must not manage user settings or local paths')
         cls.root = create_fixture_root(cls.root, ROOT, packages=(cls.old, cls.new))
         cls.player = cls.root / 'player-stub.exe'
         cls.player.write_bytes(b'Not executable: installer path validation fixture only.\r\n')
@@ -69,6 +76,7 @@ class UserSettingsUpgrade(unittest.TestCase):
         self.old_manifest = Path(installed['backupManifest'])
         self.old_receipt = (self.target / RECEIPT).read_bytes()
         (self.target / 'mpvnet-user.json').write_bytes(USER_BYTES)
+        (self.target / 'script-opts/mpvnet-local.conf').write_bytes(LOCAL_BYTES)
         self.unknown = self.target / 'unknown-user-file.txt'
         self.unknown.write_bytes(b'Preserve this unmanaged file.\r\n')
         self.initial = self.snapshot(self.target)
@@ -77,7 +85,8 @@ class UserSettingsUpgrade(unittest.TestCase):
         (self.case / 'checks.json').write_text(json.dumps({
             'old_runtime_count': len(self.old_runtime), 'new_runtime_count': len(self.new_runtime),
             'completed_checks': self.checks, 'calls': self.calls,
-            'user_sha256': digest(USER_BYTES), 'player_launched': False,
+            'user_sha256': digest(USER_BYTES), 'local_sha256': digest(LOCAL_BYTES),
+            'player_launched': False,
         }, indent=2) + '\n', encoding='utf-8')
 
     @staticmethod
@@ -109,10 +118,30 @@ class UserSettingsUpgrade(unittest.TestCase):
                            '-BackupRoot', self.backup, '-PackageRoot', package,
                            *(['-Apply'] if apply else [])], failure, tool_package)
 
-    def assert_user_preserved(self):
-        self.assertEqual((self.target / 'mpvnet-user.json').read_bytes(), USER_BYTES)
+    def assert_user_preserved(self, user=USER_BYTES, local=LOCAL_BYTES):
+        self.assertEqual((self.target / 'mpvnet-user.json').read_bytes(), user)
+        self.assertEqual((self.target / 'script-opts/mpvnet-local.conf').read_bytes(), local)
         self.assertEqual(self.unknown.read_bytes(), b'Preserve this unmanaged file.\r\n')
-        self.assertNotIn('mpvnet-user.json', {f['path'] for f in read(self.target / RECEIPT)['files']})
+        managed = {f['path'] for f in read(self.target / RECEIPT)['files']}
+        self.assertFalse({'mpvnet-user.json', 'script-opts/mpvnet-local.conf'} & managed)
+
+    def save_preferences(self, operation='Save', **changes):
+        target = self.target / ('script-opts/mpvnet-local.conf' if operation == 'SaveLocal'
+                                else 'mpvnet-user.json')
+        request = {'schema': 1, 'settings_path': str(target),
+                   'expected_exists': target.exists(),
+                   'expected_text': target.read_bytes().decode('utf-8'),
+                   'return_written_text': True, **changes}
+        # The real helper accepts request files only below the OS temporary root.
+        with tempfile.TemporaryDirectory(prefix='mpvnet-upgrade-save-') as folder:
+            path = Path(folder) / 'request.json'
+            path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
+            result = self.invoke(str(self.new / 'config/helpers/settings-storage.ps1'),
+                                 ['-Operation', operation, '-RequestPath', path])
+        self.assertTrue(result['ok'], result)
+        self.assertFalse(result['conflict'], result)
+        self.assertEqual(result['written_text'].encode('utf-8'), target.read_bytes())
+        return target.read_bytes()
 
     def assert_runtime(self, expected):
         receipt = {f['path']: f['sha256'] for f in read(self.target / RECEIPT)['files']}
@@ -140,7 +169,8 @@ class UserSettingsUpgrade(unittest.TestCase):
         self.assert_user_preserved()
         record = Path(applied['backupManifest'])
         self.assertEqual((record.parent / 'previous-receipt.json').read_bytes(), self.old_receipt)
-        self.assertNotIn('mpvnet-user.json', {f['path'] for f in read(record)['files']})
+        self.assertFalse({'mpvnet-user.json', 'script-opts/mpvnet-local.conf'} &
+                         {f['path'] for f in read(record)['files']})
         self.checks.append('upgrade installs expected runtime and leaves raw user JSON unmanaged')
         before = self.snapshot(self.target), self.snapshot(self.backup)
         preview = self.invoke('restore.ps1', ['-BackupManifest', record])
@@ -155,6 +185,53 @@ class UserSettingsUpgrade(unittest.TestCase):
         self.assertEqual(self.snapshot(self.target), self.initial)
         self.assert_user_preserved()
         self.checks.append('restore returns exact original runtime, receipt and unmanaged bytes')
+
+    def test_saved_settings_shortcuts_and_local_paths_survive_restore(self):
+        applied = self.install(self.new, apply=True)
+        record = Path(applied['backupManifest'])
+        self.assert_runtime(self.new_runtime)
+        self.assert_user_preserved()
+        settings_text = USER_BYTES.decode('utf-8').replace('"volume" : 0', '"volume" : 17')
+        saved = self.save_preferences(document_text=settings_text)
+        self.assertEqual(saved, settings_text.encode('utf-8'))
+        shortcuts_text = settings_text.replace('"Ctrl+p"', '"Ctrl+Alt+p"')
+        saved = self.save_preferences(document_text=shortcuts_text)
+        self.assertEqual(saved, shortcuts_text.encode('utf-8'))
+        local = self.save_preferences('SaveLocal', values={'capture_root': 'D:\\新输出',
+                                    'python_path': 'C:/fixture/python.exe'})
+        self.assertEqual(local, LOCAL_BYTES.decode('utf-8').replace('D:\\旧输出', 'D:\\新输出').encode('utf-8'))
+        self.assert_user_preserved(saved, local)
+        self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['mute'], False)
+        self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['alang'], '')
+        self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['future'],
+                         {'disabled': False, 'zero': 0, 'empty': ''})
+        self.checks.append('packaged real helper saves settings then shortcuts and patches only changed local path')
+        before = self.snapshot(self.target), self.snapshot(self.backup)
+        preview = self.invoke('restore.ps1', ['-BackupManifest', record])
+        self.assertEqual(preview['mode'], 'preview')
+        self.assertEqual((self.snapshot(self.target), self.snapshot(self.backup)), before)
+        self.assert_user_preserved(saved, local)
+        self.checks.append('declining restore after preview leaves all saved personal bytes unchanged')
+        restored = self.invoke('restore.ps1', ['-BackupManifest', record, '-Apply'])
+        self.assertEqual(restored['mode'], 'applied')
+        self.assert_runtime(self.old_runtime)
+        self.assertEqual((self.target / RECEIPT).read_bytes(), self.old_receipt)
+        self.assert_user_preserved(saved, local)
+        expected = dict(self.initial, **{'mpvnet-user.json': digest(saved),
+                                       'script-opts/mpvnet-local.conf': digest(local)})
+        self.assertEqual(self.snapshot(self.target), expected)
+        self.checks.append('restore reinstates exact v0.3 runtime and receipt while retaining later personal saves')
+
+    def test_restore_refuses_modified_runtime_without_touching_user_files(self):
+        applied = self.install(self.new, apply=True)
+        path = self.target / sorted(self.new_runtime)[0]
+        path.write_bytes(path.read_bytes() + b'\r\n# edit after upgrade\r\n')
+        before = self.snapshot(self.target), self.snapshot(self.backup)
+        self.invoke('restore.ps1', ['-BackupManifest', applied['backupManifest'], '-Apply'],
+                    failure='Managed file modified or deleted')
+        self.assertEqual((self.snapshot(self.target), self.snapshot(self.backup)), before)
+        self.assert_user_preserved()
+        self.checks.append('restore refuses modified managed bytes and preserves target, backups and personal files')
 
     def test_identical_new_runtime_collision_is_refused(self):
         name = sorted(set(self.new_runtime) - set(self.old_runtime))[0]

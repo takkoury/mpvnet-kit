@@ -1,7 +1,25 @@
 {
   "schema": 1,
-  "version": "0.3.0-migration-test",
+  "version": "0.4.0",
   "files": [
+    {
+      "source": "assets/screenshots/settings-shortcuts.png",
+      "destination": "assets/screenshots/settings-shortcuts.png",
+      "component": "author",
+      "origin": "mpvnet-kit authors; current shortcut controls rendered with isolated player state"
+    },
+    {
+      "source": "docs/upgrade-notice.txt",
+      "destination": "docs/upgrade-notice.txt",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "assets/screenshots/settings.png",
+      "destination": "assets/screenshots/settings.png",
+      "component": "author",
+      "origin": "mpvnet-kit authors; interface illustration rendered from project controls"
+    },
     {
       "source": "config/input.conf",
       "destination": "config/input.conf",

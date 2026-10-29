@@ -9,7 +9,8 @@
 | thumbfast | [MPL-2.0](licenses/thumbfast/LICENSE)及[来源](licenses/thumbfast/NOTICE.md) |
 | Anime4K shader | 六份为 [MIT](licenses/anime4k/LICENSE)，两份 AutoDownscalePre 为 [Unlicense](licenses/anime4k/UNLICENSE)；文件头与[固定来源](licenses/anime4k/SOURCE.md)保留 |
 | Bilibili 弹幕兼容组件 | 原[GPL许可证](config/scripts/bilibiliAssert/LICENSE)及文件头归属保留；本地兼容改动见源码 |
-| 界面演示图片 `assets/screenshots/` | 包含 Ruri no Houseki 影视画面，源媒体权利归原权利人；这些图片不在本项目 MIT 适用清单内 |
+| 含影视画面的界面演示图片 | `overview.png`、`controls.png`、`playlist.png`、`subtitle.png`、`capture.webp` 等包含 Ruri no Houseki 影视画面，源媒体权利归原权利人；这些图片不在本项目 MIT 适用清单内 |
+| 常用设置界面示意 `assets/screenshots/settings.png`、`assets/screenshots/settings-shortcuts.png` | 从本项目控件绘制，不含影视画面；采用本项目 MIT 许可 |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
 外部播放器、Python、FFmpeg、网页插件由各自项目分发，本包不打包这些程序。
@@ -25,6 +26,8 @@
 - `LICENSE`
 - `LICENSES.md`
 - `README.md`
+- `assets/screenshots/settings.png`
+- `assets/screenshots/settings-shortcuts.png`
 - `config/helpers/capture-media.ps1`
 - `config/helpers/media-info-window.ps1`
 - `config/helpers/media-path-action.ps1`
@@ -62,6 +65,7 @@
 - `docs/configuration.md`
 - `docs/features.md`
 - `docs/installation.md`
+- `docs/upgrade-notice.txt`
 - `tools/check-dependencies.ps1`
 - `tools/clean-install.psm1`
 - `tools/common.psm1`

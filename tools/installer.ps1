@@ -384,6 +384,9 @@ public static class MpvnetInstallerDpi {
             else { $caption = '开始更新'; $description = '更新前将自动备份旧配置，备份验证通过后开始更新。' }
             $description += "`r`n文件变更：$($script:plan.changedFiles) 个（新增 $($script:plan.addedFiles) 个）。"
         }
+        if ($Operation -eq 'Apply' -and $script:plan.action -in @('install','update') -and $script:plan.PSObject.Properties['releaseNotice'] -and $script:plan.releaseNotice) {
+            $description += "`r`n`r`n" + $script:plan.releaseNotice
+        }
         $message = $description + "`r`n`r`n播放器：$($script:playerBox.Text)`r`n配置目录：$($script:plan.target)`r`n来源：$($script:plan.targetSourceLabel)`r`n`r`n请确认所有 mpv.net 实例均已退出。"
         if ([Windows.Forms.MessageBox]::Show($script:form, $message, $caption, 'OKCancel', 'Question', 'Button2') -eq 'OK') {
             try { Start-Work $Operation }
