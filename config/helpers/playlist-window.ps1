@@ -99,6 +99,7 @@ function Render-Queue {
     $script:rendering = $true
     try {
         if ($signature -ne $script:lastSignature) {
+            if ($tip) { $tip.Cancel() }
             $selected = @($list.SelectedItems | ForEach-Object { [string]$_.Tag.id })
             $topId = if ($list.TopItem) { [string]$list.TopItem.Tag.id } else { '' }
             $list.BeginUpdate()
@@ -135,7 +136,7 @@ function Invalidate-HoverRow([string]$id) {
 function Hide-Window {
     $script:desiredVisible = $false
     if ($keyFilter) { $keyFilter.ReleaseAll() }
-    if ($tip) { $tip.Hide() }
+    if ($tip) { $tip.Cancel() }
     if ($follower) { $follower.UpdatePolicy($false, $script:fullscreen) }
     $form.Hide()
     if (-not $ValidateOnly -and -not $script:exiting) {
@@ -144,15 +145,19 @@ function Hide-Window {
 }
 
 function Set-SearchMode([bool]$enabled, [bool]$focusControl = $true) {
+    if ($tip) { $tip.Cancel() }
     if ($keyFilter) { $keyFilter.ReleaseAll(); $keyFilter.SearchActive = $enabled }
     $script:searching = $enabled
     $filter.Visible = $enabled
-    $counter.Dock = if ($enabled) { 'Right' } else { 'Fill' }
-    $counter.TextAlign = if ($enabled) { 'MiddleRight' } else { 'MiddleCenter' }
+    $footer.Searching = $enabled
+    $searchButton.Active = $enabled
+    $searchButton.AccessibleName = if ($enabled) { '关闭搜索（Esc）' } else { '搜索播放列表（Ctrl+F）' }
+    $searchButton.Invalidate()
     $counter.ForeColor = if ($enabled) { [PlaylistStyle]::Accent } else { [PlaylistStyle]::Muted }
-    if ($enabled) { $counter.Width = 90; if ($focusControl) { [void]$filter.Focus() } }
+    if ($enabled) { if ($focusControl) { [void]$filter.Focus() } }
     else { $filter.Text = ''; if ($focusControl) { [void]$list.Focus() } }
     Render-Queue
+    $footer.PerformLayout()
 }
 
 function Locate-Entry([string]$id) {
@@ -195,7 +200,7 @@ function Exit-Window {
     if ($form -and $form.IsHandleCreated) {
         [void][PlaylistNative]::SetWindowLongPtr($form.Handle, -8, [IntPtr]::Zero)
     }
-    if ($tip) { $tip.Hide() }
+    if ($tip) { $tip.Cancel() }
     if ($context) { $context.ExitThread() }
 }
 
@@ -236,7 +241,8 @@ public static class PlaylistStyle {
         return current ? Current : selected ? Selected : hover ? Hover : Background;
     }
 }
-public sealed class PlaylistCloseButton : Button {
+public class PlaylistCloseButton : Button {
+    public bool SearchIcon, Active;
     bool hover, pressed;
     public PlaylistCloseButton() {
         Text=""; AccessibleName="关闭播放列表"; Width=44; Height=36;
@@ -250,12 +256,18 @@ public sealed class PlaylistCloseButton : Button {
     protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
     protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
     protected override void OnPaint(PaintEventArgs e) {
-        e.Graphics.Clear(pressed ? ColorTranslator.FromHtml("#B53242") : hover ? ColorTranslator.FromHtml("#8F2633") : PlaylistStyle.Background);
+        e.Graphics.Clear(pressed ? (SearchIcon ? PlaylistStyle.Selected : ColorTranslator.FromHtml("#B53242")) : hover ? (SearchIcon ? PlaylistStyle.Hover : ColorTranslator.FromHtml("#8F2633")) : PlaylistStyle.Background);
         float scale=e.Graphics.DpiX/96f, half=5*scale;
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(var pen=new Pen(PlaylistStyle.Text,Math.Max(1,scale))) {
-            e.Graphics.DrawLine(pen,Width/2f-half,Height/2f-half,Width/2f+half,Height/2f+half);
-            e.Graphics.DrawLine(pen,Width/2f+half,Height/2f-half,Width/2f-half,Height/2f+half);
+        using(var pen=new Pen(Active ? PlaylistStyle.Accent : PlaylistStyle.Text,Math.Max(1,scale))) {
+            if(SearchIcon) {
+                float x=Width/2f-1.5f*scale,y=Height/2f-1.5f*scale,r=4.5f*scale;
+                e.Graphics.DrawEllipse(pen,x-r,y-r,2*r,2*r);
+                e.Graphics.DrawLine(pen,x+3.2f*scale,y+3.2f*scale,x+7*scale,y+7*scale);
+            } else {
+                e.Graphics.DrawLine(pen,Width/2f-half,Height/2f-half,Width/2f+half,Height/2f+half);
+                e.Graphics.DrawLine(pen,Width/2f+half,Height/2f-half,Width/2f-half,Height/2f+half);
+            }
         }
         if(Focused) using(var pen=new Pen(PlaylistStyle.Accent,Math.Max(1,scale)))
             e.Graphics.DrawRectangle(pen,1,1,Math.Max(1,Width-3),Math.Max(1,Height-3));
@@ -278,7 +290,7 @@ public class PlaylistForm : Form {
     public PlaylistFollower Follower;
     public Panel CaptionPanel, FooterPanel;
     public Label CaptionLabel;
-    public Button CloseButton;
+    public Button CloseButton, SearchButton;
     public void ApplyPresentationDpi() {
         if (!IsHandleCreated) return;
         uint dpi=PlaylistNative.GetDpiForWindow(Handle); if(dpi==0)dpi=96;
@@ -289,16 +301,26 @@ public class PlaylistForm : Form {
             FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(5*scale),(int)Math.Round(8*scale),(int)Math.Round(5*scale));
         }
         if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
+        if(SearchButton!=null)SearchButton.Width=(int)Math.Round(36*scale);
         if(CaptionLabel!=null)CaptionLabel.Padding=new Padding((int)Math.Round(16*scale),0,0,0);
     }
     protected override void OnHandleCreated(EventArgs e) {base.OnHandleCreated(e);ApplyPresentationDpi();}
-    // Retain the native sizing frame and its hit testing, remove only the
-    // system caption. The sidebar still resizes horizontally and follows mpv.
+    // Keep the resizing style, but let the client paint the whole frame.
+    // Otherwise DWM leaves a system-colored strip above the custom caption.
     protected override CreateParams CreateParams {
         get { var value=base.CreateParams; value.Style &= ~0x00C00000; return value; }
     }
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override void WndProc(ref Message m) {
+        if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result=IntPtr.Zero;return; }
+        if (m.Msg == 0x84) {
+            PlaylistNative.Rect bounds; PlaylistNative.GetWindowRect(Handle,out bounds);
+            int x=(short)(m.LParam.ToInt64() & 0xffff);
+            uint dpi=PlaylistNative.GetDpiForWindow(Handle);if(dpi==0)dpi=96;
+            int edge=Math.Max(1,(int)Math.Round(4*dpi/96.0));
+            m.Result=new IntPtr(x<bounds.Left+edge ? 10 : x>=bounds.Right-edge ? 11 : 1);
+            return;
+        }
         if (m.Msg == 0x214 && Follower != null) {
             PlaylistNative.Rect bounds = (PlaylistNative.Rect)Marshal.PtrToStructure(m.LParam, typeof(PlaylistNative.Rect));
             Follower.RememberWidth(bounds.Right - bounds.Left);
@@ -308,12 +330,6 @@ public class PlaylistForm : Form {
         base.WndProc(ref m);
         if (m.Msg == 0x2E0) ApplyPresentationDpi();
         if ((m.Msg == 0x2E0 || m.Msg == 0x31E) && Follower != null) Follower.RefreshFrame();
-        if (m.Msg == 0x84) {
-            int hit = m.Result.ToInt32();
-            if (hit == 13 || hit == 16) m.Result = new IntPtr(10);
-            else if (hit == 14 || hit == 17) m.Result = new IntPtr(11);
-            else if (hit == 12 || hit == 15 || hit == 2) m.Result = new IntPtr(1);
-        }
     }
 }
 public class PlaylistOwner : IWin32Window {
@@ -326,6 +342,7 @@ public sealed class PlaylistList : ListView {
     int wheelCarry;
     public string EmptyText = "";
     public event Action ViewportChanged;
+    public event Action ViewportInput;
     public PlaylistList() { DoubleBuffered = true; }
     protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
     protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
@@ -367,6 +384,10 @@ public sealed class PlaylistList : ListView {
     }
     protected override void OnResize(EventArgs args) { base.OnResize(args); ScheduleViewport(); }
     protected override void WndProc(ref Message message) {
+        // Native wheel/scroll handling below intentionally bypasses WinForms'
+        // MouseWheel event. Cancel pending hover content on this actual path.
+        if(message.Msg==0x20A || message.Msg==0x115 || message.Msg==0x1014 || message.Msg==0x1013)
+            if(ViewportInput!=null)ViewportInput();
         // This borderless list uses its own scrollbar. Internal common-control
         // updates can bypass STYLECHANGING; reserve no native nonclient bar area.
         if (message.Msg==0x83) { message.Result=IntPtr.Zero;return; }
@@ -484,11 +505,20 @@ public sealed class PlaylistScroll : Control {
 }
 public sealed class PlaylistFooter : Panel {
     public TextBox Editor;
+    public Button Counter;
+    public bool Searching;
     protected override void OnLayout(LayoutEventArgs args) {
         base.OnLayout(args);
         if (Editor != null) {
             int needed=Editor.PreferredHeight+Padding.Vertical+2;
             if (Height < needed) Height=needed;
+        }
+        if(Counter!=null) {
+            float scale=DeviceDpi/96f;
+            int width=Math.Min(Math.Max(1,ClientSize.Width-Padding.Horizontal),TextRenderer.MeasureText(Counter.Text,Counter.Font).Width+(int)Math.Round(20*scale));
+            int x=Searching ? ClientSize.Width-Padding.Right-width : (ClientSize.Width-width)/2;
+            Counter.SetBounds(x,Padding.Top,width,Math.Max(1,ClientSize.Height-Padding.Vertical));
+            if(Editor!=null) Editor.SetBounds(Padding.Left,Padding.Top,Math.Max(1,x-Padding.Left-(int)Math.Round(8*scale)),Editor.PreferredHeight);
         }
     }
 }
@@ -676,12 +706,62 @@ public sealed class PlaylistKeys : IMessageFilter, IDisposable {
     }
     public void Dispose() { ReleaseAll();Application.RemoveMessageFilter(this); }
 }
+// A dwell is tied to both the item and a stable pointer position. Expiration
+// does not rearm until the pointer moves or enters a different target.
+public sealed class PlaylistHover {
+    public string Key { get; private set; }
+    public Point Pointer { get; private set; }
+    public long Due { get; private set; }
+    long expires;
+    public int State { get; private set; } // 0 idle, 1 waiting, 2 shown, 3 expired
+    public bool Move(string key, Point point, long now, int tolerance) {
+        if(State!=0 && Key==key && Math.Abs(point.X-Pointer.X)<=tolerance && Math.Abs(point.Y-Pointer.Y)<=tolerance)return false;
+        Key=key;Pointer=point;Due=now+550;State=1;return true;
+    }
+    public int Advance(long now) {
+        if(State==1 && now>=Due){State=2;expires=now+5000;}
+        else if(State==2 && now>=expires)State=3;
+        return State;
+    }
+    public void Cancel(){State=0;Key=null;}
+}
 public sealed class PlaylistTip : Form {
     string content = "";
+    readonly Timer dwell=new Timer();
+    readonly System.Diagnostics.Stopwatch clock=System.Diagnostics.Stopwatch.StartNew();
+    readonly PlaylistHover hover=new PlaylistHover();
+    Control anchor;
+    bool above;
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override CreateParams CreateParams { get { CreateParams p=base.CreateParams;p.ExStyle|=0x08000080;return p; } }
     protected override void WndProc(ref Message message) { if(message.Msg==0x84){message.Result=new IntPtr(-1);return;}base.WndProc(ref message); }
-    public PlaylistTip(Font font) { FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;Font=font;BackColor=PlaylistStyle.Surface;DoubleBuffered=true; }
+    public PlaylistTip(Font font) {
+        FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;Font=font;BackColor=PlaylistStyle.Surface;DoubleBuffered=true;
+        dwell.Interval=50;dwell.Tick+=Tick;
+    }
+    public void Cancel(){dwell.Stop();hover.Cancel();anchor=null;Hide();}
+    public void Schedule(string text, Control target, Point point, bool preferAbove) {
+        if(target==null || target.IsDisposed || String.IsNullOrEmpty(text)){Cancel();return;}
+        int dpi=(int)PlaylistNative.GetDpiForWindow(target.Handle);if(dpi<=0)dpi=96;
+        Point screen=target.PointToScreen(point);
+        string key=target.Handle.ToString()+":"+text;
+        if(!hover.Move(key,screen,clock.ElapsedMilliseconds,Math.Max(1,(int)Math.Round(4*dpi/96.0))))return;
+        Hide();content=text;anchor=target;above=preferAbove;dwell.Start();
+    }
+    void Tick(object sender,EventArgs args) {
+        if(anchor==null || anchor.IsDisposed || !anchor.Visible || !anchor.Enabled || !anchor.ClientRectangle.Contains(anchor.PointToClient(Cursor.Position))) {Cancel();return;}
+        int state=hover.Advance(clock.ElapsedMilliseconds);
+        if(state==2 && !Visible)ShowContent(content,anchor,hover.Pointer,above);
+        else if(state==3){Hide();dwell.Stop();}
+    }
+    public static Point Place(Point pointer,Size size,Rectangle area,int dpi,bool above) {
+        int gap=(int)Math.Round(16*dpi/96.0),offset=(int)Math.Round(12*dpi/96.0);
+        int y=above ? pointer.Y-gap-size.Height : pointer.Y+gap;
+        if(above && y<area.Top)y=pointer.Y+gap;
+        else if(!above && y+size.Height>area.Bottom)y=pointer.Y-gap-size.Height;
+        return new Point(Math.Max(area.Left,Math.Min(pointer.X+offset,area.Right-size.Width)),
+            Math.Max(area.Top,Math.Min(y,area.Bottom-size.Height)));
+    }
     public static Size Measure(string text, Font font, int dpi) {
         float scale=dpi/96f;int pad=(int)Math.Round(10*scale);int max=(int)Math.Round(400*scale);
         using(Bitmap bitmap=new Bitmap(1,1)) { bitmap.SetResolution(dpi,dpi);using(Graphics g=Graphics.FromImage(bitmap)) {
@@ -689,13 +769,14 @@ public sealed class PlaylistTip : Form {
             return new Size(Math.Min(max,(int)Math.Ceiling(measured.Width)+pad*2),(int)Math.Ceiling(measured.Height)+pad*2);
         }}
     }
-    public void ShowContent(string text, Control anchor, Point location) {
+    void ShowContent(string text, Control anchor, Point point, bool above) {
         content=text;int dpi=(int)PlaylistNative.GetDpiForWindow(anchor.Handle);if(dpi<=0)dpi=96;
-        Size=Measure(text,Font,dpi);Point point=anchor.PointToScreen(location);Rectangle area=Screen.FromPoint(point).WorkingArea;
-        int top=point.Y+Height>area.Bottom ? point.Y-Height-40 : point.Y;
-        Location=new Point(Math.Max(area.Left,Math.Min(point.X,area.Right-Width)),Math.Max(area.Top,Math.Min(top,area.Bottom-Height)));
+        Rectangle area=Screen.FromPoint(point).WorkingArea;
+        Size measured=Measure(text,Font,dpi);Size=new Size(Math.Min(area.Width,measured.Width),Math.Min(area.Height,measured.Height));
+        Location=Place(point,Size,area,dpi,above);
         if(!Visible) Show(anchor.FindForm());Invalidate();
     }
+    protected override void Dispose(bool disposing) {if(disposing){dwell.Stop();dwell.Dispose();}base.Dispose(disposing);}
     protected override void OnPaint(PaintEventArgs e) {
         using(Pen pen=new Pen(Color.FromArgb(48,48,48)))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
         int pad=(int)Math.Round(10*e.Graphics.DpiX/96f);
@@ -772,11 +853,19 @@ public sealed class PlaylistTip : Form {
     $closeButton = New-Object PlaylistCloseButton
     $closeButton.Dock = 'Right'
     $closeButton.Add_Click({ $form.Close() })
+    $searchButton = New-Object PlaylistCloseButton
+    $searchButton.SearchIcon = $true
+    $searchButton.AccessibleName = '搜索播放列表（Ctrl+F）'
+    $searchButton.Dock = 'Right'
+    $searchButton.Width = 36
+    $searchButton.Add_Click({ Set-SearchMode (-not $script:searching); if ($script:searching) { $filter.SelectAll() } })
     $caption.Controls.Add($captionLabel)
+    $caption.Controls.Add($searchButton)
     $caption.Controls.Add($closeButton)
     $form.CaptionPanel = $caption
     $form.CaptionLabel = $captionLabel
     $form.CloseButton = $closeButton
+    $form.SearchButton = $searchButton
     $filter = New-Object Windows.Forms.TextBox
     $footer = New-Object PlaylistFooter
     $footer.Editor = $filter
@@ -785,14 +874,14 @@ public sealed class PlaylistTip : Form {
     $footer.Padding = New-Object Windows.Forms.Padding(8, 5, 8, 5)
     $footer.BackColor = $form.BackColor
     $form.FooterPanel = $footer
-    $filter.Dock = 'Fill'
+    $filter.Dock = 'None'
     $filter.Visible = $false
     $filter.BackColor = [PlaylistStyle]::Surface
     $filter.ForeColor = $form.ForeColor
     $filter.BorderStyle = 'FixedSingle'
     $filter.AccessibleName = '搜索播放列表'
     $counter = New-Object PlaylistCounterButton
-    $counter.Dock = 'Fill'
+    $counter.Dock = 'None'
     $counter.TextAlign = 'MiddleCenter'
     $counter.ForeColor = [PlaylistStyle]::Muted
     $counter.BackColor = $footer.BackColor
@@ -803,6 +892,8 @@ public sealed class PlaylistTip : Form {
     $counter.Cursor = [Windows.Forms.Cursors]::Hand
     $counter.AccessibleName = [PlaylistStyle]::Locate
     $counter.TabStop = $false
+    $footer.Counter = $counter
+    $counter.Add_TextChanged({ $footer.PerformLayout() })
     $list = New-Object PlaylistList
     $list.AccessibleName = '播放列表'
     $list.Dock = 'Fill'
@@ -838,11 +929,18 @@ public sealed class PlaylistTip : Form {
         param($keyPhase, $keyName)
         if (-not $ValidateOnly -and $writer -and -not $script:exiting) { Send-Command @('script-message-to', [string]$payload.script, 'key', [string]$payload.token, $keyPhase, $keyName) }
     })
-    $form.Add_VisibleChanged({ if (-not $form.Visible) { if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } } })
-    $form.Add_Deactivate({ if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } })
-    $counter.Add_Click({ $tip.Hide(); Send-Action 'locate' })
-    $counter.Add_MouseEnter({ $tip.ShowContent([PlaylistStyle]::Locate, $counter, (New-Object Drawing.Point(12, ($counter.Height + 4)))) })
-    $counter.Add_MouseLeave({ $tip.Hide() })
+    $form.Add_VisibleChanged({ if (-not $form.Visible) { if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Cancel() } } })
+    $form.Add_Deactivate({ if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Cancel() } })
+    $counter.Add_Click({ $tip.Cancel(); Send-Action 'locate' })
+    $counter.Add_MouseMove({ param($sender,$eventArgs) if ($counter.Enabled) { $tip.Schedule([PlaylistStyle]::Locate,$counter,$eventArgs.Location,$true) } })
+    $counter.Add_MouseLeave({ $tip.Cancel() })
+    $searchButton.Add_MouseMove({ param($sender,$eventArgs) $tip.Schedule($searchButton.AccessibleName,$searchButton,$eventArgs.Location,$false) })
+    $searchButton.Add_MouseLeave({ $tip.Cancel() })
+    $form.Add_LocationChanged({ if ($tip) { $tip.Cancel() } })
+    $form.Add_Resize({ if ($tip) { $tip.Cancel() } })
+    $list.add_ViewportInput({ if ($tip) { $tip.Cancel() } })
+    $list.Add_MouseDown({ $tip.Cancel() })
+    $list.Add_KeyDown({ $tip.Cancel() })
     $list.Add_DrawColumnHeader({ param($sender, $eventArgs) $eventArgs.DrawDefault = $true })
     $list.Add_DrawSubItem({
         param($sender, $eventArgs)
@@ -903,11 +1001,11 @@ public sealed class PlaylistTip : Form {
         if ($script:hoverId -ne $id) {
             $oldHoverId = $script:hoverId; $script:hoverId = $id
             Invalidate-HoverRow $oldHoverId; Invalidate-HoverRow $id
-            if ($item) { $tip.ShowContent((Tooltip-Text $item.Tag.entry), $list, (New-Object Drawing.Point(($eventArgs.X + 18), ($eventArgs.Y + 20)))) }
-            else { $tip.Hide() }
         }
+        if ($item -and -not $script:dragging) { $tip.Schedule((Tooltip-Text $item.Tag.entry),$list,$eventArgs.Location,$false) }
+        else { $tip.Cancel() }
     })
-    $list.Add_MouseLeave({ $oldHoverId = $script:hoverId; $script:hoverId = ''; Invalidate-HoverRow $oldHoverId; $tip.Hide() })
+    $list.Add_MouseLeave({ $oldHoverId = $script:hoverId; $script:hoverId = ''; Invalidate-HoverRow $oldHoverId; $tip.Cancel() })
     $list.Add_DoubleClick({
         if ($list.SelectedItems.Count -eq 1) { Send-Action 'play' ([string]$list.SelectedItems[0].Tag.id) }
     })
@@ -968,7 +1066,7 @@ public sealed class PlaylistTip : Form {
     [void]$form.Handle
     $form.ApplyPresentationDpi()
     try { $dark = 1; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 20, [ref]$dark, 4) } catch {}
-    try { $borderColor = 0x151515; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 34, [ref]$borderColor, 4) } catch {}
+    try { $borderColor = -2; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 34, [ref]$borderColor, 4) } catch {}
 
     if ($ValidateOnly) {
         $foregroundBefore = [PlaylistNative]::GetForegroundWindow()
@@ -997,6 +1095,18 @@ public sealed class PlaylistTip : Form {
         $restoredFooterBounds = $footer.Bounds
         $restoredBoundsStable = $list.Bounds -eq $beforeBounds
         if ($initialSearch) { Set-SearchMode $true; $filter.Text = $initialFilter }
+        $searchProbe = @{}
+        if ($payload.search_probe) {
+            Set-SearchMode $false
+            $searchClick = $searchButton.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
+            [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
+            $searchProbe.opened = $script:searching -and $searchButton.Active -and $footer.Searching
+            $filter.Text = 'one'
+            $searchProbe.filtered = $list.Items.Count
+            [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
+            $searchProbe.closed = -not $script:searching -and -not $searchButton.Active -and $filter.Text -eq ''
+            $searchProbe.rows_restored = $list.Items.Count
+        }
         if ($payload.click_counter -and $counter.Enabled) {
             $clickMethod = $counter.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
             [void]$clickMethod.Invoke($counter, @([EventArgs]::Empty))
@@ -1027,6 +1137,7 @@ public sealed class PlaylistTip : Form {
                 $caption.DrawToBitmap($canvas, $caption.Bounds)
                 $captionLabel.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $captionLabel.Left),($caption.Top + $captionLabel.Top),$captionLabel.Width,$captionLabel.Height)))
                 $closeButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $closeButton.Left),($caption.Top + $closeButton.Top),$closeButton.Width,$closeButton.Height)))
+                $searchButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $searchButton.Left),($caption.Top + $searchButton.Top),$searchButton.Width,$searchButton.Height)))
                 foreach ($item in $list.Items) {
                     $point = New-Object Drawing.Point(($list.Left + $list.Width - 20), ($list.Top + $item.Bounds.Top + [int]($item.Bounds.Height / 2)))
                     if ($point.Y -ge $list.Top -and $point.Y -lt $list.Bottom) {
@@ -1049,7 +1160,9 @@ public sealed class PlaylistTip : Form {
                 title = $captionLabel.Text; close_name = $closeButton.AccessibleName; close_hides = $closeHidden;
                 title_above_list = $caption.Bottom -le $list.Top; empty_text = $list.EmptyText; font = $form.Font.Name;
                 row_backgrounds = $paintSamples; caption_height = $caption.Height; client_width = $form.ClientSize.Width;
-                caption_bounds = $caption.Bounds.ToString(); title_bounds = $captionLabel.Bounds.ToString(); close_bounds = $closeButton.Bounds.ToString()};
+                caption_bounds = $caption.Bounds.ToString(); title_bounds = $captionLabel.Bounds.ToString(); close_bounds = $closeButton.Bounds.ToString();
+                search_name = $searchButton.AccessibleName; search_not_overlapping = $captionLabel.Right -le $searchButton.Left -and $searchButton.Right -le $closeButton.Left;
+                search_toggle = $searchProbe; counter_width = $counter.Width; footer_width = $footer.ClientSize.Width};
             footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable -and $beforeFooterBounds -eq $searchFooterBounds -and $beforeFooterBounds -eq $restoredFooterBounds;
             layout_bounds = @{normal = $beforeBounds.ToString(); search = $searchBounds.ToString(); restored = $restoredBounds.ToString();
                 footer_normal = $beforeFooterBounds.ToString(); footer_search = $searchFooterBounds.ToString(); footer_restored = $restoredFooterBounds.ToString()};

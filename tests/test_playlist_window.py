@@ -42,6 +42,10 @@ class PlaylistWindow(unittest.TestCase):
         self.assertTrue(data['fallback'])
         self.assertEqual(data['native_hits'], 3)
 
+    def test_hover_waits_expires_tracks_pointer_and_cancels_on_native_scroll(self):
+        data = self.run_fixture('playlist_hover.ps1')
+        self.assertTrue(all(data.values()), data)
+
     @unittest.skipUnless(os.environ.get('MPVNET_TEST_PLAYLIST_WINDOWS') == '1',
                          'Enable MPVNET_TEST_PLAYLIST_WINDOWS=1 for owned, briefly visible test windows')
     def test_owned_window_visible_edges(self):
@@ -141,6 +145,16 @@ class PlaylistWindow(unittest.TestCase):
                 self.assertEqual(data['presentation']['empty_text'], expected)
                 self.assertTrue(data['painted'])
                 self.assertEqual(data['actions'], [])
+
+    def test_visible_search_button_toggles_existing_filter_and_counter_is_compact(self):
+        entries = [{'id': 1, 'filename': 'X:/one.mkv'}, {'id': 2, 'filename': 'X:/two.mkv'}]
+        data = self.run_helper({'playlist': entries, 'position': 0, 'search_probe': True})
+        view = data['presentation']
+        self.assertTrue(view['search_not_overlapping'])
+        self.assertEqual(view['search_name'], '搜索播放列表（Ctrl+F）')
+        self.assertEqual(view['search_toggle'], {'opened': True, 'closed': True, 'filtered': 1, 'rows_restored': 2})
+        self.assertLess(view['counter_width'], view['footer_width'] / 2)
+        self.assertEqual(data['actions'], [])
 
     def test_rendered_current_selected_hover_and_normal_are_distinct(self):
         entries = [{'id': i, 'filename': 'X:/测试 %d 长标题.mkv' % i} for i in range(1, 6)]

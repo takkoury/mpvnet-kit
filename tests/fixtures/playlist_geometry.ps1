@@ -44,6 +44,11 @@ try {
     $window.Size=New-Object Drawing.Size(340,420)
     $rect=New-Object PlaylistNative+Rect
     [void][PlaylistNative]::GetWindowRect($window.Handle,[ref]$rect)
+    $origin=$window.PointToScreen([Drawing.Point]::Empty)
+    if ($origin.X -ne $rect.Left -or $origin.Y -ne $rect.Top -or
+        $window.ClientSize.Width -ne ($rect.Right-$rect.Left) -or $window.ClientSize.Height -ne ($rect.Bottom-$rect.Top)) {
+        throw 'system nonclient strip remains outside the unified client area'
+    }
     $hitCases=@(@(($rect.Left+1),($rect.Top+180),10),@(($rect.Right-2),($rect.Top+180),11),@(($rect.Left+100),($rect.Top+1),1))
     foreach($c in $hitCases) {
         $packed=([long]($c[0] -band 0xffff)) -bor (([long]($c[1] -band 0xffff)) -shl 16)
