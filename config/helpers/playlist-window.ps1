@@ -106,7 +106,7 @@ function Render-Queue {
             try {
                 $list.Items.Clear()
                 foreach ($row in $rows) {
-                    $item = New-Object Windows.Forms.ListViewItem('')
+                    $item = New-Object Windows.Forms.ListViewItem(('{0:00}' -f ($row.index + 1)))
                     [void]$item.SubItems.Add($row.label)
                     $item.Tag = $row
                     [void]$list.Items.Add($item)
@@ -120,6 +120,8 @@ function Render-Queue {
         # Current changes are repainted without rebuilding or scrolling the view.
         foreach ($item in $list.Items) {
             if ($rowsById.ContainsKey([string]$item.Tag.id)) { $item.Tag = $rowsById[[string]$item.Tag.id] }
+            $number = '{0:00}' -f ($item.Tag.index + 1)
+            if ($item.Text -ne $number) { $item.Text = $number }
         }
         $list.FitTitleColumn()
         $list.Invalidate()
@@ -228,17 +230,18 @@ using System.Drawing;
 // Presentation tokens follow the accepted settings window. Queue identity,
 // IPC and follower geometry remain owned by the existing controller.
 public static class PlaylistStyle {
-    public static readonly Color Background = ColorTranslator.FromHtml("#151515");
-    public static readonly Color Text = ColorTranslator.FromHtml("#F2F2F2");
+    public static readonly Color Background = ColorTranslator.FromHtml("#111111");
+    public static readonly Color Text = ColorTranslator.FromHtml("#DEDFE0");
+    public static readonly Color Number = ColorTranslator.FromHtml("#919CA2");
     public static readonly Color Muted = ColorTranslator.FromHtml("#ABABAB");
     public static readonly Color Surface = ColorTranslator.FromHtml("#242424");
-    public static readonly Color Hover = ColorTranslator.FromHtml("#303030");
+    public static readonly Color Hover = ColorTranslator.FromHtml("#1B1B1B");
     public static readonly Color Selected = ColorTranslator.FromHtml("#343434");
-    public static readonly Color Current = ColorTranslator.FromHtml("#142B35");
+    public static readonly Color Current = ColorTranslator.FromHtml("#111F25");
     public static readonly Color Accent = ColorTranslator.FromHtml("#1287BB");
     public const string Locate = "定位当前播放项";
     public static Color RowBackground(bool current, bool selected, bool hover) {
-        return current ? Current : selected ? Selected : hover ? Hover : Background;
+        return current ? Current : hover ? Hover : Background;
     }
 }
 public class PlaylistCloseButton : Button {
@@ -280,7 +283,18 @@ public sealed class PlaylistCounterButton : Button {
     protected override void OnMouseDown(MouseEventArgs e) {base.OnMouseDown(e);pressed=e.Button==MouseButtons.Left;Invalidate();}
     protected override void OnMouseUp(MouseEventArgs e) {base.OnMouseUp(e);pressed=false;Invalidate();}
     protected override void OnPaint(PaintEventArgs e) {
-        e.Graphics.Clear(Enabled && pressed ? PlaylistStyle.Selected : Enabled && hover ? PlaylistStyle.Hover : BackColor);
+        e.Graphics.Clear(BackColor);
+        if(Enabled && (pressed || hover)) {
+            float radius=4*e.Graphics.DpiX/96f,diameter=Math.Min(Math.Min(Width,Height),radius*2);
+            using(var path=new System.Drawing.Drawing2D.GraphicsPath()) {
+                path.AddArc(0,0,diameter,diameter,180,90);
+                path.AddArc(Width-diameter,0,diameter,diameter,270,90);
+                path.AddArc(Width-diameter,Height-diameter,diameter,diameter,0,90);
+                path.AddArc(0,Height-diameter,diameter,diameter,90,90);path.CloseFigure();
+                e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using(var brush=new SolidBrush(pressed ? PlaylistStyle.Selected : PlaylistStyle.Surface))e.Graphics.FillPath(brush,path);
+            }
+        }
         var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix;
         flags |= TextAlign==ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter;
         TextRenderer.DrawText(e.Graphics,Text,Font,ClientRectangle,Enabled ? ForeColor : Color.FromArgb(136,136,136),flags);
@@ -297,7 +311,7 @@ public class PlaylistForm : Form {
         float scale=dpi/96f;
         if(CaptionPanel!=null)CaptionPanel.Height=(int)Math.Round(36*scale);
         if(FooterPanel!=null) {
-            FooterPanel.Height=(int)Math.Round(36*scale);
+            FooterPanel.Height=(int)Math.Round(40*scale);
             FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(5*scale),(int)Math.Round(8*scale),(int)Math.Round(5*scale));
         }
         if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
@@ -345,17 +359,21 @@ public sealed class PlaylistList : ListView {
     bool fitting, fitPosted;
     int wheelCarry;
     public string EmptyText = "";
+    public bool KeyboardFocusCue { get; private set; }
     public event Action ViewportChanged;
     public event Action ViewportInput;
     public PlaylistList() { DoubleBuffered = true; }
-    protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
-    protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
+    protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);KeyboardFocusCue=true;Invalidate();}
+    protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);KeyboardFocusCue=false;Invalidate();}
+    protected override void OnMouseDown(MouseEventArgs e) {base.OnMouseDown(e);KeyboardFocusCue=false;Invalidate();}
+    protected override void OnKeyDown(KeyEventArgs e) {base.OnKeyDown(e);KeyboardFocusCue=true;Invalidate();}
     protected override void OnHandleCreated(EventArgs args) {
         base.OnHandleCreated(args);
         PlaylistNative.SendMessage(Handle,0x1036,new IntPtr(0x10000),new IntPtr(0x10000));
         if (SmallImageList != null) {
             uint dpi=PlaylistNative.GetDpiForWindow(Handle);if(dpi==0)dpi=96;
-            SmallImageList.ImageSize=new Size(1,(int)Math.Round(32*dpi/96.0));
+            SmallImageList.ImageSize=new Size(1,(int)Math.Round(42*dpi/96.0));
+            if(Columns.Count>0)Columns[0].Width=(int)Math.Round(44*dpi/96.0);
         }
         // Initial rendering can precede handle creation. Resolve the native
         // viewport/DPI now so the first search does not resize the list.
@@ -520,13 +538,14 @@ public sealed class PlaylistFooter : Panel {
         if(Counter!=null) {
             float scale=DeviceDpi/96f;
             int gap=(int)Math.Round(8*scale);
-            int editorLeft=Padding.Left;
+            int editorLeft=Padding.Left,searchLeft=ClientSize.Width-Padding.Right;
             if(Search!=null) {
-                Search.SetBounds(Padding.Left,Padding.Top,(int)Math.Round(32*scale),Math.Max(1,ClientSize.Height-Padding.Vertical));
-                editorLeft=Search.Right+gap;
+                int searchWidth=(int)Math.Round(32*scale);
+                searchLeft-=searchWidth;
+                Search.SetBounds(searchLeft,Padding.Top,searchWidth,Math.Max(1,ClientSize.Height-Padding.Vertical));
             }
             int width=Math.Min(Math.Max(1,ClientSize.Width-Padding.Horizontal),TextRenderer.MeasureText(Counter.Text,Counter.Font).Width+(int)Math.Round(20*scale));
-            int x=Searching ? ClientSize.Width-Padding.Right-width : (ClientSize.Width-width)/2;
+            int x=Searching ? searchLeft-gap-width : (ClientSize.Width-width)/2;
             Counter.SetBounds(x,Padding.Top,width,Math.Max(1,ClientSize.Height-Padding.Vertical));
             if(Editor!=null) Editor.SetBounds(editorLeft,(ClientSize.Height-Editor.PreferredHeight)/2,Math.Max(1,x-editorLeft-gap),Editor.PreferredHeight);
         }
@@ -843,7 +862,9 @@ public sealed class PlaylistTip : Form {
     if ($ValidateOnly -and $payload.client_width) { $form.ClientSize = New-Object Drawing.Size(([Math]::Max(220,[int]$payload.client_width)),420) }
     $form.BackColor = [PlaylistStyle]::Background
     $form.ForeColor = [PlaylistStyle]::Text
-    $mainFont = New-Object Drawing.Font('Microsoft YaHei UI', 10.5)
+    $mainFont = New-Object Drawing.Font('Microsoft YaHei UI', 9.75)
+    $currentFont = New-Object Drawing.Font($mainFont, [Drawing.FontStyle]::Bold)
+    $numberFont = New-Object Drawing.Font('Microsoft YaHei UI', 8.25)
     $form.Font = $mainFont
     $form.KeyPreview = $true
     $form.AutoScaleMode = 'Dpi'
@@ -879,13 +900,14 @@ public sealed class PlaylistTip : Form {
     $footer.Editor = $filter
     $footer.Search = $searchButton
     $footer.Dock = 'Bottom'
-    $footer.Height = 36
+    $footer.Height = 40
     $footer.Padding = New-Object Windows.Forms.Padding(8, 5, 8, 5)
     $footer.BackColor = $form.BackColor
+    $footer.Font = $captionFont
     $form.FooterPanel = $footer
     $filter.Dock = 'None'
     $filter.Visible = $false
-    $filter.BackColor = [PlaylistStyle]::Surface
+    $filter.BackColor = [PlaylistStyle]::Hover
     $filter.ForeColor = $form.ForeColor
     $filter.BorderStyle = 'FixedSingle'
     $filter.AccessibleName = '搜索播放列表'
@@ -918,11 +940,11 @@ public sealed class PlaylistTip : Form {
     $list.AllowDrop = $true
     $form.AllowDrop = $true
     $list.OwnerDraw = $true
-    [void]$list.Columns.Add('', 12)
+    [void]$list.Columns.Add('', 44)
     [void]$list.Columns.Add('Title', 270)
     $rowImages = New-Object Windows.Forms.ImageList
-    $rowImages.ImageSize = New-Object Drawing.Size(1, 32)
-    $rowBitmap = New-Object Drawing.Bitmap(1, 32)
+    $rowImages.ImageSize = New-Object Drawing.Size(1, 42)
+    $rowBitmap = New-Object Drawing.Bitmap(1, 42)
     $rowImages.Images.Add($rowBitmap)
     $list.SmallImageList = $rowImages
     $scroll = New-Object PlaylistScroll($list)
@@ -957,25 +979,28 @@ public sealed class PlaylistTip : Form {
         $selected = $eventArgs.Item.Selected
         $current = $eventArgs.Item.Tag.index -eq $script:playlistPosition
         $bg = [PlaylistStyle]::RowBackground($current, $selected, ($eventArgs.Item.Tag.id -eq $script:hoverId))
-        $fg = $form.ForeColor
+        $fg = if ($eventArgs.ColumnIndex -eq 0) { [PlaylistStyle]::Number } elseif ($current) { [PlaylistStyle]::Accent } else { $form.ForeColor }
+        $font = if ($eventArgs.ColumnIndex -eq 0) { $numberFont } elseif ($current) { $currentFont } else { $mainFont }
         $scale = $eventArgs.Graphics.DpiX / 96.0
         $brush = New-Object Drawing.SolidBrush($bg)
         try { $eventArgs.Graphics.FillRectangle($brush, $eventArgs.Bounds) } finally { $brush.Dispose() }
         if ($current -and $eventArgs.ColumnIndex -eq 0) {
             $bar = New-Object Drawing.SolidBrush([PlaylistStyle]::Accent)
-            try { $eventArgs.Graphics.FillRectangle($bar, $eventArgs.Bounds.Left, [single]($eventArgs.Bounds.Top + 6*$scale), [single](3*$scale), [single][Math]::Max(1, $eventArgs.Bounds.Height - 12*$scale)) } finally { $bar.Dispose() }
+            try { $eventArgs.Graphics.FillRectangle($bar, $eventArgs.Bounds.Left, [single]($eventArgs.Bounds.Top + 8*$scale), [single](3*$scale), [single][Math]::Max(1, $eventArgs.Bounds.Height - 16*$scale)) } finally { $bar.Dispose() }
         }
-        [Windows.Forms.TextRenderer]::DrawText($eventArgs.Graphics, $eventArgs.SubItem.Text, $form.Font,
-            $eventArgs.Bounds, $fg, ([Windows.Forms.TextFormatFlags]::Left -bor [Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::EndEllipsis -bor [Windows.Forms.TextFormatFlags]::NoPrefix))
-        # The current row keeps its marker even when selected. A separate
-        # outline shows selection there; keyboard focus has its own dotted cue.
-        if ($eventArgs.ColumnIndex -eq 1 -and (($current -and $selected) -or ($list.Focused -and $eventArgs.Item.Focused))) {
-            $focused = $list.Focused -and $eventArgs.Item.Focused
-            $color = if ($focused) { [PlaylistStyle]::Accent } else { [PlaylistStyle]::Muted }
-            $pen = New-Object Drawing.Pen($color, [single][Math]::Max(1, $scale))
-            if ($focused) { $pen.DashStyle = 'Dot' }
+        $textBounds = $eventArgs.Bounds
+        if ($eventArgs.ColumnIndex -eq 0) { $textBounds.X += [int](12*$scale); $textBounds.Width = [int](24*$scale) }
+        else { $textBounds.Width = [Math]::Max(1,$textBounds.Width-[int](12*$scale)) }
+        [Windows.Forms.TextRenderer]::DrawText($eventArgs.Graphics, $eventArgs.SubItem.Text, $font,
+            $textBounds, $fg, ([Windows.Forms.TextFormatFlags]::Left -bor [Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::EndEllipsis -bor [Windows.Forms.TextFormatFlags]::NoPrefix -bor [Windows.Forms.TextFormatFlags]::NoPadding))
+        # Selection is a thin blue outline, independent from the current fill.
+        # Keyboard navigation strengthens the outline; mouse focus does not.
+        if ($eventArgs.ColumnIndex -eq 1 -and ($selected -or ($list.Focused -and $list.KeyboardFocusCue -and $eventArgs.Item.Focused))) {
+            $focused = $list.Focused -and $list.KeyboardFocusCue -and $eventArgs.Item.Focused
+            $weight = if ($focused) { 2 } else { 1 }
+            $pen = New-Object Drawing.Pen([PlaylistStyle]::Accent, [single][Math]::Max(1, $scale*$weight))
             $bounds = $eventArgs.Item.Bounds
-            $inset = [int][Math]::Ceiling(2*$scale)
+            $inset = [int][Math]::Ceiling($scale*$weight/2)
             try { $eventArgs.Graphics.DrawRectangle($pen, $bounds.Left+$inset, $bounds.Top+$inset,
                 [Math]::Max(1, [Math]::Min($bounds.Width, $list.ClientSize.Width)-2*$inset-1), [Math]::Max(1,$bounds.Height-2*$inset-1)) }
             finally { $pen.Dispose() }
@@ -1088,7 +1113,7 @@ public sealed class PlaylistTip : Form {
         [void]$list.Handle
         [Windows.Forms.Application]::DoEvents()
         Render-Queue
-        $rows = @($list.Items | ForEach-Object { @{id = $_.Tag.id; index = $_.Tag.index; label = $_.SubItems[1].Text; current = $_.Tag.index -eq $script:playlistPosition} })
+        $rows = @($list.Items | ForEach-Object { @{id = $_.Tag.id; index = $_.Tag.index; number = $_.Text; label = $_.SubItems[1].Text; current = $_.Tag.index -eq $script:playlistPosition} })
         foreach ($item in $list.Items) { if ([string]$item.Tag.id -eq [string]$payload.selected_id) { $item.Selected = $true } }
         if ($payload.hover_id) { $script:hoverId = [string]$payload.hover_id }
         $normalCount = $counter.Text
@@ -1111,7 +1136,7 @@ public sealed class PlaylistTip : Form {
             $searchClick = $searchButton.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
             [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
             $searchProbe.opened = $script:searching -and $searchButton.Active -and $footer.Searching
-            $searchProbe.controls_separate = $searchButton.Right -le $filter.Left -and $filter.Right -le $counter.Left
+            $searchProbe.controls_separate = $filter.Right -le $counter.Left -and $counter.Right -le $searchButton.Left
             $filter.Text = 'one'
             $searchProbe.filtered = $list.Items.Count
             [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
@@ -1135,6 +1160,19 @@ public sealed class PlaylistTip : Form {
         $tipSize = [PlaylistTip]::Measure($tipText, $mainFont, 96)
         $painted = $false
         $paintSamples = @{}
+        $outlineSamples = @{}
+        $counterSamples = @{}
+        if ($payload.counter_hover) {
+            $hoverMethod = $counter.GetType().GetMethod('OnMouseEnter',[Reflection.BindingFlags]'Instance,NonPublic')
+            [void]$hoverMethod.Invoke($counter,@([EventArgs]::Empty))
+            $counterCanvas = New-Object Drawing.Bitmap($counter.Width,$counter.Height)
+            try {
+                $counter.DrawToBitmap($counterCanvas,(New-Object Drawing.Rectangle(0,0,$counter.Width,$counter.Height)))
+                $counterSamples.corner = $counterCanvas.GetPixel(0,0).ToArgb()
+                $counterSamples.edge = $counterCanvas.GetPixel([int]($counter.Width/2),1).ToArgb()
+                $counterSamples.background = $counter.BackColor.ToArgb()
+            } finally { $counterCanvas.Dispose() }
+        }
         if ($payload.paint_path) {
             $paintPath = [IO.Path]::GetFullPath([string]$payload.paint_path)
             if (-not $paintPath.StartsWith([IO.Path]::GetTempPath(), [StringComparison]::OrdinalIgnoreCase)) { throw 'paint-path' }
@@ -1154,6 +1192,8 @@ public sealed class PlaylistTip : Form {
                     $point = New-Object Drawing.Point(($list.Left + $list.Width - 20), ($list.Top + $item.Bounds.Top + [int]($item.Bounds.Height / 2)))
                     if ($point.Y -ge $list.Top -and $point.Y -lt $list.Bottom) {
                         $paintSamples[[string]$item.Tag.id] = $canvas.GetPixel($point.X,$point.Y).ToArgb()
+                        $edgeY = $list.Top + $item.Bounds.Top + [int][Math]::Ceiling($canvas.HorizontalResolution/96.0/2)
+                        $outlineSamples[[string]$item.Tag.id] = $canvas.GetPixel(($list.Left+$list.Columns[0].Width+10),$edgeY).ToArgb()
                     }
                 }
                 $canvas.Save($paintPath, [Drawing.Imaging.ImageFormat]::Png)
@@ -1171,11 +1211,13 @@ public sealed class PlaylistTip : Form {
             presentation = @{native_caption = ($windowStyle -band 0xC00000) -ne 0; sizing_frame = ($windowStyle -band 0x40000) -ne 0;
                 title = $captionLabel.Text; close_name = $closeButton.AccessibleName; close_hides = $closeHidden;
                 title_above_list = $caption.Bottom -le $list.Top; empty_text = $list.EmptyText; font = $form.Font.Name;
-                row_backgrounds = $paintSamples; caption_height = $caption.Height; client_width = $form.ClientSize.Width;
+                row_backgrounds = $paintSamples; row_outlines = $outlineSamples; counter_hover = $counterSamples;
+                current_bold = $currentFont.Bold; row_columns = $list.Columns.Count;
+                caption_height = $caption.Height; client_width = $form.ClientSize.Width;
                 caption_bounds = $caption.Bounds.ToString(); title_bounds = $captionLabel.Bounds.ToString(); close_bounds = $closeButton.Bounds.ToString();
-                search_name = $searchButton.AccessibleName; search_not_overlapping = $searchButton.Right -le $counter.Left;
+                search_name = $searchButton.AccessibleName; search_not_overlapping = $counter.Right -le $searchButton.Left;
                 search_in_footer = $searchButton.Parent -eq $footer; search_bounds = $searchButton.Bounds.ToString();
-                search_field_width = $filter.Width; search_controls_separate = -not $script:searching -or ($searchButton.Right -le $filter.Left -and $filter.Right -le $counter.Left);
+                search_field_width = $filter.Width; search_controls_separate = -not $script:searching -or ($filter.Right -le $counter.Left -and $counter.Right -le $searchButton.Left);
                 search_toggle = $searchProbe; counter_width = $counter.Width; footer_width = $footer.ClientSize.Width};
             footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable -and $beforeFooterBounds -eq $searchFooterBounds -and $beforeFooterBounds -eq $restoredFooterBounds;
             layout_bounds = @{normal = $beforeBounds.ToString(); search = $searchBounds.ToString(); restored = $restoredBounds.ToString();
@@ -1290,6 +1332,8 @@ public sealed class PlaylistTip : Form {
     if ($pipe) { $pipe.Dispose() }
     if ($form) { $form.Dispose() }
     if ($mainFont) { $mainFont.Dispose() }
+    if ($currentFont) { $currentFont.Dispose() }
+    if ($numberFont) { $numberFont.Dispose() }
     if ($captionFont) { $captionFont.Dispose() }
     if ($rowImages) { $rowImages.Dispose() }
     if ($rowBitmap) { $rowBitmap.Dispose() }

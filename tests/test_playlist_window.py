@@ -164,10 +164,17 @@ class PlaylistWindow(unittest.TestCase):
             'hover_id': '3', 'paint_path': str(self.output / 'states.png')})
         self.assertTrue(data['painted'])
         colors = data['presentation']['row_backgrounds']
-        self.assertEqual(len({colors[str(i)] for i in range(1, 5)}), 4, colors)
+        # Selection is the approved thin outline, not a second grey fill.
+        self.assertEqual(colors['2'], colors['4'])
+        self.assertEqual(len({colors[str(i)] for i in range(1, 5)}), 3, colors)
+        outlines = data['presentation']['row_outlines']
+        self.assertNotEqual(outlines['2'], outlines['4'])
+        self.assertTrue(data['presentation']['current_bold'])
+        self.assertEqual(data['presentation']['row_columns'], 2)
+        self.assertEqual([row['number'] for row in data['rows']], ['01', '02', '03', '04', '05'])
         self.assertEqual(data['actions'], [])
 
-    def test_narrow_search_footer_keeps_input_between_button_and_count(self):
+    def test_narrow_search_footer_keeps_search_button_to_the_right(self):
         data = self.run_helper({'playlist': [{'id': 1, 'filename': 'X:/one.mkv'}],
             'position': 0, 'filter': 'one', 'client_width': 220,
             'paint_path': str(self.output / 'search.png')})
@@ -177,6 +184,20 @@ class PlaylistWindow(unittest.TestCase):
         self.assertGreater(view['search_field_width'], 36)
         self.assertTrue(data['footer_bounds_stable'])
         self.assertEqual(data['actions'], [])
+
+    def test_filtered_number_keeps_original_queue_position(self):
+        data = self.run_helper({'playlist': [{'id': 71, 'filename': 'X:/one.mkv'},
+                                            {'id': 93, 'filename': 'X:/two.mkv'}],
+                                'position': 0, 'filter': 'two'})
+        self.assertEqual(data['rows'][0]['number'], '02')
+        self.assertEqual(data['rows'][0]['id'], '93')
+
+    def test_counter_hover_has_rounded_corners(self):
+        data = self.run_helper({'playlist': [{'id': 1, 'filename': 'X:/one.mkv'}],
+                                'position': 0, 'counter_hover': True})
+        pixels = data['presentation']['counter_hover']
+        self.assertEqual(pixels['corner'], pixels['background'])
+        self.assertNotEqual(pixels['edge'], pixels['background'])
 
 
 if __name__ == '__main__':
