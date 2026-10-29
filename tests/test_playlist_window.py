@@ -42,6 +42,8 @@ class PlaylistWindow(unittest.TestCase):
         self.assertTrue(data['fallback'])
         self.assertEqual(data['native_hits'], 3)
         self.assertTrue(data['activation_no_system_paint'])
+        if data['corner_supported']:
+            self.assertEqual(data['corner_values'], [2, 1, 2])
 
     def test_hover_waits_expires_tracks_pointer_and_cancels_on_native_scroll(self):
         data = self.run_fixture('playlist_hover.ps1')

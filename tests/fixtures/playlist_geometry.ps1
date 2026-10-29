@@ -53,6 +53,21 @@ try {
     $window.Size=New-Object Drawing.Size(340,420)
     $rect=New-Object PlaylistNative+Rect
     [void][PlaylistNative]::GetWindowRect($window.Handle,[ref]$rect)
+    $cornerValue=0
+    $cornerSupported=[PlaylistNative]::ReadDwmInteger($window.Handle,33,[ref]$cornerValue,4) -eq 0
+    $cornerValues=@()
+    if($cornerSupported) {
+        if($cornerValue -ne 2){throw 'normal sidebar did not request standard system rounding'}
+        $cornerValues += $cornerValue
+        $window.SetSquareCorners($true)
+        [void][PlaylistNative]::ReadDwmInteger($window.Handle,33,[ref]$cornerValue,4)
+        if($cornerValue -ne 1){throw 'maximized/fullscreen policy did not request square corners'}
+        $cornerValues += $cornerValue
+        $window.SetSquareCorners($false)
+        [void][PlaylistNative]::ReadDwmInteger($window.Handle,33,[ref]$cornerValue,4)
+        if($cornerValue -ne 2){throw 'restore did not request standard rounding'}
+        $cornerValues += $cornerValue
+    }
     $window.DefaultFramePaints=0
     foreach($active in @(1,0,1)) {
         $result=[PlaylistNative]::SendMessage($window.Handle,0x86,[IntPtr]$active,[IntPtr]::Zero)
@@ -73,4 +88,5 @@ try {
     }
     if ($window.Visible) {throw 'hidden hit test showed a window'}
 } finally {$window.Dispose()}
-@{cases=$cases.Count;fallback=$true;native_hits=$hitCases.Count;activation_no_system_paint=$true} | ConvertTo-Json -Compress
+@{cases=$cases.Count;fallback=$true;native_hits=$hitCases.Count;activation_no_system_paint=$true;
+    corner_supported=$cornerSupported;corner_values=$cornerValues} | ConvertTo-Json -Compress

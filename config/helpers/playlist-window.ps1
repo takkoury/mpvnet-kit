@@ -304,6 +304,19 @@ public sealed class PlaylistCounterButton : Button {
 }
 public class PlaylistForm : Form {
     public PlaylistFollower Follower;
+    bool squareCorners;
+    void ApplyCornerPreference() {
+        if(!IsHandleCreated)return;
+        // Standard Windows rounding, not the small popup radius. A custom
+        // client frame needs this opt-in; unsupported systems retain the frame.
+        int preference=squareCorners ? 1 : 2; // DONOTROUND / ROUND
+        try { PlaylistNative.DwmSetWindowAttribute(Handle,33,ref preference,4); }
+        catch(DllNotFoundException) { } catch(EntryPointNotFoundException) { }
+    }
+    public void SetSquareCorners(bool square) {
+        if(squareCorners==square)return;
+        squareCorners=square;ApplyCornerPreference();
+    }
     public Panel CaptionPanel, FooterPanel;
     public Label CaptionLabel;
     public Button CloseButton;
@@ -322,7 +335,7 @@ public class PlaylistForm : Form {
         if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
         if(CaptionLabel!=null)CaptionLabel.Padding=new Padding((int)Math.Round(16*scale),0,0,0);
     }
-    protected override void OnHandleCreated(EventArgs e) {base.OnHandleCreated(e);ApplyPresentationDpi();}
+    protected override void OnHandleCreated(EventArgs e) {base.OnHandleCreated(e);ApplyPresentationDpi();ApplyCornerPreference();}
     // Keep the resizing style, but let the client paint the whole frame.
     // Otherwise DWM leaves a system-colored strip above the custom caption.
     protected override CreateParams CreateParams {
@@ -352,6 +365,7 @@ public class PlaylistForm : Form {
         }
         base.WndProc(ref m);
         if (m.Msg == 0x2E0) ApplyPresentationDpi();
+        if (m.Msg == 0x31E) ApplyCornerPreference();
         if ((m.Msg == 0x2E0 || m.Msg == 0x31E) && Follower != null) Follower.RefreshFrame();
     }
 }
@@ -589,6 +603,7 @@ public static class PlaylistNative {
     [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] public static extern int ReadDwmInteger(IntPtr hwnd, int attr, out int value, int size);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out Rect value, int size);
     public static Rect VisibleBounds(Rect outer, Rect frame, bool available) {
         return available && frame.Right > frame.Left && frame.Bottom > frame.Top ? frame : outer;
@@ -689,6 +704,7 @@ public sealed class PlaylistFollower : IDisposable {
     public void Follow() {
         if (disposed || !IsWindow(Parent)) return;
         if (!wanted || PlaylistNative.IsIconic(Parent) || !PlaylistNative.IsWindowVisible(Parent)) { if (form.Visible) form.Hide(); return; }
+        form.SetSquareCorners(fullscreen || PlaylistNative.IsZoomed(Parent));
         PlaylistNative.Rect target = GetBounds();
         bool targetTopmost=(PlaylistNative.GetWindowLongPtr(Parent,-20).ToInt64() & 8) != 0;
         bool currentTopmost=(PlaylistNative.GetWindowLongPtr(form.Handle,-20).ToInt64() & 8) != 0;
