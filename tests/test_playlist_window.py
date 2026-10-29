@@ -40,6 +40,7 @@ class PlaylistWindow(unittest.TestCase):
         data = self.run_fixture('playlist_geometry.ps1')
         self.assertEqual(data['cases'], 10)
         self.assertTrue(data['fallback'])
+        self.assertEqual(data['native_hits'], 3)
 
     @unittest.skipUnless(os.environ.get('MPVNET_TEST_PLAYLIST_WINDOWS') == '1',
                          'Enable MPVNET_TEST_PLAYLIST_WINDOWS=1 for owned, briefly visible test windows')
@@ -94,7 +95,7 @@ class PlaylistWindow(unittest.TestCase):
         self.assertFalse(data['locate']['searching'])
         self.assertEqual(data['locate']['filter'], '')
         self.assertTrue(data['locate']['focus_preserved'])
-        self.assertEqual(data['locate']['counter_name'], 'Locate current')
+        self.assertEqual(data['locate']['counter_name'], '定位当前播放项')
         self.assertTrue(data['locate']['counter_hand'])
         self.assertEqual([action['action'] for action in data['actions']], ['locate'])
         self.assertEqual(data['actions'][0]['id'], '')
@@ -115,6 +116,40 @@ class PlaylistWindow(unittest.TestCase):
                     self.assertEqual(data['locate']['selected_ids'], ['71'])
                     self.assertTrue(data['locate']['searching'])
                     self.assertEqual(data['locate']['filter'], 'one')
+
+    def test_custom_caption_preserves_frame_layout_and_close_to_hide(self):
+        for width in (220, 340):
+            with self.subTest(width=width):
+                data = self.run_helper({'playlist': [], 'position': -1,
+                                        'client_width': width, 'click_close': True})
+                view = data['presentation']
+                self.assertFalse(view['native_caption'])
+                self.assertTrue(view['sizing_frame'])
+                self.assertTrue(view['title_above_list'])
+                self.assertTrue(view['close_hides'])
+                self.assertEqual(view['title'], '播放列表')
+                self.assertEqual(view['close_name'], '关闭播放列表')
+                self.assertEqual(data['actions'], [])
+                self.assertTrue(data['footer_bounds_stable'])
+
+    def test_empty_and_filtered_states_are_distinct(self):
+        for entries, query, expected in (([], '', '播放列表为空'),
+                ([{'id': 1, 'filename': 'X:/视频.mkv'}], 'missing', '没有匹配的项目')):
+            with self.subTest(query=query):
+                data = self.run_helper({'playlist': entries, 'position': -1, 'filter': query,
+                    'paint_path': str(self.output / ('empty-' + uuid.uuid4().hex + '.png'))})
+                self.assertEqual(data['presentation']['empty_text'], expected)
+                self.assertTrue(data['painted'])
+                self.assertEqual(data['actions'], [])
+
+    def test_rendered_current_selected_hover_and_normal_are_distinct(self):
+        entries = [{'id': i, 'filename': 'X:/测试 %d 长标题.mkv' % i} for i in range(1, 6)]
+        data = self.run_helper({'playlist': entries, 'position': 0, 'selected_id': '2',
+            'hover_id': '3', 'paint_path': str(self.output / 'states.png')})
+        self.assertTrue(data['painted'])
+        colors = data['presentation']['row_backgrounds']
+        self.assertEqual(len({colors[str(i)] for i in range(1, 5)}), 4, colors)
+        self.assertEqual(data['actions'], [])
 
 
 if __name__ == '__main__':

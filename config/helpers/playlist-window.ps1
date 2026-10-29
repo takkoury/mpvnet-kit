@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$PayloadPath = '',
     [int]$WaitPid = 0,
     [switch]$NoShow,
@@ -74,7 +74,7 @@ function Safe-Label($entry) {
         $value = ($value -split '[/\\]')[-1]
     }
     $value = [regex]::Replace($value, '[\x00-\x1f]', ' ').Trim()
-    if (-not $value) { $value = 'Media' }
+    if (-not $value) { $value = '未命名媒体' }
     return $value
 }
 
@@ -94,6 +94,8 @@ function Render-Queue {
     $signature = (@($rows | ForEach-Object { $_.id + ':' + $_.label }) -join "`n")
     $counter.Text = if ($script:playlist.Count -eq 0) { '0 / 0' } elseif ($script:searching) { '{0} / {1}' -f $rows.Count, $script:playlist.Count } else { '{0:00} / {1:00}' -f ([Math]::Max(0, $script:playlistPosition + 1)), $script:playlist.Count }
     $counter.Enabled = $script:playlistPosition -ge 0 -and $script:playlistPosition -lt $script:playlist.Count
+    $list.EmptyText = if ($script:playlist.Count -eq 0) { '播放列表为空' } elseif ($rows.Count -eq 0) { '没有匹配的项目' } else { '' }
+    $list.AccessibleDescription = $list.EmptyText
     $script:rendering = $true
     try {
         if ($signature -ne $script:lastSignature) {
@@ -147,7 +149,7 @@ function Set-SearchMode([bool]$enabled, [bool]$focusControl = $true) {
     $filter.Visible = $enabled
     $counter.Dock = if ($enabled) { 'Right' } else { 'Fill' }
     $counter.TextAlign = if ($enabled) { 'MiddleRight' } else { 'MiddleCenter' }
-    $counter.ForeColor = if ($enabled) { [Drawing.Color]::FromArgb(18, 135, 187) } else { [Drawing.Color]::FromArgb(155, 163, 177) }
+    $counter.ForeColor = if ($enabled) { [PlaylistStyle]::Accent } else { [PlaylistStyle]::Muted }
     if ($enabled) { $counter.Width = 90; if ($focusControl) { [void]$filter.Focus() } }
     else { $filter.Text = ''; if ($focusControl) { [void]$list.Focus() } }
     Render-Queue
@@ -218,8 +220,83 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Drawing;
+// Presentation tokens follow the accepted settings window. Queue identity,
+// IPC and follower geometry remain owned by the existing controller.
+public static class PlaylistStyle {
+    public static readonly Color Background = ColorTranslator.FromHtml("#151515");
+    public static readonly Color Text = ColorTranslator.FromHtml("#F2F2F2");
+    public static readonly Color Muted = ColorTranslator.FromHtml("#ABABAB");
+    public static readonly Color Surface = ColorTranslator.FromHtml("#242424");
+    public static readonly Color Hover = ColorTranslator.FromHtml("#303030");
+    public static readonly Color Selected = ColorTranslator.FromHtml("#343434");
+    public static readonly Color Current = ColorTranslator.FromHtml("#142B35");
+    public static readonly Color Accent = ColorTranslator.FromHtml("#1287BB");
+    public const string Locate = "定位当前播放项";
+    public static Color RowBackground(bool current, bool selected, bool hover) {
+        return current ? Current : selected ? Selected : hover ? Hover : Background;
+    }
+}
+public sealed class PlaylistCloseButton : Button {
+    bool hover, pressed;
+    public PlaylistCloseButton() {
+        Text=""; AccessibleName="关闭播放列表"; Width=44; Height=36;
+        FlatStyle=FlatStyle.Flat; FlatAppearance.BorderSize=0;
+        TabStop=true; SetStyle(ControlStyles.ResizeRedraw,true);
+    }
+    protected override void OnMouseEnter(EventArgs e) {base.OnMouseEnter(e);hover=true;Invalidate();}
+    protected override void OnMouseLeave(EventArgs e) {base.OnMouseLeave(e);hover=false;pressed=false;Invalidate();}
+    protected override void OnMouseDown(MouseEventArgs e) {base.OnMouseDown(e);pressed=e.Button==MouseButtons.Left;Invalidate();}
+    protected override void OnMouseUp(MouseEventArgs e) {base.OnMouseUp(e);pressed=false;Invalidate();}
+    protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
+    protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
+    protected override void OnPaint(PaintEventArgs e) {
+        e.Graphics.Clear(pressed ? ColorTranslator.FromHtml("#B53242") : hover ? ColorTranslator.FromHtml("#8F2633") : PlaylistStyle.Background);
+        float scale=e.Graphics.DpiX/96f, half=5*scale;
+        e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using(var pen=new Pen(PlaylistStyle.Text,Math.Max(1,scale))) {
+            e.Graphics.DrawLine(pen,Width/2f-half,Height/2f-half,Width/2f+half,Height/2f+half);
+            e.Graphics.DrawLine(pen,Width/2f+half,Height/2f-half,Width/2f-half,Height/2f+half);
+        }
+        if(Focused) using(var pen=new Pen(PlaylistStyle.Accent,Math.Max(1,scale)))
+            e.Graphics.DrawRectangle(pen,1,1,Math.Max(1,Width-3),Math.Max(1,Height-3));
+    }
+}
+public sealed class PlaylistCounterButton : Button {
+    bool hover, pressed;
+    protected override void OnMouseEnter(EventArgs e) {base.OnMouseEnter(e);hover=true;Invalidate();}
+    protected override void OnMouseLeave(EventArgs e) {base.OnMouseLeave(e);hover=false;pressed=false;Invalidate();}
+    protected override void OnMouseDown(MouseEventArgs e) {base.OnMouseDown(e);pressed=e.Button==MouseButtons.Left;Invalidate();}
+    protected override void OnMouseUp(MouseEventArgs e) {base.OnMouseUp(e);pressed=false;Invalidate();}
+    protected override void OnPaint(PaintEventArgs e) {
+        e.Graphics.Clear(Enabled && pressed ? PlaylistStyle.Selected : Enabled && hover ? PlaylistStyle.Hover : BackColor);
+        var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix;
+        flags |= TextAlign==ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter;
+        TextRenderer.DrawText(e.Graphics,Text,Font,ClientRectangle,Enabled ? ForeColor : Color.FromArgb(136,136,136),flags);
+    }
+}
 public class PlaylistForm : Form {
     public PlaylistFollower Follower;
+    public Panel CaptionPanel, FooterPanel;
+    public Label CaptionLabel;
+    public Button CloseButton;
+    public void ApplyPresentationDpi() {
+        if (!IsHandleCreated) return;
+        uint dpi=PlaylistNative.GetDpiForWindow(Handle); if(dpi==0)dpi=96;
+        float scale=dpi/96f;
+        if(CaptionPanel!=null)CaptionPanel.Height=(int)Math.Round(36*scale);
+        if(FooterPanel!=null) {
+            FooterPanel.Height=(int)Math.Round(36*scale);
+            FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(5*scale),(int)Math.Round(8*scale),(int)Math.Round(5*scale));
+        }
+        if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
+        if(CaptionLabel!=null)CaptionLabel.Padding=new Padding((int)Math.Round(16*scale),0,0,0);
+    }
+    protected override void OnHandleCreated(EventArgs e) {base.OnHandleCreated(e);ApplyPresentationDpi();}
+    // Retain the native sizing frame and its hit testing, remove only the
+    // system caption. The sidebar still resizes horizontally and follows mpv.
+    protected override CreateParams CreateParams {
+        get { var value=base.CreateParams; value.Style &= ~0x00C00000; return value; }
+    }
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override void WndProc(ref Message m) {
         if (m.Msg == 0x214 && Follower != null) {
@@ -229,6 +306,7 @@ public class PlaylistForm : Form {
             Marshal.StructureToPtr(bounds, m.LParam, false); m.Result = new IntPtr(1); return;
         }
         base.WndProc(ref m);
+        if (m.Msg == 0x2E0) ApplyPresentationDpi();
         if ((m.Msg == 0x2E0 || m.Msg == 0x31E) && Follower != null) Follower.RefreshFrame();
         if (m.Msg == 0x84) {
             int hit = m.Result.ToInt32();
@@ -246,8 +324,11 @@ public sealed class PlaylistList : ListView {
     [StructLayout(LayoutKind.Sequential)] struct NativeStyles { public uint OldStyle, NewStyle; }
     bool fitting, fitPosted;
     int wheelCarry;
+    public string EmptyText = "";
     public event Action ViewportChanged;
     public PlaylistList() { DoubleBuffered = true; }
+    protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
+    protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
     protected override void OnHandleCreated(EventArgs args) {
         base.OnHandleCreated(args);
         PlaylistNative.SendMessage(Handle,0x1036,new IntPtr(0x10000),new IntPtr(0x10000));
@@ -303,6 +384,12 @@ public sealed class PlaylistList : ListView {
             message.Result=IntPtr.Zero;return;
         }
         base.WndProc(ref message);
+        if (Items.Count==0 && !String.IsNullOrEmpty(EmptyText) &&
+            (message.Msg==0xF || message.Msg==0x318)) {
+            using(Graphics graphics=message.Msg==0x318 ? Graphics.FromHdc(message.WParam) : Graphics.FromHwnd(Handle))
+                TextRenderer.DrawText(graphics,EmptyText,Font,ClientRectangle,PlaylistStyle.Muted,
+                    TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+        }
         if (message.Msg==0x7D && message.WParam.ToInt64()==-16 && message.LParam!=IntPtr.Zero) {
             NativeStyles styles=(NativeStyles)Marshal.PtrToStructure(message.LParam,typeof(NativeStyles));
             if ((styles.NewStyle & ~styles.OldStyle & 0x300000u)!=0) ScheduleViewport();
@@ -333,7 +420,7 @@ public sealed class PlaylistScroll : Control {
     int count, page, top, dragOffset;
     Rectangle thumb;
     public PlaylistScroll(PlaylistList view) {
-        list=view;Width=8;Dock=DockStyle.Right;TabStop=false;BackColor=Color.FromArgb(17,17,17);
+        list=view;Width=8;Dock=DockStyle.Right;TabStop=false;BackColor=PlaylistStyle.Background;
         SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
         SetStyle(ControlStyles.Selectable,false);
         list.ViewportChanged+=SyncViewport;
@@ -361,7 +448,7 @@ public sealed class PlaylistScroll : Control {
     protected override void OnPaint(PaintEventArgs args) {
         base.OnPaint(args);if(thumb.IsEmpty)return;
         args.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        Color color=dragging?Color.FromArgb(18,135,187):hover?Color.FromArgb(138,146,156):Color.FromArgb(107,114,124);
+        Color color=dragging?PlaylistStyle.Accent:hover?Color.FromArgb(153,153,153):Color.FromArgb(112,112,112);
         float radius=Math.Min(thumb.Width,thumb.Height)/2f,diameter=radius*2;
         using(var path=new System.Drawing.Drawing2D.GraphicsPath()) {
             path.AddArc(thumb.Left,thumb.Top,diameter,diameter,180,90);
@@ -422,7 +509,6 @@ public static class PlaylistNative {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     public static bool BelongsTo(IntPtr hwnd, uint pid) { uint actual; GetWindowThreadProcessId(hwnd,out actual);return actual==pid; }
-    [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr icon);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
@@ -558,6 +644,9 @@ public sealed class PlaylistKeys : IMessageFilter, IDisposable {
         return ShortcutKeyNames.FromVirtualKey(vk, (modifiers & Keys.Control)!=0,
             (modifiers & Keys.Alt)!=0, (modifiers & Keys.Shift)!=0);
     }
+    public static bool IsCaptionActivation(Control target, int vk, Keys modifiers) {
+        return target is PlaylistCloseButton && modifiers==Keys.None && (vk==32 || vk==13);
+    }
     public void UpdateBindings(string[] keys, string[] uiKeys) {
         keys=keys ?? new string[0];uiKeys=uiKeys ?? new string[0];
         if(allowed.SetEquals(keys) && opening.SetEquals(uiKeys))return;
@@ -571,6 +660,10 @@ public sealed class PlaylistKeys : IMessageFilter, IDisposable {
         bool down=message.Msg==0x100 || message.Msg==0x104,up=message.Msg==0x101 || message.Msg==0x105;
         if(!down && !up)return false;
         int vk=message.WParam.ToInt32();
+        if(IsCaptionActivation(Control.FromHandle(message.HWnd),vk,Control.ModifierKeys)) {
+            if(held.Count>0)ReleaseAll();
+            return false;
+        }
         string key;
         if(up) { if(!held.TryGetValue(vk,out key))return false;held.Remove(vk);Send("up",key);return true; }
         if(held.ContainsKey(vk))return true;
@@ -588,7 +681,7 @@ public sealed class PlaylistTip : Form {
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override CreateParams CreateParams { get { CreateParams p=base.CreateParams;p.ExStyle|=0x08000080;return p; } }
     protected override void WndProc(ref Message message) { if(message.Msg==0x84){message.Result=new IntPtr(-1);return;}base.WndProc(ref message); }
-    public PlaylistTip(Font font) { FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;Font=font;BackColor=Color.FromArgb(17,17,17);DoubleBuffered=true; }
+    public PlaylistTip(Font font) { FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;Font=font;BackColor=PlaylistStyle.Surface;DoubleBuffered=true; }
     public static Size Measure(string text, Font font, int dpi) {
         float scale=dpi/96f;int pad=(int)Math.Round(10*scale);int max=(int)Math.Round(400*scale);
         using(Bitmap bitmap=new Bitmap(1,1)) { bitmap.SetResolution(dpi,dpi);using(Graphics g=Graphics.FromImage(bitmap)) {
@@ -606,7 +699,7 @@ public sealed class PlaylistTip : Form {
     protected override void OnPaint(PaintEventArgs e) {
         using(Pen pen=new Pen(Color.FromArgb(48,48,48)))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
         int pad=(int)Math.Round(10*e.Graphics.DpiX/96f);
-        using(Brush brush=new SolidBrush(Color.FromArgb(225,229,234)))e.Graphics.DrawString(content,Font,brush,new RectangleF(pad,pad,Width-pad*2,Height-pad*2),StringFormat.GenericDefault);
+        using(Brush brush=new SolidBrush(PlaylistStyle.Text))e.Graphics.DrawString(content,Font,brush,new RectangleF(pad,pad,Width-pad*2,Height-pad*2),StringFormat.GenericDefault);
     }
 }
 '@ + "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'shortcut-key-names.cs'), $utf8)) -ReferencedAssemblies System.Windows.Forms,System.Drawing
@@ -652,47 +745,66 @@ public sealed class PlaylistTip : Form {
     $form.FormBorderStyle = 'Sizable'
     $form.MinimizeBox = $false
     $form.MaximizeBox = $false
-    $form.ShowIcon = $true
-    $iconBitmap = New-Object Drawing.Bitmap(16, 16)
-    $iconGraphics = [Drawing.Graphics]::FromImage($iconBitmap)
-    $iconPen = New-Object Drawing.Pen([Drawing.Color]::FromArgb(18,135,187), 1.5)
-    try { $iconGraphics.DrawRectangle($iconPen, 2,2,8,8); $iconGraphics.DrawRectangle($iconPen, 6,6,8,8); $nativeIcon = $iconBitmap.GetHicon(); $sidebarIcon = [Drawing.Icon]::FromHandle($nativeIcon).Clone(); $form.Icon = $sidebarIcon }
-    finally { $iconPen.Dispose(); $iconGraphics.Dispose(); $iconBitmap.Dispose(); if ($nativeIcon) { [void][PlaylistNative]::DestroyIcon($nativeIcon) } }
+    $form.ShowIcon = $false
 
     $form.StartPosition = 'Manual'
     $form.ClientSize = New-Object Drawing.Size(340, 420)
-    $form.BackColor = [Drawing.Color]::FromArgb(17, 17, 17)
-    $form.ForeColor = [Drawing.Color]::FromArgb(230, 232, 237)
-    $mainFont = New-Object Drawing.Font('Segoe UI', 9)
+    if ($ValidateOnly -and $payload.client_width) { $form.ClientSize = New-Object Drawing.Size(([Math]::Max(220,[int]$payload.client_width)),420) }
+    $form.BackColor = [PlaylistStyle]::Background
+    $form.ForeColor = [PlaylistStyle]::Text
+    $mainFont = New-Object Drawing.Font('Microsoft YaHei UI', 10.5)
     $form.Font = $mainFont
     $form.KeyPreview = $true
     $form.AutoScaleMode = 'Dpi'
     $form.AutoScaleDimensions = New-Object Drawing.SizeF(96, 96)
+    $caption = New-Object Windows.Forms.Panel
+    $caption.Dock = 'Top'
+    $caption.Height = 36
+    $caption.BackColor = $form.BackColor
+    $captionLabel = New-Object Windows.Forms.Label
+    $captionLabel.Text = '播放列表'
+    $captionLabel.Dock = 'Fill'
+    $captionLabel.Padding = New-Object Windows.Forms.Padding(16, 0, 0, 0)
+    $captionLabel.TextAlign = 'MiddleLeft'
+    $captionLabel.ForeColor = [PlaylistStyle]::Muted
+    $captionFont = New-Object Drawing.Font('Microsoft YaHei UI', 9)
+    $captionLabel.Font = $captionFont
+    $closeButton = New-Object PlaylistCloseButton
+    $closeButton.Dock = 'Right'
+    $closeButton.Add_Click({ $form.Close() })
+    $caption.Controls.Add($captionLabel)
+    $caption.Controls.Add($closeButton)
+    $form.CaptionPanel = $caption
+    $form.CaptionLabel = $captionLabel
+    $form.CloseButton = $closeButton
     $filter = New-Object Windows.Forms.TextBox
     $footer = New-Object PlaylistFooter
     $footer.Editor = $filter
     $footer.Dock = 'Bottom'
-    $footer.Height = 34
+    $footer.Height = 36
     $footer.Padding = New-Object Windows.Forms.Padding(8, 5, 8, 5)
-    $footer.BackColor = [Drawing.Color]::FromArgb(13, 13, 13)
+    $footer.BackColor = $form.BackColor
+    $form.FooterPanel = $footer
     $filter.Dock = 'Fill'
     $filter.Visible = $false
-    $filter.BackColor = [Drawing.Color]::FromArgb(27, 27, 27)
+    $filter.BackColor = [PlaylistStyle]::Surface
     $filter.ForeColor = $form.ForeColor
     $filter.BorderStyle = 'FixedSingle'
-    $counter = New-Object Windows.Forms.Button
+    $filter.AccessibleName = '搜索播放列表'
+    $counter = New-Object PlaylistCounterButton
     $counter.Dock = 'Fill'
     $counter.TextAlign = 'MiddleCenter'
-    $counter.ForeColor = [Drawing.Color]::FromArgb(155, 163, 177)
+    $counter.ForeColor = [PlaylistStyle]::Muted
     $counter.BackColor = $footer.BackColor
     $counter.FlatStyle = 'Flat'
     $counter.FlatAppearance.BorderSize = 0
-    $counter.FlatAppearance.MouseOverBackColor = [Drawing.Color]::FromArgb(27, 27, 27)
-    $counter.FlatAppearance.MouseDownBackColor = [Drawing.Color]::FromArgb(38, 38, 38)
+    $counter.FlatAppearance.MouseOverBackColor = [PlaylistStyle]::Hover
+    $counter.FlatAppearance.MouseDownBackColor = [PlaylistStyle]::Selected
     $counter.Cursor = [Windows.Forms.Cursors]::Hand
-    $counter.AccessibleName = 'Locate current'
+    $counter.AccessibleName = [PlaylistStyle]::Locate
     $counter.TabStop = $false
     $list = New-Object PlaylistList
+    $list.AccessibleName = '播放列表'
     $list.Dock = 'Fill'
     $list.View = 'Details'
     $list.FullRowSelect = $true
@@ -719,6 +831,7 @@ public sealed class PlaylistTip : Form {
     $footer.Controls.Add($filter)
     $footer.Controls.Add($counter)
     $form.Controls.Add($footer)
+    $form.Controls.Add($caption)
     $tip = New-Object PlaylistTip($form.Font)
     $keyFilter = New-Object PlaylistKeys($form)
     $keyFilter.add_Transmit({
@@ -728,26 +841,40 @@ public sealed class PlaylistTip : Form {
     $form.Add_VisibleChanged({ if (-not $form.Visible) { if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } } })
     $form.Add_Deactivate({ if ($keyFilter) { $keyFilter.ReleaseAll() }; if ($tip) { $tip.Hide() } })
     $counter.Add_Click({ $tip.Hide(); Send-Action 'locate' })
-    $counter.Add_MouseEnter({ $tip.ShowContent('Locate current', $counter, (New-Object Drawing.Point(12, ($counter.Height + 4)))) })
+    $counter.Add_MouseEnter({ $tip.ShowContent([PlaylistStyle]::Locate, $counter, (New-Object Drawing.Point(12, ($counter.Height + 4)))) })
     $counter.Add_MouseLeave({ $tip.Hide() })
     $list.Add_DrawColumnHeader({ param($sender, $eventArgs) $eventArgs.DrawDefault = $true })
     $list.Add_DrawSubItem({
         param($sender, $eventArgs)
         $selected = $eventArgs.Item.Selected
         $current = $eventArgs.Item.Tag.index -eq $script:playlistPosition
-        $bg = if ($current) { [Drawing.Color]::FromArgb(12, 32, 42) } elseif ($selected) { [Drawing.Color]::FromArgb(38, 38, 38) } elseif ($eventArgs.Item.Tag.id -eq $script:hoverId) { [Drawing.Color]::FromArgb(27, 27, 27) } else { $form.BackColor }
-        $fg = if ($current) { [Drawing.Color]::FromArgb(18, 135, 187) } else { $form.ForeColor }
+        $bg = [PlaylistStyle]::RowBackground($current, $selected, ($eventArgs.Item.Tag.id -eq $script:hoverId))
+        $fg = $form.ForeColor
+        $scale = $eventArgs.Graphics.DpiX / 96.0
         $brush = New-Object Drawing.SolidBrush($bg)
         try { $eventArgs.Graphics.FillRectangle($brush, $eventArgs.Bounds) } finally { $brush.Dispose() }
         if ($current -and $eventArgs.ColumnIndex -eq 0) {
-            $bar = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(18, 135, 187))
-            try { $eventArgs.Graphics.FillRectangle($bar, $eventArgs.Bounds.Left, $eventArgs.Bounds.Top + 3, 3, [Math]::Max(1, $eventArgs.Bounds.Height - 6)) } finally { $bar.Dispose() }
+            $bar = New-Object Drawing.SolidBrush([PlaylistStyle]::Accent)
+            try { $eventArgs.Graphics.FillRectangle($bar, $eventArgs.Bounds.Left, [single]($eventArgs.Bounds.Top + 6*$scale), [single](3*$scale), [single][Math]::Max(1, $eventArgs.Bounds.Height - 12*$scale)) } finally { $bar.Dispose() }
         }
         [Windows.Forms.TextRenderer]::DrawText($eventArgs.Graphics, $eventArgs.SubItem.Text, $form.Font,
             $eventArgs.Bounds, $fg, ([Windows.Forms.TextFormatFlags]::Left -bor [Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::EndEllipsis -bor [Windows.Forms.TextFormatFlags]::NoPrefix))
+        # The current row keeps its marker even when selected. A separate
+        # outline shows selection there; keyboard focus has its own dotted cue.
+        if ($eventArgs.ColumnIndex -eq 1 -and (($current -and $selected) -or ($list.Focused -and $eventArgs.Item.Focused))) {
+            $focused = $list.Focused -and $eventArgs.Item.Focused
+            $color = if ($focused) { [PlaylistStyle]::Accent } else { [PlaylistStyle]::Muted }
+            $pen = New-Object Drawing.Pen($color, [single][Math]::Max(1, $scale))
+            if ($focused) { $pen.DashStyle = 'Dot' }
+            $bounds = $eventArgs.Item.Bounds
+            $inset = [int][Math]::Ceiling(2*$scale)
+            try { $eventArgs.Graphics.DrawRectangle($pen, $bounds.Left+$inset, $bounds.Top+$inset,
+                [Math]::Max(1, [Math]::Min($bounds.Width, $list.ClientSize.Width)-2*$inset-1), [Math]::Max(1,$bounds.Height-2*$inset-1)) }
+            finally { $pen.Dispose() }
+        }
         if ($eventArgs.Item.Tag.id -eq $script:dropTargetId) {
             # Native InsertionMark is unreliable in Details view; draw the same cue.
-            $pen = New-Object Drawing.Pen([Drawing.Color]::FromArgb(18, 135, 187), 2)
+            $pen = New-Object Drawing.Pen([PlaylistStyle]::Accent, [single](2*$scale))
             $y = if ($script:dropAfter) { $eventArgs.Bounds.Bottom - 1 } else { $eventArgs.Bounds.Top }
             try { $eventArgs.Graphics.DrawLine($pen, $eventArgs.Bounds.Left, $y, $eventArgs.Bounds.Right, $y) }
             finally { $pen.Dispose() }
@@ -839,8 +966,9 @@ public sealed class PlaylistTip : Form {
         if (-not $script:exiting) { $eventArgs.Cancel = $true; Hide-Window }
     })
     [void]$form.Handle
+    $form.ApplyPresentationDpi()
     try { $dark = 1; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 20, [ref]$dark, 4) } catch {}
-    try { $caption = 0x111111; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 35, [ref]$caption, 4) } catch {}
+    try { $borderColor = 0x151515; [void][PlaylistNative]::DwmSetWindowAttribute($form.Handle, 34, [ref]$borderColor, 4) } catch {}
 
     if ($ValidateOnly) {
         $foregroundBefore = [PlaylistNative]::GetForegroundWindow()
@@ -850,6 +978,8 @@ public sealed class PlaylistTip : Form {
         Render-Queue
         $form.PerformLayout()
         [void]$list.Handle
+        [Windows.Forms.Application]::DoEvents()
+        Render-Queue
         $rows = @($list.Items | ForEach-Object { @{id = $_.Tag.id; index = $_.Tag.index; label = $_.SubItems[1].Text; current = $_.Tag.index -eq $script:playlistPosition} })
         foreach ($item in $list.Items) { if ([string]$item.Tag.id -eq [string]$payload.selected_id) { $item.Selected = $true } }
         if ($payload.hover_id) { $script:hoverId = [string]$payload.hover_id }
@@ -883,6 +1013,7 @@ public sealed class PlaylistTip : Form {
         $tipText = if ($script:playlist.Count) { Tooltip-Text $script:playlist[0] } else { '' }
         $tipSize = [PlaylistTip]::Measure($tipText, $mainFont, 96)
         $painted = $false
+        $paintSamples = @{}
         if ($payload.paint_path) {
             $paintPath = [IO.Path]::GetFullPath([string]$payload.paint_path)
             if (-not $paintPath.StartsWith([IO.Path]::GetTempPath(), [StringComparison]::OrdinalIgnoreCase)) { throw 'paint-path' }
@@ -890,13 +1021,35 @@ public sealed class PlaylistTip : Form {
             try {
                 $form.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(0,0,$canvas.Width,$canvas.Height)))
                 $list.DrawToBitmap($canvas, $list.Bounds)
+                $scroll.DrawToBitmap($canvas, $scroll.Bounds)
                 $footer.DrawToBitmap($canvas, $footer.Bounds)
                 $counter.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($footer.Left + $counter.Left),($footer.Top + $counter.Top),$counter.Width,$counter.Height)))
+                $caption.DrawToBitmap($canvas, $caption.Bounds)
+                $captionLabel.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $captionLabel.Left),($caption.Top + $captionLabel.Top),$captionLabel.Width,$captionLabel.Height)))
+                $closeButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $closeButton.Left),($caption.Top + $closeButton.Top),$closeButton.Width,$closeButton.Height)))
+                foreach ($item in $list.Items) {
+                    $point = New-Object Drawing.Point(($list.Left + $list.Width - 20), ($list.Top + $item.Bounds.Top + [int]($item.Bounds.Height / 2)))
+                    if ($point.Y -ge $list.Top -and $point.Y -lt $list.Bottom) {
+                        $paintSamples[[string]$item.Tag.id] = $canvas.GetPixel($point.X,$point.Y).ToArgb()
+                    }
+                }
                 $canvas.Save($paintPath, [Drawing.Imaging.ImageFormat]::Png)
                 $painted = $true
             } finally { $canvas.Dispose() }
         }
+        $windowStyle = [PlaylistNative]::GetWindowLongPtr($form.Handle,-16).ToInt64()
+        $closeHidden = $null
+        if ($payload.click_close) {
+            $closeClick = $closeButton.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
+            [void]$closeClick.Invoke($closeButton, @([EventArgs]::Empty))
+            $closeHidden = -not $script:desiredVisible -and -not $form.Visible -and -not $form.IsDisposed
+        }
         $outputWriter.WriteLine((@{ok = $true; rows = $rows; count = $normalCount; shown = $form.Visible;
+            presentation = @{native_caption = ($windowStyle -band 0xC00000) -ne 0; sizing_frame = ($windowStyle -band 0x40000) -ne 0;
+                title = $captionLabel.Text; close_name = $closeButton.AccessibleName; close_hides = $closeHidden;
+                title_above_list = $caption.Bottom -le $list.Top; empty_text = $list.EmptyText; font = $form.Font.Name;
+                row_backgrounds = $paintSamples; caption_height = $caption.Height; client_width = $form.ClientSize.Width;
+                caption_bounds = $caption.Bounds.ToString(); title_bounds = $captionLabel.Bounds.ToString(); close_bounds = $closeButton.Bounds.ToString()};
             footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable -and $beforeFooterBounds -eq $searchFooterBounds -and $beforeFooterBounds -eq $restoredFooterBounds;
             layout_bounds = @{normal = $beforeBounds.ToString(); search = $searchBounds.ToString(); restored = $restoredBounds.ToString();
                 footer_normal = $beforeFooterBounds.ToString(); footer_search = $searchFooterBounds.ToString(); footer_restored = $restoredFooterBounds.ToString()};
@@ -1009,8 +1162,8 @@ public sealed class PlaylistTip : Form {
     if ($scroll) { $scroll.Dispose() }
     if ($pipe) { $pipe.Dispose() }
     if ($form) { $form.Dispose() }
-    if ($sidebarIcon) { $sidebarIcon.Dispose() }
     if ($mainFont) { $mainFont.Dispose() }
+    if ($captionFont) { $captionFont.Dispose() }
     if ($rowImages) { $rowImages.Dispose() }
     if ($rowBitmap) { $rowBitmap.Dispose() }
     if ($parentProcess) { $parentProcess.Dispose() }

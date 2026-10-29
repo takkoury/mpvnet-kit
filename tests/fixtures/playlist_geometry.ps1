@@ -35,4 +35,21 @@ $outer=Rect @(10,20,350,520);$empty=Rect @(0,0,0,0);$frame=Rect @(17,20,343,513)
 if ((Coordinates ([PlaylistNative]::VisibleBounds($outer,$frame,$false))) -ne (Coordinates $outer)) {throw 'DWM failure fallback'}
 if ((Coordinates ([PlaylistNative]::VisibleBounds($outer,$empty,$true))) -ne (Coordinates $outer)) {throw 'DWM invalid fallback'}
 if ((Coordinates ([PlaylistNative]::VisibleBounds($outer,$frame,$true))) -ne (Coordinates $frame)) {throw 'DWM success'}
-@{cases=$cases.Count;fallback=$true} | ConvertTo-Json -Compress
+# Native hit testing on a hidden handle: verify the real sizing frame, not
+# just a style bit. This does not show or activate a desktop window.
+$window=New-Object PlaylistForm
+try {
+    $window.FormBorderStyle='Sizable';$window.MinimizeBox=$false;$window.MaximizeBox=$false
+    $window.StartPosition='Manual';$window.Location=New-Object Drawing.Point(-600,100)
+    $window.Size=New-Object Drawing.Size(340,420)
+    $rect=New-Object PlaylistNative+Rect
+    [void][PlaylistNative]::GetWindowRect($window.Handle,[ref]$rect)
+    $hitCases=@(@(($rect.Left+1),($rect.Top+180),10),@(($rect.Right-2),($rect.Top+180),11),@(($rect.Left+100),($rect.Top+1),1))
+    foreach($c in $hitCases) {
+        $packed=([long]($c[0] -band 0xffff)) -bor (([long]($c[1] -band 0xffff)) -shl 16)
+        $hit=[PlaylistNative]::SendMessage($window.Handle,0x84,[IntPtr]::Zero,[IntPtr]$packed).ToInt32()
+        if ($hit -ne $c[2]) {throw "sidebar hit expected $($c[2]) got $hit"}
+    }
+    if ($window.Visible) {throw 'hidden hit test showed a window'}
+} finally {$window.Dispose()}
+@{cases=$cases.Count;fallback=$true;native_hits=$hitCases.Count} | ConvertTo-Json -Compress

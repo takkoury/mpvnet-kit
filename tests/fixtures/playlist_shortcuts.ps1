@@ -25,5 +25,13 @@ try {
     $cases=@(@(75,0,'k'),@(75,131072,'Ctrl+k'),@(77,65536,'M'),@(77,196608,'Ctrl+Shift+m'),@(117,0,'F6'),@(188,196608,'Ctrl+<'),@(9,0,'Tab'))
     foreach($c in $cases) { if ([PlaylistKeys]::Canonical($c[0],[Windows.Forms.Keys]$c[1]) -cne $c[2]) {throw 'canonical key mismatch'} }
     foreach($vk in @(27,38,40,46)) {if ($null -ne [PlaylistKeys]::Canonical($vk,[Windows.Forms.Keys]0)) {throw 'local key stolen'}}
+    $captionButton=New-Object PlaylistCloseButton
+    try {
+        foreach($vk in @(13,32)) {
+            if (-not [PlaylistKeys]::IsCaptionActivation($captionButton,$vk,[Windows.Forms.Keys]0)) {throw 'caption activation forwarded'}
+            if ([PlaylistKeys]::IsCaptionActivation($form,$vk,[Windows.Forms.Keys]0)) {throw 'player activation blocked'}
+            if ([PlaylistKeys]::IsCaptionActivation($captionButton,$vk,[Windows.Forms.Keys]131072)) {throw 'modified key blocked'}
+        }
+    } finally { $captionButton.Dispose() }
     '{"ok":true,"map_replace":true,"unchanged_hold":true,"empty_map":true,"key_cases":7,"local_keys_preserved":true}'
 } finally { $filter.Dispose();$form.Dispose() }
