@@ -391,7 +391,7 @@ public sealed class PlaylistList : ListView {
         PlaylistNative.SendMessage(Handle,0x1036,new IntPtr(0x10000),new IntPtr(0x10000));
         if (SmallImageList != null) {
             uint dpi=PlaylistNative.GetDpiForWindow(Handle);if(dpi==0)dpi=96;
-            SmallImageList.ImageSize=new Size(1,(int)Math.Round(42*dpi/96.0));
+            SmallImageList.ImageSize=new Size(1,(int)Math.Round(34*dpi/96.0));
             if(Columns.Count>0)Columns[0].Width=(int)Math.Round(44*dpi/96.0);
         }
         // Initial rendering can precede handle creation. Resolve the native
@@ -977,8 +977,8 @@ public sealed class PlaylistTip : Form {
     [void]$list.Columns.Add('', 44)
     [void]$list.Columns.Add('Title', 270)
     $rowImages = New-Object Windows.Forms.ImageList
-    $rowImages.ImageSize = New-Object Drawing.Size(1, 42)
-    $rowBitmap = New-Object Drawing.Bitmap(1, 42)
+    $rowImages.ImageSize = New-Object Drawing.Size(1, 34)
+    $rowBitmap = New-Object Drawing.Bitmap(1, 34)
     $rowImages.Images.Add($rowBitmap)
     $list.SmallImageList = $rowImages
     $scroll = New-Object PlaylistScroll($list)
