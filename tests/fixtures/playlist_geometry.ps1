@@ -8,6 +8,15 @@ $code=[regex]::Match($source,"(?s)Add-Type -TypeDefinition \(?@'\r?\n(.*?)\r?\n'
 if (-not $code) {throw 'missing production C#'}
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 $code += "`n" + [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $SourcePath) 'shortcut-key-names.cs'))
+$code += @'
+public sealed class PlaylistFrameProbe : PlaylistForm {
+    public int DefaultFramePaints;
+    protected override void DefWndProc(ref System.Windows.Forms.Message m) {
+        if(m.Msg==0x85 || m.Msg==0x86)DefaultFramePaints++;
+        base.DefWndProc(ref m);
+    }
+}
+'@
 Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms,System.Drawing
 function Rect([int[]]$coordinates) {
     $r=New-Object PlaylistNative+Rect
@@ -37,13 +46,20 @@ if ((Coordinates ([PlaylistNative]::VisibleBounds($outer,$empty,$true))) -ne (Co
 if ((Coordinates ([PlaylistNative]::VisibleBounds($outer,$frame,$true))) -ne (Coordinates $frame)) {throw 'DWM success'}
 # Native hit testing on a hidden handle: verify the real sizing frame, not
 # just a style bit. This does not show or activate a desktop window.
-$window=New-Object PlaylistForm
+$window=New-Object PlaylistFrameProbe
 try {
     $window.FormBorderStyle='Sizable';$window.MinimizeBox=$false;$window.MaximizeBox=$false
     $window.StartPosition='Manual';$window.Location=New-Object Drawing.Point(-600,100)
     $window.Size=New-Object Drawing.Size(340,420)
     $rect=New-Object PlaylistNative+Rect
     [void][PlaylistNative]::GetWindowRect($window.Handle,[ref]$rect)
+    $window.DefaultFramePaints=0
+    foreach($active in @(1,0,1)) {
+        $result=[PlaylistNative]::SendMessage($window.Handle,0x86,[IntPtr]$active,[IntPtr]::Zero)
+        if($result.ToInt32() -ne 1){throw 'nonclient activation not acknowledged'}
+        [void][PlaylistNative]::SendMessage($window.Handle,0x85,[IntPtr]1,[IntPtr]::Zero)
+    }
+    if($window.DefaultFramePaints -ne 0){throw 'activation reached system caption painting'}
     $origin=$window.PointToScreen([Drawing.Point]::Empty)
     if ($origin.X -ne $rect.Left -or $origin.Y -ne $rect.Top -or
         $window.ClientSize.Width -ne ($rect.Right-$rect.Left) -or $window.ClientSize.Height -ne ($rect.Bottom-$rect.Top)) {
@@ -57,4 +73,4 @@ try {
     }
     if ($window.Visible) {throw 'hidden hit test showed a window'}
 } finally {$window.Dispose()}
-@{cases=$cases.Count;fallback=$true;native_hits=$hitCases.Count} | ConvertTo-Json -Compress
+@{cases=$cases.Count;fallback=$true;native_hits=$hitCases.Count;activation_no_system_paint=$true} | ConvertTo-Json -Compress

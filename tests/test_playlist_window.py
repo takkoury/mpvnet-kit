@@ -41,6 +41,7 @@ class PlaylistWindow(unittest.TestCase):
         self.assertEqual(data['cases'], 10)
         self.assertTrue(data['fallback'])
         self.assertEqual(data['native_hits'], 3)
+        self.assertTrue(data['activation_no_system_paint'])
 
     def test_hover_waits_expires_tracks_pointer_and_cancels_on_native_scroll(self):
         data = self.run_fixture('playlist_hover.ps1')
@@ -151,8 +152,9 @@ class PlaylistWindow(unittest.TestCase):
         data = self.run_helper({'playlist': entries, 'position': 0, 'search_probe': True})
         view = data['presentation']
         self.assertTrue(view['search_not_overlapping'])
+        self.assertTrue(view['search_in_footer'])
         self.assertEqual(view['search_name'], '搜索播放列表（Ctrl+F）')
-        self.assertEqual(view['search_toggle'], {'opened': True, 'closed': True, 'filtered': 1, 'rows_restored': 2})
+        self.assertEqual(view['search_toggle'], {'opened': True, 'closed': True, 'filtered': 1, 'rows_restored': 2, 'controls_separate': True})
         self.assertLess(view['counter_width'], view['footer_width'] / 2)
         self.assertEqual(data['actions'], [])
 
@@ -163,6 +165,17 @@ class PlaylistWindow(unittest.TestCase):
         self.assertTrue(data['painted'])
         colors = data['presentation']['row_backgrounds']
         self.assertEqual(len({colors[str(i)] for i in range(1, 5)}), 4, colors)
+        self.assertEqual(data['actions'], [])
+
+    def test_narrow_search_footer_keeps_input_between_button_and_count(self):
+        data = self.run_helper({'playlist': [{'id': 1, 'filename': 'X:/one.mkv'}],
+            'position': 0, 'filter': 'one', 'client_width': 220,
+            'paint_path': str(self.output / 'search.png')})
+        view = data['presentation']
+        self.assertTrue(view['search_in_footer'])
+        self.assertTrue(view['search_controls_separate'])
+        self.assertGreater(view['search_field_width'], 36)
+        self.assertTrue(data['footer_bounds_stable'])
         self.assertEqual(data['actions'], [])
 
 

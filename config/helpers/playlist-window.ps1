@@ -290,7 +290,7 @@ public class PlaylistForm : Form {
     public PlaylistFollower Follower;
     public Panel CaptionPanel, FooterPanel;
     public Label CaptionLabel;
-    public Button CloseButton, SearchButton;
+    public Button CloseButton;
     public void ApplyPresentationDpi() {
         if (!IsHandleCreated) return;
         uint dpi=PlaylistNative.GetDpiForWindow(Handle); if(dpi==0)dpi=96;
@@ -301,7 +301,6 @@ public class PlaylistForm : Form {
             FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(5*scale),(int)Math.Round(8*scale),(int)Math.Round(5*scale));
         }
         if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
-        if(SearchButton!=null)SearchButton.Width=(int)Math.Round(36*scale);
         if(CaptionLabel!=null)CaptionLabel.Padding=new Padding((int)Math.Round(16*scale),0,0,0);
     }
     protected override void OnHandleCreated(EventArgs e) {base.OnHandleCreated(e);ApplyPresentationDpi();}
@@ -312,6 +311,11 @@ public class PlaylistForm : Form {
     }
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override void WndProc(ref Message m) {
+        // The client owns every pixel of this frame. DefWindowProc otherwise
+        // draws a classic caption/border on activation, over the custom chrome.
+        // WM_ACTIVATE still follows the normal Form path below.
+        if (m.Msg == 0x85) { m.Result=IntPtr.Zero;return; } // WM_NCPAINT
+        if (m.Msg == 0x86) { m.Result=new IntPtr(1);return; } // WM_NCACTIVATE
         if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result=IntPtr.Zero;return; }
         if (m.Msg == 0x84) {
             PlaylistNative.Rect bounds; PlaylistNative.GetWindowRect(Handle,out bounds);
@@ -505,7 +509,7 @@ public sealed class PlaylistScroll : Control {
 }
 public sealed class PlaylistFooter : Panel {
     public TextBox Editor;
-    public Button Counter;
+    public Button Counter, Search;
     public bool Searching;
     protected override void OnLayout(LayoutEventArgs args) {
         base.OnLayout(args);
@@ -515,10 +519,16 @@ public sealed class PlaylistFooter : Panel {
         }
         if(Counter!=null) {
             float scale=DeviceDpi/96f;
+            int gap=(int)Math.Round(8*scale);
+            int editorLeft=Padding.Left;
+            if(Search!=null) {
+                Search.SetBounds(Padding.Left,Padding.Top,(int)Math.Round(32*scale),Math.Max(1,ClientSize.Height-Padding.Vertical));
+                editorLeft=Search.Right+gap;
+            }
             int width=Math.Min(Math.Max(1,ClientSize.Width-Padding.Horizontal),TextRenderer.MeasureText(Counter.Text,Counter.Font).Width+(int)Math.Round(20*scale));
             int x=Searching ? ClientSize.Width-Padding.Right-width : (ClientSize.Width-width)/2;
             Counter.SetBounds(x,Padding.Top,width,Math.Max(1,ClientSize.Height-Padding.Vertical));
-            if(Editor!=null) Editor.SetBounds(Padding.Left,Padding.Top,Math.Max(1,x-Padding.Left-(int)Math.Round(8*scale)),Editor.PreferredHeight);
+            if(Editor!=null) Editor.SetBounds(editorLeft,(ClientSize.Height-Editor.PreferredHeight)/2,Math.Max(1,x-editorLeft-gap),Editor.PreferredHeight);
         }
     }
 }
@@ -856,19 +866,18 @@ public sealed class PlaylistTip : Form {
     $searchButton = New-Object PlaylistCloseButton
     $searchButton.SearchIcon = $true
     $searchButton.AccessibleName = '搜索播放列表（Ctrl+F）'
-    $searchButton.Dock = 'Right'
+    $searchButton.Dock = 'None'
     $searchButton.Width = 36
     $searchButton.Add_Click({ Set-SearchMode (-not $script:searching); if ($script:searching) { $filter.SelectAll() } })
     $caption.Controls.Add($captionLabel)
-    $caption.Controls.Add($searchButton)
     $caption.Controls.Add($closeButton)
     $form.CaptionPanel = $caption
     $form.CaptionLabel = $captionLabel
     $form.CloseButton = $closeButton
-    $form.SearchButton = $searchButton
     $filter = New-Object Windows.Forms.TextBox
     $footer = New-Object PlaylistFooter
     $footer.Editor = $filter
+    $footer.Search = $searchButton
     $footer.Dock = 'Bottom'
     $footer.Height = 36
     $footer.Padding = New-Object Windows.Forms.Padding(8, 5, 8, 5)
@@ -921,6 +930,7 @@ public sealed class PlaylistTip : Form {
     $form.Controls.Add($scroll)
     $footer.Controls.Add($filter)
     $footer.Controls.Add($counter)
+    $footer.Controls.Add($searchButton)
     $form.Controls.Add($footer)
     $form.Controls.Add($caption)
     $tip = New-Object PlaylistTip($form.Font)
@@ -934,7 +944,7 @@ public sealed class PlaylistTip : Form {
     $counter.Add_Click({ $tip.Cancel(); Send-Action 'locate' })
     $counter.Add_MouseMove({ param($sender,$eventArgs) if ($counter.Enabled) { $tip.Schedule([PlaylistStyle]::Locate,$counter,$eventArgs.Location,$true) } })
     $counter.Add_MouseLeave({ $tip.Cancel() })
-    $searchButton.Add_MouseMove({ param($sender,$eventArgs) $tip.Schedule($searchButton.AccessibleName,$searchButton,$eventArgs.Location,$false) })
+    $searchButton.Add_MouseMove({ param($sender,$eventArgs) $tip.Schedule($searchButton.AccessibleName,$searchButton,$eventArgs.Location,$true) })
     $searchButton.Add_MouseLeave({ $tip.Cancel() })
     $form.Add_LocationChanged({ if ($tip) { $tip.Cancel() } })
     $form.Add_Resize({ if ($tip) { $tip.Cancel() } })
@@ -1101,6 +1111,7 @@ public sealed class PlaylistTip : Form {
             $searchClick = $searchButton.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'Instance,NonPublic')
             [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
             $searchProbe.opened = $script:searching -and $searchButton.Active -and $footer.Searching
+            $searchProbe.controls_separate = $searchButton.Right -le $filter.Left -and $filter.Right -le $counter.Left
             $filter.Text = 'one'
             $searchProbe.filtered = $list.Items.Count
             [void]$searchClick.Invoke($searchButton,@([EventArgs]::Empty))
@@ -1134,10 +1145,11 @@ public sealed class PlaylistTip : Form {
                 $scroll.DrawToBitmap($canvas, $scroll.Bounds)
                 $footer.DrawToBitmap($canvas, $footer.Bounds)
                 $counter.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($footer.Left + $counter.Left),($footer.Top + $counter.Top),$counter.Width,$counter.Height)))
+                if ($script:searching) { $filter.DrawToBitmap($canvas,(New-Object Drawing.Rectangle(($footer.Left+$filter.Left),($footer.Top+$filter.Top),$filter.Width,$filter.Height))) }
                 $caption.DrawToBitmap($canvas, $caption.Bounds)
                 $captionLabel.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $captionLabel.Left),($caption.Top + $captionLabel.Top),$captionLabel.Width,$captionLabel.Height)))
                 $closeButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $closeButton.Left),($caption.Top + $closeButton.Top),$closeButton.Width,$closeButton.Height)))
-                $searchButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($caption.Left + $searchButton.Left),($caption.Top + $searchButton.Top),$searchButton.Width,$searchButton.Height)))
+                $searchButton.DrawToBitmap($canvas, (New-Object Drawing.Rectangle(($footer.Left + $searchButton.Left),($footer.Top + $searchButton.Top),$searchButton.Width,$searchButton.Height)))
                 foreach ($item in $list.Items) {
                     $point = New-Object Drawing.Point(($list.Left + $list.Width - 20), ($list.Top + $item.Bounds.Top + [int]($item.Bounds.Height / 2)))
                     if ($point.Y -ge $list.Top -and $point.Y -lt $list.Bottom) {
@@ -1161,7 +1173,9 @@ public sealed class PlaylistTip : Form {
                 title_above_list = $caption.Bottom -le $list.Top; empty_text = $list.EmptyText; font = $form.Font.Name;
                 row_backgrounds = $paintSamples; caption_height = $caption.Height; client_width = $form.ClientSize.Width;
                 caption_bounds = $caption.Bounds.ToString(); title_bounds = $captionLabel.Bounds.ToString(); close_bounds = $closeButton.Bounds.ToString();
-                search_name = $searchButton.AccessibleName; search_not_overlapping = $captionLabel.Right -le $searchButton.Left -and $searchButton.Right -le $closeButton.Left;
+                search_name = $searchButton.AccessibleName; search_not_overlapping = $searchButton.Right -le $counter.Left;
+                search_in_footer = $searchButton.Parent -eq $footer; search_bounds = $searchButton.Bounds.ToString();
+                search_field_width = $filter.Width; search_controls_separate = -not $script:searching -or ($searchButton.Right -le $filter.Left -and $filter.Right -le $counter.Left);
                 search_toggle = $searchProbe; counter_width = $counter.Width; footer_width = $footer.ClientSize.Width};
             footer_bounds_stable = $searchBoundsStable -and $restoredBoundsStable -and $beforeFooterBounds -eq $searchFooterBounds -and $beforeFooterBounds -eq $restoredFooterBounds;
             layout_bounds = @{normal = $beforeBounds.ToString(); search = $searchBounds.ToString(); restored = $restoredBounds.ToString();
