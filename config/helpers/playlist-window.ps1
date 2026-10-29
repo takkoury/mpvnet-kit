@@ -231,6 +231,8 @@ using System.Drawing;
 // IPC and follower geometry remain owned by the existing controller.
 public static class PlaylistStyle {
     public static readonly Color Background = ColorTranslator.FromHtml("#111111");
+    public static readonly Color Chrome = ColorTranslator.FromHtml("#171717");
+    public static readonly Color Divider = ColorTranslator.FromHtml("#2B2B2B");
     public static readonly Color Text = ColorTranslator.FromHtml("#DEDFE0");
     public static readonly Color Number = ColorTranslator.FromHtml("#919CA2");
     public static readonly Color Muted = ColorTranslator.FromHtml("#ABABAB");
@@ -248,7 +250,7 @@ public class PlaylistCloseButton : Button {
     public bool SearchIcon, Active;
     bool hover, pressed;
     public PlaylistCloseButton() {
-        Text=""; AccessibleName="关闭播放列表"; Width=44; Height=36;
+        Text=""; AccessibleName="关闭播放列表"; Width=44; Height=32;
         FlatStyle=FlatStyle.Flat; FlatAppearance.BorderSize=0;
         TabStop=true; SetStyle(ControlStyles.ResizeRedraw,true);
     }
@@ -259,7 +261,7 @@ public class PlaylistCloseButton : Button {
     protected override void OnGotFocus(EventArgs e) {base.OnGotFocus(e);Invalidate();}
     protected override void OnLostFocus(EventArgs e) {base.OnLostFocus(e);Invalidate();}
     protected override void OnPaint(PaintEventArgs e) {
-        e.Graphics.Clear(pressed ? (SearchIcon ? PlaylistStyle.Selected : ColorTranslator.FromHtml("#B53242")) : hover ? (SearchIcon ? PlaylistStyle.Hover : ColorTranslator.FromHtml("#8F2633")) : PlaylistStyle.Background);
+        e.Graphics.Clear(pressed ? (SearchIcon ? PlaylistStyle.Selected : ColorTranslator.FromHtml("#B53242")) : hover ? (SearchIcon ? PlaylistStyle.Hover : ColorTranslator.FromHtml("#8F2633")) : BackColor);
         float scale=e.Graphics.DpiX/96f, half=5*scale;
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         using(var pen=new Pen(Active ? PlaylistStyle.Accent : PlaylistStyle.Text,Math.Max(1,scale))) {
@@ -309,10 +311,13 @@ public class PlaylistForm : Form {
         if (!IsHandleCreated) return;
         uint dpi=PlaylistNative.GetDpiForWindow(Handle); if(dpi==0)dpi=96;
         float scale=dpi/96f;
-        if(CaptionPanel!=null)CaptionPanel.Height=(int)Math.Round(36*scale);
+        if(CaptionPanel!=null) {
+            CaptionPanel.Height=(int)Math.Round(32*scale);
+            CaptionPanel.Padding=new Padding(0,0,0,Math.Max(1,(int)Math.Round(scale)));
+        }
         if(FooterPanel!=null) {
-            FooterPanel.Height=(int)Math.Round(40*scale);
-            FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(5*scale),(int)Math.Round(8*scale),(int)Math.Round(5*scale));
+            FooterPanel.Height=(int)Math.Round(32*scale);
+            FooterPanel.Padding=new Padding((int)Math.Round(8*scale),(int)Math.Round(3*scale),(int)Math.Round(8*scale),(int)Math.Round(3*scale));
         }
         if(CloseButton!=null)CloseButton.Width=(int)Math.Round(44*scale);
         if(CaptionLabel!=null)CaptionLabel.Padding=new Padding((int)Math.Round(16*scale),0,0,0);
@@ -525,7 +530,18 @@ public sealed class PlaylistScroll : Control {
     }
     protected override void Dispose(bool disposing) {if(disposing)list.ViewportChanged-=SyncViewport;base.Dispose(disposing);}
 }
-public sealed class PlaylistFooter : Panel {
+public class PlaylistBar : Panel {
+    public bool SeparatorAtTop;
+    public PlaylistBar() {DoubleBuffered=true;SetStyle(ControlStyles.ResizeRedraw,true);}
+    protected override void OnPaint(PaintEventArgs e) {
+        base.OnPaint(e);
+        int line=Math.Max(1,(int)Math.Round(e.Graphics.DpiY/96f));
+        using(var brush=new SolidBrush(PlaylistStyle.Divider))
+            e.Graphics.FillRectangle(brush,0,SeparatorAtTop ? 0 : Height-line,Width,line);
+    }
+}
+public sealed class PlaylistFooter : PlaylistBar {
+    public PlaylistFooter() {SeparatorAtTop=true;}
     public TextBox Editor;
     public Button Counter, Search;
     public bool Searching;
@@ -869,10 +885,10 @@ public sealed class PlaylistTip : Form {
     $form.KeyPreview = $true
     $form.AutoScaleMode = 'Dpi'
     $form.AutoScaleDimensions = New-Object Drawing.SizeF(96, 96)
-    $caption = New-Object Windows.Forms.Panel
+    $caption = New-Object PlaylistBar
     $caption.Dock = 'Top'
-    $caption.Height = 36
-    $caption.BackColor = $form.BackColor
+    $caption.Height = 32
+    $caption.BackColor = [PlaylistStyle]::Chrome
     $captionLabel = New-Object Windows.Forms.Label
     $captionLabel.Text = '播放列表'
     $captionLabel.Dock = 'Fill'
@@ -882,9 +898,11 @@ public sealed class PlaylistTip : Form {
     $captionFont = New-Object Drawing.Font('Microsoft YaHei UI', 9)
     $captionLabel.Font = $captionFont
     $closeButton = New-Object PlaylistCloseButton
+    $closeButton.BackColor = [PlaylistStyle]::Chrome
     $closeButton.Dock = 'Right'
     $closeButton.Add_Click({ $form.Close() })
     $searchButton = New-Object PlaylistCloseButton
+    $searchButton.BackColor = [PlaylistStyle]::Chrome
     $searchButton.SearchIcon = $true
     $searchButton.AccessibleName = '搜索播放列表（Ctrl+F）'
     $searchButton.Dock = 'None'
@@ -900,9 +918,9 @@ public sealed class PlaylistTip : Form {
     $footer.Editor = $filter
     $footer.Search = $searchButton
     $footer.Dock = 'Bottom'
-    $footer.Height = 40
-    $footer.Padding = New-Object Windows.Forms.Padding(8, 5, 8, 5)
-    $footer.BackColor = $form.BackColor
+    $footer.Height = 32
+    $footer.Padding = New-Object Windows.Forms.Padding(8, 3, 8, 3)
+    $footer.BackColor = [PlaylistStyle]::Chrome
     $footer.Font = $captionFont
     $form.FooterPanel = $footer
     $filter.Dock = 'None'
