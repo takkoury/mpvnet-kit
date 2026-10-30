@@ -7,9 +7,11 @@ using System.Windows.Forms;
 // Presentation only. The PowerShell installer owns maintenance plans and work.
 public class KitInstallerButton : Button
 {
-    bool primary, subtle, hover, pressed, keyboardPressed;
+    bool primary, subtle, disclosure, expanded, hover, pressed, keyboardPressed;
     public bool Primary { get { return primary; } set { primary = value; Invalidate(); } }
     public bool Subtle { get { return subtle; } set { subtle = value; Invalidate(); } }
+    public bool Disclosure { get { return disclosure; } set { disclosure = value; Invalidate(); } }
+    public bool Expanded { get { return expanded; } set { expanded = value; Invalidate(); } }
 
     public KitInstallerButton()
     {
@@ -36,6 +38,23 @@ public class KitInstallerButton : Button
         Color parentColor = Parent == null ? Color.FromArgb(21, 21, 21) : Parent.BackColor;
         bool understated = subtle && !primary;
         e.Graphics.Clear(parentColor);
+        if (disclosure) {
+            Color ink = !Enabled ? Color.FromArgb(136, 136, 136) : hover || pressed || keyboardPressed ? Color.FromArgb(238, 238, 238) : Color.FromArgb(170, 170, 170);
+            float x = 3 * scale, y = Height / 2f;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pen = new Pen(ink, Math.Max(1, scale))) {
+                var points = expanded
+                    ? new[] { new PointF(x, y - 2 * scale), new PointF(x + 3 * scale, y + scale), new PointF(x + 6 * scale, y - 2 * scale) }
+                    : new[] { new PointF(x, y - 3 * scale), new PointF(x + 3 * scale, y), new PointF(x, y + 3 * scale) };
+                e.Graphics.DrawLines(pen, points);
+            }
+            var textRect = new Rectangle((int)Math.Round(17 * scale), 0, Math.Max(1, Width - (int)Math.Round(19 * scale)), Height);
+            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ink,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.HidePrefix);
+            if (Focused && Enabled) using (var pen = new Pen(Color.FromArgb(18, 135, 187), Math.Max(1, scale)))
+                e.Graphics.DrawRectangle(pen, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+            return;
+        }
         Color fill = primary ? Color.FromArgb(18, 135, 187) : understated ? parentColor : BackColor;
         if (Enabled && (pressed || keyboardPressed)) fill = primary ? Color.FromArgb(13, 111, 157) : Color.FromArgb(64, 64, 64);
         else if (Enabled && hover && !primary) fill = Color.FromArgb(53, 53, 53);
@@ -257,7 +276,7 @@ public class KitInstallerForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         ContentHost = new Panel { Dock = DockStyle.Fill, BackColor = BackColor, Margin = Padding.Empty };
-        caption = new Panel { Dock = DockStyle.Top, Height = Pixels(36), BackColor = BackColor };
+        caption = new Panel { Dock = DockStyle.Top, Height = Pixels(36), BackColor = Color.FromArgb(28, 28, 28) };
         captionText = new Label { TextAlign = ContentAlignment.MiddleLeft, Font = captionFont,
             Padding = new Padding(Pixels(16), 0, 0, 0), ForeColor = Color.FromArgb(213, 213, 213), AutoEllipsis = true };
         minimize = new CaptionButton(this.scale, "\uE921", "最小化", false);
@@ -390,6 +409,7 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
 {
     readonly float factor;
     readonly string messageContents, detailsContents, detailsTitle;
+    readonly Font detailsFont;
     readonly Panel body;
     bool detailsExpanded;
     public KitInstallerButton ConfirmButton, CancelAction, DetailsButton;
@@ -403,6 +423,7 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
         messageContents = NormalizeLines(summary);
         detailsContents = NormalizeLines(details);
         this.detailsTitle = String.IsNullOrEmpty(detailsTitle) ? "查看详情" : detailsTitle;
+        detailsFont = new Font("Microsoft YaHei UI", 9);
         Text = caption ?? "确认操作"; MinimizeBox = false; MaximizeBox = false;
         FormBorderStyle = FormBorderStyle.FixedDialog; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
@@ -426,7 +447,7 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
             BorderStyle = BorderStyle.None, Text = messageContents, BackColor = BackColor,
             ForeColor = ForeColor, AccessibleName = "操作确认内容", ShortcutsEnabled = true, TabIndex = 0 };
         DetailsButton = new KitInstallerButton { Text = this.detailsTitle, AccessibleName = this.detailsTitle,
-            Subtle = true, Visible = detailsContents.Length > 0, Margin = Padding.Empty, TabIndex = 1 };
+            Subtle = true, Disclosure = true, Font = detailsFont, Visible = detailsContents.Length > 0, Margin = Padding.Empty, TabIndex = 1 };
         DetailsText = new KitInstallerTextBox { Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.None, Text = detailsContents, BackColor = BackColor, Visible = false,
             ForeColor = Color.FromArgb(190, 190, 190), AccessibleName = this.detailsTitle, ShortcutsEnabled = true, TabIndex = 2 };
@@ -448,8 +469,8 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
         if (detailsContents.Length == 0) return;
         detailsExpanded = !detailsExpanded;
         DetailsText.Visible = detailsExpanded;
-        DetailsButton.Text = detailsExpanded ? "收起详情" : detailsTitle;
-        DetailsButton.AccessibleName = DetailsButton.Text;
+        DetailsButton.Expanded = detailsExpanded;
+        DetailsButton.AccessibleName = (detailsExpanded ? "收起 " : "展开 ") + detailsTitle;
         Rectangle area = Screen.FromControl(Owner ?? this).WorkingArea;
         FitWorkingArea(area); LayoutBody();
         Location = new Point(Math.Max(area.Left, Math.Min(Left, area.Right - Width)), Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)));
@@ -469,7 +490,7 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
         }
         MessageText.SetBounds(body.Padding.Left, body.Padding.Top, width, summaryHeight);
         int y = MessageText.Bottom + gap;
-        int toggleWidth = Math.Min(width, TextRenderer.MeasureText(DetailsButton.Text, DetailsButton.Font).Width + (int)Math.Round(20 * factor));
+        int toggleWidth = Math.Min(width, TextRenderer.MeasureText(DetailsButton.Text, DetailsButton.Font).Width + (int)Math.Round(26 * factor));
         DetailsButton.SetBounds(body.Padding.Left + width - toggleWidth, y, toggleWidth, toggleHeight);
         int detailsTop = y + toggleHeight;
         DetailsText.SetBounds(body.Padding.Left, detailsTop, width, Math.Max(1, body.ClientSize.Height - body.Padding.Bottom - detailsTop));
@@ -499,5 +520,6 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
         base.OnLoad(e);
     }
     protected override void OnShown(EventArgs e) { base.OnShown(e); ActiveControl = CancelAction; CancelAction.Focus(); }
+    protected override void Dispose(bool disposing) { base.Dispose(disposing); if (disposing && detailsFont != null) detailsFont.Dispose(); }
     protected override void OnFormClosing(FormClosingEventArgs e) { if (DialogResult == DialogResult.None) DialogResult = DialogResult.Cancel; base.OnFormClosing(e); }
 }

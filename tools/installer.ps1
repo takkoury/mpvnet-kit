@@ -93,7 +93,7 @@ public static class MpvnetInstallerDpi {
     $frame.Controls.Add($scrollHost, 0, 0)
     $root = New-Layout $scrollHost 7
     $root.Padding = New-InstallerPadding 28 20 28 16
-    foreach($height in @(60,64,1,20,106,30)){Add-Row $root 'Absolute' $height}
+    foreach($height in @(60,76,1,20,106,30)){Add-Row $root 'Absolute' $height}
     Add-Row $root 'Percent' 100
     $playerHost = New-Object Windows.Forms.Panel
     $root.Controls.Add($playerHost, 0, 0); $playerHost.Dock = 'Fill'; $playerHost.Margin = New-InstallerPadding 0
@@ -110,15 +110,15 @@ public static class MpvnetInstallerDpi {
     $script:playerBrowse = New-Button '选择…(&B)' 86; $script:playerBrowse.Anchor = 'Right'; $script:playerBrowse.TabIndex = 1
     $script:playerBrowse.Margin = New-InstallerPadding 12 0 0 0; $playerLayout.Controls.Add($script:playerBrowse, 1, 1); $playerLayout.SetRowSpan($script:playerBrowse,2)
     $targetHost = New-Object Windows.Forms.Panel
-    $root.Controls.Add($targetHost, 0, 1); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 4 0 8
+    $root.Controls.Add($targetHost, 0, 1); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 8 0 12
     $targetHost.BackColor = $script:form.BackColor
     $targetLayout = New-Layout $targetHost 2
     Add-Row $targetLayout 'Absolute' 18; Add-Row $targetLayout 'Percent' 100
     $targetCaption = New-Label '配置目录'; $targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI',9); $targetCaption.ForeColor=$script:mutedColor
     $targetLayout.Controls.Add($targetCaption, 0, 0)
     $script:targetBox = New-ReadOnlyBox; $script:targetBox.Multiline = $true; $script:targetBox.WordWrap = $true; $script:targetBox.ScrollBars = 'Vertical'
-    $script:targetBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9.75)
-    $script:targetBox.ForeColor = $script:form.ForeColor; $script:targetBox.Text = ''
+    $script:targetBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
+    $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(188,188,188); $script:targetBox.Text = ''
     $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; $targetLayout.Controls.Add($script:targetBox, 0, 1)
     # Retain full diagnostics for the details text and snapshots, not extra rows.
     $script:sourceLabel = New-Label ''; $script:nextLabel = New-Label ''; $script:dependencyLabel = New-Label ''
@@ -135,7 +135,9 @@ public static class MpvnetInstallerDpi {
     $script:reasonLabel = New-Label '选择你正在使用的 mpvnet.exe。'
     $script:reasonLabel.ForeColor=$script:mutedColor;$script:reasonLabel.Font=New-Object Drawing.Font('Microsoft YaHei UI',9.75)
     $script:reasonLabel.AutoEllipsis = $false; $script:resultLayout.Controls.Add($script:reasonLabel, 0, 2)
-    $script:detailsButton = New-Button '查看详情(&D)' 120; $script:detailsButton.Subtle=$true; $script:detailsButton.Anchor = 'Left'; $script:detailsButton.Height = ConvertTo-InstallerPixels 28
+    $script:detailsButton = New-Button '查看详情' 92; $script:detailsButton.Subtle=$true; $script:detailsButton.Disclosure=$true
+    $script:detailsButton.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
+    $script:detailsButton.Anchor = 'Left'; $script:detailsButton.Height = ConvertTo-InstallerPixels 28
     $script:detailsButton.Margin = New-InstallerPadding 0 2 0 2; $script:detailsButton.TabIndex = 0
     $root.Controls.Add($script:detailsButton, 0, 5)
     $script:logBox = New-ReadOnlyBox; $script:logBox.Multiline = $true; $script:logBox.WordWrap = $true; $script:logBox.ScrollBars = 'Vertical'
@@ -172,7 +174,8 @@ public static class MpvnetInstallerDpi {
             if($script:form.WindowState -eq 'Normal' -and $script:form.Height -eq $script:detailsExpandedHeight){$script:form.Height=$script:detailsOriginalHeight}
             $script:detailsOriginalHeight=0
         }
-        $script:detailsButton.Text = if ($Expanded) { '收起详情(&D)' } else { '查看详情(&D)' }
+        $script:detailsButton.Expanded = $Expanded
+        $script:detailsButton.AccessibleName = if($Expanded){'收起详情'}else{'查看详情'}
     }
     function Update-Enabled {
         $available = -not $script:busy -and -not $script:confirming
@@ -183,7 +186,7 @@ public static class MpvnetInstallerDpi {
         $script:playerBrowse.Text=if($hasPlayer){'更换(&B)'}else{'选择…(&B)'}
         $script:playerName.Text=if($hasPlayer){'mpv.net'}else{'尚未选择'}
         $targetHost.Visible=$hasPlayer
-        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasPlayer){64}else{0})
+        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasPlayer){76}else{0})
         $script:recheckButton.Enabled = $available -and $hasPlayer
         $script:recheckButton.Visible=$hasPlayer -and ($script:primaryMode -notin @('check','finish') -or $script:resultState -eq 'completed-check-failed')
         $script:installButton.Enabled = $available -and $script:primaryMode -ne 'none'
@@ -442,6 +445,10 @@ public static class MpvnetInstallerDpi {
     })
     $script:restoreButton.Add_Click({ Confirm-Maintenance 'Restore' })
     $script:form.Add_KeyDown({ param($sender, $eventArgs)
+        if ($eventArgs.Alt -and $eventArgs.KeyCode -eq [Windows.Forms.Keys]::D -and $script:detailsButton.Enabled) {
+            $eventArgs.Handled=$true; $eventArgs.SuppressKeyPress=$true
+            if($script:playerBox.Text -and -not $script:busy -and -not $script:confirming){Set-DetailsExpanded (-not $script:detailsExpanded)}
+        }
         if ($eventArgs.KeyCode -eq [Windows.Forms.Keys]::Escape) {
             $eventArgs.Handled = $true; $eventArgs.SuppressKeyPress = $true
             if (-not $script:busy) { $script:form.Close() }
