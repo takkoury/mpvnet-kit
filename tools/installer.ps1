@@ -103,35 +103,61 @@ public static class MpvnetInstallerDpi {
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent', 100)))
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute', (ConvertTo-InstallerPixels 100))))
     $playerCaption = New-Label '播放器'; $playerCaption.ForeColor=$script:mutedColor; $playerCaption.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
-    $playerCaption.TextAlign='TopLeft'; $playerCaption.Padding=New-InstallerPadding 0 9 0 0
+    $playerCaption.TextAlign='MiddleLeft'
     $playerLayout.Controls.Add($playerCaption, 0, 0)
     function New-PathSurface($Layout,[int]$Column) {
         $surface=New-Object Windows.Forms.Panel
-        $surface.Dock='Fill';$surface.Margin=New-InstallerPadding 0;$surface.Padding=New-InstallerPadding 10 8 10 16
+        $surface.Dock='Fill';$surface.Margin=New-InstallerPadding 0;$surface.Padding=New-InstallerPadding 10 8
         $surface.BackColor=[Drawing.Color]::FromArgb(27,27,27);$Layout.Controls.Add($surface,$Column,0)
         return $surface
+    }
+    function Set-PathBoxBounds($Surface) {
+        if(-not $Surface -or $Surface.Tag -eq 'arranging' -or -not $Surface.Controls.Count){return}
+        $Surface.Tag='arranging'
+        try {
+            $box=$Surface.Controls[0]
+            $box.Width=[Math]::Max(1,$Surface.ClientSize.Width-$Surface.Padding.Horizontal)
+            [void]$box.Handle
+            $lineHeight=[Windows.Forms.TextRenderer]::MeasureText('Ag',$box.Font).Height
+            if($box.TotalLines -gt 1){
+                $first=$box.GetPositionFromCharIndex($box.GetFirstCharIndexFromLine(0)).Y
+                $next=$box.GetPositionFromCharIndex($box.GetFirstCharIndexFromLine(1)).Y
+                if($next -gt $first){$lineHeight=$next-$first}
+            }
+            $available=[Math]::Max(1,$Surface.ClientSize.Height-$Surface.Padding.Vertical)
+            $rows=[Math]::Max(1,[Math]::Floor($available/$lineHeight))
+            $height=[Math]::Min($available,[Math]::Min($box.TotalLines,$rows)*$lineHeight)
+            $box.SetBounds($Surface.Padding.Left,[int][Math]::Floor(($Surface.ClientSize.Height-$height)/2),$box.Width,[int]$height)
+        } finally {$Surface.Tag=$null}
+    }
+    function Add-PathBox($Surface,$Box) {
+        $Box.Dock='None';$Surface.Controls.Add($Box)
+        $Surface.Add_Layout({param($sender,$eventArgs) Set-PathBoxBounds $sender})
+        $Box.Add_TextChanged({param($sender,$eventArgs) Set-PathBoxBounds $sender.Parent})
+        Set-PathBoxBounds $Surface
     }
     $playerSurface=New-PathSurface $playerLayout 1
     $script:playerBox = New-ReadOnlyBox; $script:playerBox.Multiline = $true; $script:playerBox.WordWrap = $true; $script:playerBox.ScrollBars='Vertical'
     $script:playerBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9); $script:playerBox.ForeColor=[Drawing.Color]::FromArgb(208,208,208);$script:playerBox.BackColor=$playerSurface.BackColor
-    $script:playerBox.AccessibleName = '播放器程序路径'; $script:playerBox.TabIndex = 0; $playerSurface.Controls.Add($script:playerBox)
+    $script:playerBox.AccessibleName = '播放器程序路径'; $script:playerBox.TabIndex = 0; Add-PathBox $playerSurface $script:playerBox
     $script:playerBrowse = New-Button '选择…(&B)' 86; $script:playerBrowse.Anchor = 'Right'; $script:playerBrowse.TabIndex = 1
     $script:playerBrowse.Margin = New-InstallerPadding 12 0 0 0; $playerLayout.Controls.Add($script:playerBrowse, 2, 0)
     $targetHost = New-Object Windows.Forms.Panel
     $root.Controls.Add($targetHost, 0, 1); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 0 0 8
     $targetHost.BackColor = $script:form.BackColor
     $targetLayout = New-Layout $targetHost 1; Add-Row $targetLayout 'Percent' 100
-    $targetLayout.ColumnCount=2; $targetLayout.ColumnStyles.Clear()
+    $targetLayout.ColumnCount=3; $targetLayout.ColumnStyles.Clear()
     [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute',(ConvertTo-InstallerPixels 76))))
     [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent',100)))
+    [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute',(ConvertTo-InstallerPixels 100))))
     $targetCaption = New-Label '配置目录'; $targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI',9); $targetCaption.ForeColor=$script:mutedColor
-    $targetCaption.TextAlign='TopLeft'; $targetCaption.Padding=New-InstallerPadding 0 9 0 0
+    $targetCaption.TextAlign='MiddleLeft'
     $targetLayout.Controls.Add($targetCaption, 0, 0)
     $targetSurface=New-PathSurface $targetLayout 1
     $script:targetBox = New-ReadOnlyBox; $script:targetBox.Multiline = $true; $script:targetBox.WordWrap = $true; $script:targetBox.ScrollBars = 'Vertical'
     $script:targetBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
     $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(208,208,208); $script:targetBox.BackColor=$targetSurface.BackColor; $script:targetBox.Text = ''
-    $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; $targetSurface.Controls.Add($script:targetBox)
+    $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; Add-PathBox $targetSurface $script:targetBox
     # Retain full diagnostics for the details text and snapshots, not extra rows.
     $script:sourceLabel = New-Label ''; $script:nextLabel = New-Label ''; $script:dependencyLabel = New-Label ''
     $separator=New-Object Windows.Forms.Panel; $separator.Dock='Fill';$separator.Margin=New-InstallerPadding 0
