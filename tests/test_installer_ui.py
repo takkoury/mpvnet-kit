@@ -38,6 +38,26 @@ class InstallerUI(unittest.TestCase):
     def test_actual_confirmation_buttons_choose_cancel_or_apply(self):
         self.assertEqual(self.data['choices'], ['Cancel', 'OK'])
 
+    def test_details_toggle_preserves_complete_content_controls_and_selection(self):
+        self.assertEqual([item['scale'] for item in self.data['detail_dialogs']], [1, 1.5, 2])
+        for item in self.data['detail_dialogs']:
+            with self.subTest(scale=item['scale']):
+                self.assertFalse(item['shown'])
+                for key in ('initially_collapsed', 'expanded', 'collapsed_again', 'summary_preserved',
+                            'details_preserved', 'expanded_content_preserved', 'textboxes_preserved',
+                            'selection_preserved', 'details_subtle'):
+                    self.assertTrue(item[key], item)
+                self.assertEqual(item['dialog_result'], 'None')
+
+    def test_details_confirmation_keeps_cancel_default_actions_right_and_restores_height(self):
+        for item in self.data['detail_dialogs']:
+            with self.subTest(scale=item['scale']):
+                initial, expanded, collapsed = item['heights']
+                self.assertGreater(expanded, initial, item)
+                self.assertEqual(collapsed, initial, item)
+                for key in ('details_fit', 'actions_fit', 'default_cancel', 'within_screen'):
+                    self.assertTrue(item[key], item)
+
     def test_scroll_end_shows_whole_last_line_and_preserves_selection(self):
         for item in self.data['scroll']:
             self.assertTrue(item['complete'] and item['selection'], item)

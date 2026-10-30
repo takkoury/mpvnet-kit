@@ -25,7 +25,13 @@ public static class InstallerProbeNative {
 '@
 Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition $code
 [void][InstallerProbeNative]::SetThreadDpiAwarenessContext([IntPtr](-2))
-$frames=@();$dialogs=@()
+$frames=@();$dialogs=@();$detailDialogs=@()
+function Test-ConfirmationActions($Dialog) {
+    $accept=$Dialog.ConfirmButton;$cancel=$Dialog.CancelAction;$parent=$accept.Parent
+    return $cancel.Left -ge 0 -and $cancel.Top -ge 0 -and $cancel.Right -le $accept.Left -and
+        $accept.Right -le $parent.ClientSize.Width -and $accept.Top -ge 0 -and
+        $cancel.Bottom -le $parent.ClientSize.Height -and $accept.Bottom -le $parent.ClientSize.Height
+}
 foreach($scale in @(1.0,1.5,2.0)) {
     $form=New-Object InstallerProbe([single]$scale)
     try {
@@ -54,6 +60,52 @@ foreach($scale in @(1.0,1.5,2.0)) {
             } finally {$bitmap.Dispose()}
         }
     } finally {$dialog.Dispose()}
+    $summary="Update the configuration.`nTarget: X:/fixture/player/portable_config`nNecessary upgrade notice."
+    $details=("Changed runtime file: scripts/example.lua`nComplete file and recovery details.`n" * 180)
+    $dialog=New-Object KitInstallerConfirmation([single]$scale,$summary,'Confirm update','Start update','File changes',$details)
+    try {
+        [void]$dialog.Handle;$dialog.PerformLayout();$dialog.ContentHost.PerformLayout()
+        foreach($panel in $dialog.ContentHost.Controls) {$panel.PerformLayout()}
+        $initialHeight=$dialog.Height;$initiallyCollapsed=-not $dialog.DetailsExpanded
+        $summaryBox=$dialog.MessageText;$detailsBox=$dialog.DetailsText
+        $dialog.MessageText.Select(8,5);$dialog.DetailsText.Select(9,7)
+        $actionsFit=Test-ConfirmationActions $dialog
+        $click=[Windows.Forms.Button].GetMethod('OnClick',[Reflection.BindingFlags]'Instance,NonPublic')
+        [void]$click.Invoke($dialog.DetailsButton,([object[]]@([EventArgs]::Empty)))
+        $dialog.PerformLayout();$dialog.ContentHost.PerformLayout()
+        foreach($panel in $dialog.ContentHost.Controls) {$panel.PerformLayout()}
+        $expanded=$dialog.DetailsExpanded;$expandedHeight=$dialog.Height
+        $expandedContentPreserved=$dialog.MessageText.Text.Replace("`r`n","`n") -ceq $summary -and
+            $dialog.DetailsText.Text.Replace("`r`n","`n") -ceq $details
+        $actionsFit=$actionsFit -and (Test-ConfirmationActions $dialog)
+        $detailsFit=$dialog.DetailsText.Height -gt 0 -and $dialog.MessageText.Height -gt 0 -and
+            $dialog.MessageText.Bottom -le $dialog.DetailsButton.Top -and
+            $dialog.DetailsButton.Bottom -le $dialog.DetailsText.Top -and
+            $dialog.DetailsText.Bottom -le $dialog.DetailsText.Parent.ClientSize.Height -and
+            $dialog.DetailsButton.Right -le $dialog.DetailsButton.Parent.ClientSize.Width
+        foreach($control in @($dialog.MessageText,$dialog.DetailsButton,$dialog.DetailsText)) {
+            $detailsFit=$detailsFit -and $control.Left -ge 0 -and $control.Top -ge 0 -and
+                $control.Right -le $control.Parent.ClientSize.Width -and $control.Bottom -le $control.Parent.ClientSize.Height
+        }
+        $selectionPreserved=$dialog.MessageText.SelectionStart -eq 8 -and $dialog.MessageText.SelectionLength -eq 5 -and
+            $dialog.DetailsText.SelectionStart -eq 9 -and $dialog.DetailsText.SelectionLength -eq 7
+        [void]$click.Invoke($dialog.DetailsButton,([object[]]@([EventArgs]::Empty)))
+        $dialog.PerformLayout();$dialog.ContentHost.PerformLayout()
+        foreach($panel in $dialog.ContentHost.Controls) {$panel.PerformLayout()}
+        $selectionPreserved=$selectionPreserved -and $dialog.MessageText.SelectionStart -eq 8 -and $dialog.MessageText.SelectionLength -eq 5 -and
+            $dialog.DetailsText.SelectionStart -eq 9 -and $dialog.DetailsText.SelectionLength -eq 7
+        $area=[Windows.Forms.Screen]::FromHandle($dialog.Handle).WorkingArea
+        $detailDialogs+=@{scale=$scale;shown=$dialog.Visible;initially_collapsed=$initiallyCollapsed;expanded=$expanded;
+            collapsed_again=-not $dialog.DetailsExpanded;heights=@($initialHeight,$expandedHeight,$dialog.Height);
+            summary_preserved=$dialog.MessageText.Text.Replace("`r`n","`n") -ceq $summary;
+            details_preserved=$dialog.DetailsText.Text.Replace("`r`n","`n") -ceq $details;
+            expanded_content_preserved=$expandedContentPreserved;
+            textboxes_preserved=[object]::ReferenceEquals($summaryBox,$dialog.MessageText) -and [object]::ReferenceEquals($detailsBox,$dialog.DetailsText);
+            selection_preserved=$selectionPreserved;details_fit=$detailsFit;actions_fit=$actionsFit -and (Test-ConfirmationActions $dialog);
+            default_cancel=[object]::ReferenceEquals($dialog.AcceptButton,$dialog.CancelAction) -and [object]::ReferenceEquals($dialog.CancelButton,$dialog.CancelAction);
+            within_screen=$dialog.Width -le $area.Width -and $expandedHeight -le $area.Height -and $expandedHeight -le [Math]::Round(560*$scale);
+            details_subtle=$dialog.DetailsButton.Subtle;dialog_result=$dialog.DialogResult.ToString()}
+    } finally {$dialog.Dispose()}
 }
 $results=@()
 foreach($choice in @('CancelAction','ConfirmButton')) {
@@ -80,4 +132,4 @@ foreach($height in @(180,196,220)) {
         $scrollChecks+=@{height=$height;complete=$last+($last-$previous) -le $rect.Bottom;selection=$box.SelectionStart -eq 8 -and $box.SelectionLength -eq 5}
     } finally {$box.Font.Dispose();$box.Dispose()}
 }
-@{frames=$frames;dialogs=$dialogs;choices=$results;scroll=$scrollChecks}|ConvertTo-Json -Depth 6 -Compress
+@{frames=$frames;dialogs=$dialogs;detail_dialogs=$detailDialogs;choices=$results;scroll=$scrollChecks}|ConvertTo-Json -Depth 6 -Compress

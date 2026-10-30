@@ -7,8 +7,9 @@ using System.Windows.Forms;
 // Presentation only. The PowerShell installer owns maintenance plans and work.
 public class KitInstallerButton : Button
 {
-    bool primary, hover, pressed, keyboardPressed;
+    bool primary, subtle, hover, pressed, keyboardPressed;
     public bool Primary { get { return primary; } set { primary = value; Invalidate(); } }
+    public bool Subtle { get { return subtle; } set { subtle = value; Invalidate(); } }
 
     public KitInstallerButton()
     {
@@ -32,19 +33,22 @@ public class KitInstallerButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         float scale = e.Graphics.DpiX / 96f;
-        e.Graphics.Clear(Parent == null ? Color.FromArgb(21, 21, 21) : Parent.BackColor);
-        Color fill = primary ? Color.FromArgb(18, 135, 187) : BackColor;
+        Color parentColor = Parent == null ? Color.FromArgb(21, 21, 21) : Parent.BackColor;
+        bool understated = subtle && !primary;
+        e.Graphics.Clear(parentColor);
+        Color fill = primary ? Color.FromArgb(18, 135, 187) : understated ? parentColor : BackColor;
         if (Enabled && (pressed || keyboardPressed)) fill = primary ? Color.FromArgb(13, 111, 157) : Color.FromArgb(64, 64, 64);
         else if (Enabled && hover && !primary) fill = Color.FromArgb(53, 53, 53);
-        if (!Enabled) fill = Color.FromArgb(35, 35, 35);
+        if (!Enabled) fill = understated ? parentColor : Color.FromArgb(35, 35, 35);
         float inset = Math.Max(1, scale);
         var rect = new RectangleF(inset / 2, inset / 2, Math.Max(1, Width - inset - 1), Math.Max(1, Height - inset - 1));
         float radius = Math.Min(3 * scale, Math.Min(rect.Width, rect.Height) / 2);
         using (var path = Rounded(rect, radius)) {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (var brush = new SolidBrush(fill)) e.Graphics.FillPath(brush, path);
-            using (var pen = new Pen(Enabled && Focused ? (primary ? Color.FromArgb(242, 242, 242) : Color.FromArgb(18, 135, 187)) : Enabled && primary && hover ? Color.FromArgb(171, 171, 171) : Color.FromArgb(85, 85, 85), Enabled && Focused ? 2 * inset : inset))
-                e.Graphics.DrawPath(pen, path);
+            if (!understated || Enabled && Focused)
+                using (var pen = new Pen(Enabled && Focused ? (primary ? Color.FromArgb(242, 242, 242) : Color.FromArgb(18, 135, 187)) : Enabled && primary && hover ? Color.FromArgb(171, 171, 171) : Color.FromArgb(85, 85, 85), Enabled && Focused ? 2 * inset : inset))
+                    e.Graphics.DrawPath(pen, path);
         }
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
         flags |= TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextAlign == ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter;
@@ -385,13 +389,20 @@ public class KitInstallerForm : Form
 public sealed class KitInstallerConfirmation : KitInstallerForm
 {
     readonly float factor;
-    readonly string messageContents;
-    public KitInstallerButton ConfirmButton, CancelAction;
-    public TextBox MessageText;
-    public KitInstallerConfirmation(float scale, string message, string caption, string confirmLabel) : base(scale)
+    readonly string messageContents, detailsContents, detailsTitle;
+    readonly Panel body;
+    bool detailsExpanded;
+    public KitInstallerButton ConfirmButton, CancelAction, DetailsButton;
+    public TextBox MessageText, DetailsText;
+    public bool DetailsExpanded { get { return detailsExpanded; } }
+    public KitInstallerConfirmation(float scale, string message, string caption, string confirmLabel)
+        : this(scale, message, caption, confirmLabel, "", "") { }
+    public KitInstallerConfirmation(float scale, string summary, string caption, string confirmLabel, string detailsTitle, string details) : base(scale)
     {
         factor = scale > 0 && !Single.IsInfinity(scale) && !Single.IsNaN(scale) ? scale : 1;
-        messageContents = (message ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);
+        messageContents = NormalizeLines(summary);
+        detailsContents = NormalizeLines(details);
+        this.detailsTitle = String.IsNullOrEmpty(detailsTitle) ? "查看详情" : detailsTitle;
         Text = caption ?? "确认操作"; MinimizeBox = false; MaximizeBox = false;
         FormBorderStyle = FormBorderStyle.FixedDialog; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
@@ -410,20 +421,67 @@ public sealed class KitInstallerConfirmation : KitInstallerForm
             CancelAction.Width = Math.Min((int)Math.Round(104 * factor), Math.Max(1, usable / 2));
             ConfirmButton.Width = Math.Min((int)Math.Round(132 * factor), Math.Max(1, usable - CancelAction.Width));
         };
-        var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(pad, (int)Math.Round(16 * factor), pad, gap), BackColor = BackColor };
+        body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(pad, (int)Math.Round(16 * factor), pad, gap), BackColor = BackColor };
         MessageText = new KitInstallerTextBox { Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical,
-            BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, Text = messageContents, BackColor = BackColor,
+            BorderStyle = BorderStyle.None, Text = messageContents, BackColor = BackColor,
             ForeColor = ForeColor, AccessibleName = "操作确认内容", ShortcutsEnabled = true, TabIndex = 0 };
-        body.Controls.Add(MessageText); ContentHost.Controls.Add(body); ContentHost.Controls.Add(actions);
+        DetailsButton = new KitInstallerButton { Text = this.detailsTitle, AccessibleName = this.detailsTitle,
+            Subtle = true, Visible = detailsContents.Length > 0, Margin = Padding.Empty, TabIndex = 1 };
+        DetailsText = new KitInstallerTextBox { Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.None, Text = detailsContents, BackColor = BackColor, Visible = false,
+            ForeColor = Color.FromArgb(190, 190, 190), AccessibleName = this.detailsTitle, ShortcutsEnabled = true, TabIndex = 2 };
+        DetailsButton.Click += delegate { ToggleDetails(); };
+        body.Controls.Add(MessageText); body.Controls.Add(DetailsButton); body.Controls.Add(DetailsText);
+        body.SizeChanged += delegate { LayoutBody(); };
+        ContentHost.Controls.Add(body); ContentHost.Controls.Add(actions);
         AcceptButton = CancelAction; CancelButton = CancelAction; ActiveControl = CancelAction;
+        LayoutBody();
+    }
+    static string NormalizeLines(string text) { return (text ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine); }
+    int MeasureContent(string text, int width)
+    {
+        return TextRenderer.MeasureText(text, Font, new Size(Math.Max(1, width), Int32.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPadding).Height;
+    }
+    void ToggleDetails()
+    {
+        if (detailsContents.Length == 0) return;
+        detailsExpanded = !detailsExpanded;
+        DetailsText.Visible = detailsExpanded;
+        DetailsButton.Text = detailsExpanded ? "收起详情" : detailsTitle;
+        DetailsButton.AccessibleName = DetailsButton.Text;
+        Rectangle area = Screen.FromControl(Owner ?? this).WorkingArea;
+        FitWorkingArea(area); LayoutBody();
+        Location = new Point(Math.Max(area.Left, Math.Min(Left, area.Right - Width)), Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)));
+    }
+    void LayoutBody()
+    {
+        if (body == null || MessageText == null || DetailsText == null || DetailsButton == null) return;
+        int width = Math.Max(1, body.ClientSize.Width - body.Padding.Horizontal);
+        int available = Math.Max(1, body.ClientSize.Height - body.Padding.Vertical);
+        int toggleHeight = detailsContents.Length > 0 ? (int)Math.Round(32 * factor) : 0;
+        int gap = detailsContents.Length > 0 ? (int)Math.Round(8 * factor) : 0;
+        int textSpace = Math.Max(1, available - toggleHeight - gap);
+        int summaryHeight = textSpace;
+        if (detailsExpanded) {
+            int natural = MeasureContent(messageContents, width - (int)Math.Round(14 * factor)) + (int)Math.Round(8 * factor);
+            summaryHeight = Math.Max(1, Math.Min(natural, (int)Math.Round(textSpace * 0.55)));
+        }
+        MessageText.SetBounds(body.Padding.Left, body.Padding.Top, width, summaryHeight);
+        int y = MessageText.Bottom + gap;
+        int toggleWidth = Math.Min(width, TextRenderer.MeasureText(DetailsButton.Text, DetailsButton.Font).Width + (int)Math.Round(20 * factor));
+        DetailsButton.SetBounds(body.Padding.Left + width - toggleWidth, y, toggleWidth, toggleHeight);
+        int detailsTop = y + toggleHeight;
+        DetailsText.SetBounds(body.Padding.Left, detailsTop, width, Math.Max(1, body.ClientSize.Height - body.Padding.Bottom - detailsTop));
     }
     void FitWorkingArea(Rectangle area)
     {
         int width = Math.Max(1, Math.Min((int)Math.Round(600 * factor), area.Width - (int)Math.Round(24 * factor)));
         int textWidth = Math.Max(1, width - (int)Math.Round(62 * factor));
-        Size measured = TextRenderer.MeasureText(messageContents, Font, new Size(textWidth, Int32.MaxValue),
-            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPadding);
-        int wantedHeight = Math.Max((int)Math.Round(220 * factor), measured.Height + (int)Math.Round(136 * factor));
+        int wantedHeight = MeasureContent(messageContents, textWidth) + (int)Math.Round(136 * factor);
+        if (detailsContents.Length > 0) wantedHeight += (int)Math.Round(40 * factor);
+        if (detailsExpanded) wantedHeight += Math.Min(MeasureContent(detailsContents, textWidth), (int)Math.Round(240 * factor));
+        wantedHeight = Math.Max((int)Math.Round(220 * factor), wantedHeight);
         int height = Math.Max(1, Math.Min(wantedHeight, Math.Min((int)Math.Round(560 * factor), area.Height - (int)Math.Round(24 * factor))));
         MinimumSize = Size.Empty; ClientSize = new Size(width, height);
         MinimumSize = new Size(Math.Min(width, (int)Math.Round(320 * factor)), Math.Min(height, (int)Math.Round(220 * factor)));

@@ -33,6 +33,7 @@ public static class FixtureMessageBox {
     public static bool Hidden;
     public static bool DefaultCancel = true;
     public static string LastMessage = "";
+    public static string LastDetails = "";
     public static bool ClosingCancelled(System.Windows.Forms.Form owner) {
         var args=new System.Windows.Forms.FormClosingEventArgs(System.Windows.Forms.CloseReason.UserClosing,false);
         typeof(System.Windows.Forms.Form).GetMethod("OnFormClosing",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(owner,new object[]{args});
@@ -45,6 +46,7 @@ public static class FixtureMessageBox {
         var cancel=(System.Windows.Forms.Button)type.GetField("CancelAction").GetValue(value);
         var accept=(System.Windows.Forms.Button)type.GetField("ConfirmButton").GetValue(value);
         LastMessage=((System.Windows.Forms.TextBox)type.GetField("MessageText").GetValue(value)).Text;
+        LastDetails=((System.Windows.Forms.TextBox)type.GetField("DetailsText").GetValue(value)).Text;
         DefaultCancel &= object.ReferenceEquals(dialog.AcceptButton,cancel) && object.ReferenceEquals(dialog.CancelButton,cancel);
         var button=Answer==System.Windows.Forms.DialogResult.Yes ? accept : cancel;
         if(Hidden) {
@@ -117,7 +119,12 @@ function Show-FixtureConfirmation($Dialog,$Owner) {
     }
     return [FixtureMessageBox]::ShowConfirmation($Dialog,$Owner)
 }
-$source = [IO.File]::ReadAllText((Join-Path $SourceRoot 'tools/installer.ps1'))
+$sourcePath=Join-Path $SourceRoot 'tools/installer.ps1'
+# Match powershell.exe -File decoding before the in-memory event hooks below.
+$parseErrors=$null
+[void][System.Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$null,[ref]$parseErrors)
+if($parseErrors.Count){throw ('Installer file cannot be parsed: '+($parseErrors.Message -join '; '))}
+$source = [IO.File]::ReadAllText($sourcePath)
 $source = $source.Replace('[Windows.Forms.MessageBox]::Show', '[FixtureMessageBox]::Show')
 $source = $source.Replace('$confirmation.ShowDialog($script:form)', '(Show-FixtureConfirmation $confirmation $script:form)')
 if($NoShow) {
@@ -137,6 +144,13 @@ $hook = @'
             }
             if ($script:fixtureTicks -gt 600) { throw 'Timed out waiting for native installer state.' }
             if ($script:busy) { return }
+            $script:form.PerformLayout();$footer.PerformLayout()
+            Assert-Fixture ($script:installButton.Right -eq $footer.ClientSize.Width-(ConvertTo-InstallerPixels 28)) 'Primary action is not right aligned'
+            Assert-Fixture ($script:restoreButton.Left -eq (ConvertTo-InstallerPixels 28)) 'Restore action is not left aligned'
+            if($script:visibleState.Invoke($script:recheckButton,@(2))){
+                Assert-Fixture ($script:recheckButton.Right -lt $script:installButton.Left) 'Primary and recheck overlap'
+                if($script:visibleState.Invoke($script:restoreButton,@(2))){Assert-Fixture ($script:restoreButton.Right -lt $script:recheckButton.Left) 'Restore and recheck overlap'}
+            }
             $SnapshotPath = Join-Path $script:fixtureRoot ("stage-$($script:fixtureStage).png")
             $script:snapshotTaken = $false
             if($UpgradeFrom) {
@@ -178,9 +192,9 @@ $hook = @'
                     Assert-Fixture ([MpvnetInstallerDpi]::GetAwarenessFromDpiAwarenessContext([MpvnetInstallerDpi]::GetWindowDpiAwarenessContext($script:form.Handle)) -eq 1) 'Installer is not system DPI aware'
                     $area = [Windows.Forms.Screen]::FromControl($script:form).WorkingArea
                     Assert-Fixture ($script:form.Width -le $area.Width -and $script:form.Height -le $area.Height) 'Initial window exceeds working area'
-                    Assert-Fixture ($script:resultState -eq 'idle' -and -not $script:installButton.Enabled -and -not $script:recheckButton.Enabled) 'Initial controls not disabled'
+                    Assert-Fixture ($script:resultState -eq 'idle' -and $script:primaryMode -eq 'browse' -and $script:installButton.Enabled -and -not $script:recheckButton.Enabled) 'Initial primary action is not player selection'
                     Save-InstallerSnapshot
-                    $script:fixtureChecks.Add('initial DPI awareness and scaled metrics, disabled apply/recheck, native form snapshot')
+                    $script:fixtureChecks.Add('initial DPI awareness and scaled metrics, player selection primary action, disabled recheck, native form snapshot')
                     $script:playerBox.Text = $script:fixturePlayer
                     Start-AutomaticCheck; $script:fixtureStage++
                 }
@@ -188,21 +202,25 @@ $hook = @'
                     Assert-Fixture ($script:resultState -eq 'ready' -and $script:installButton.Enabled -and $script:recheckButton.Enabled) 'Ready state missing'
                     Assert-Fixture ($script:targetBox.Text -eq $script:fixtureTarget.Replace('/', '\') -and $script:targetBox.ReadOnly -and $script:targetBox.Multiline -and $script:targetBox.WordWrap) 'Full selectable target missing'
                     Save-InstallerSnapshot
+                    $area=[Windows.Forms.Screen]::FromControl($script:form).WorkingArea
+                    $script:form.Top=$area.Bottom-$script:form.Height
+                    $collapsedHeight=$script:form.Height
                     Invoke-FixtureClick $script:detailsButton
                     Assert-Fixture (($NoShow -or $script:logBox.Visible) -and $script:detailsExpanded) 'Details did not expand'
+                    Assert-Fixture ($script:form.Bottom -le $area.Bottom -and $script:form.Top -ge $area.Top) 'Expanding details pushed actions off screen'
                     $SnapshotPath = Join-Path $script:fixtureRoot 'details.png'; $script:snapshotTaken = $false; Save-InstallerSnapshot
                     Invoke-FixtureClick $script:detailsButton
-                    Assert-Fixture (-not $script:logBox.Visible) 'Details did not collapse'
+                    Assert-Fixture (-not $script:logBox.Visible -and $script:form.Height -eq $collapsedHeight) 'Details did not collapse and restore window height'
                     $script:fixtureChecks.Add('ready target, details expand/collapse using real button handlers')
                     Invoke-FixtureClick $script:installButton
                     Assert-Fixture (-not $script:busy -and -not $script:installed -and [FixtureMessageBox]::Confirmations -eq 1) 'Simulated No did not cancel'
-                    Assert-Fixture ([FixtureMessageBox]::DefaultCancel -and [FixtureMessageBox]::LastMessage.Contains($script:fixturePlayer)) 'Real confirmation lost default cancel or complete path'
+                    Assert-Fixture ([FixtureMessageBox]::DefaultCancel -and [FixtureMessageBox]::LastMessage.Contains($script:targetBox.Text) -and [FixtureMessageBox]::LastDetails.Contains($script:fixturePlayer)) 'Real confirmation lost default cancel, target or full details'
                     [IO.File]::WriteAllText((Join-Path $script:fixtureTarget 'unknown.txt'), 'preserve unknown fixture')
                     Invoke-FixtureClick $script:recheckButton; $script:fixtureStage++
                 }
                 2 {
                     Assert-Fixture ($script:resultState -eq 'blocked' -and -not $script:installButton.Enabled -and $script:recheckButton.Enabled) 'Unknown file did not block GUI'
-                    Assert-Fixture ($script:detailsExpanded -and $script:playerBox.Text -eq $script:fixturePlayer) 'Blocked state lost details/player'
+                    Assert-Fixture (-not $script:detailsExpanded -and $script:logBox.Text.Contains('unknown.txt') -and $script:playerBox.Text -eq $script:fixturePlayer) 'Blocked state lost collapsed diagnostics/player'
                     $script:form.Size = $script:form.MinimumSize
                     Save-InstallerSnapshot
                     $script:fixtureChecks.Add('unknown refusal, preserved selection, minimum window, disabled apply')
@@ -222,14 +240,15 @@ $hook = @'
                     Save-InstallerSnapshot
                     $script:fixtureChecks.Add('changed environment refused through install handler; both targets untouched')
                     $env:MPVNET_HOME = $script:fixtureTarget
-                    Invoke-FixtureClick $script:recheckButton; $script:fixtureStage++
+                    Assert-Fixture ($script:primaryMode -eq 'check' -and $script:installButton.Enabled) 'Failure primary action did not offer recheck'
+                    Invoke-FixtureClick $script:installButton; $script:fixtureStage++
                 }
                 5 {
                     Assert-Fixture ($script:resultState -eq 'ready') 'Final recheck not ready'
                     Invoke-FixtureClick $script:installButton; $script:fixtureStage++
                 }
                 6 {
-                    Assert-Fixture ($script:installed -and -not $script:installButton.Enabled -and $script:recheckButton.Enabled -and $script:playerBrowse.Enabled -and $script:restoreButton.Enabled) 'Completion controls invalid'
+                    Assert-Fixture ($script:installed -and $script:primaryMode -eq 'finish' -and $script:installButton.Enabled -and $script:playerBrowse.Enabled -and $script:restoreButton.Enabled) 'Completion controls invalid'
                     Assert-Fixture ($script:plan.action -eq 'current' -and $script:plan.canRestore) 'Completion did not refresh restore state'
                     Save-InstallerSnapshot
                     $script:fixtureChecks.Add('confirmed install handler, actual isolated install, completed controls')
@@ -240,7 +259,8 @@ $hook = @'
                     Assert-Fixture (@([IO.Directory]::EnumerateFiles($script:fixtureTarget, '*', [IO.SearchOption]::AllDirectories)).Count -eq 0) 'New install rollback left files in target'
                     Save-InstallerSnapshot
                     $script:fixtureChecks.Add('restore confirmation handler, real rollback, preserved completion result and refreshed actions')
-                    $script:fixtureTimer.Stop(); $script:form.Close()
+                    $script:fixtureTimer.Stop(); Invoke-FixtureClick $script:installButton
+                    Assert-Fixture (-not $script:busy -and @([IO.Directory]::EnumerateFiles($script:fixtureTarget, '*', [IO.SearchOption]::AllDirectories)).Count -eq 0) 'Finish started a new write'
                 }
             }
         } catch {
