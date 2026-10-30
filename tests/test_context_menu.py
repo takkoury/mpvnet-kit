@@ -80,6 +80,7 @@ class ContextMenu(unittest.TestCase):
             self.assertEqual(menu[path], command)
         self.assertNotIn('script-binding playback_feedback/space', menu.values())
         self.assertNotIn('script-binding osc/visibility', menu.values())
+        self.assertNotIn('script-binding user_shortcuts/open', menu.values())
         for format in ('webp', 'gif', 'mp4'):
             self.assertEqual(menu['截图与片段 > 导出格式 > ' + {'webp':'WebP','gif':'GIF','mp4':'MP4'}[format]],
                              'script-message-to capture_controls set-default-format ' + format)

@@ -260,6 +260,8 @@ end
 
 function project_catalog_coverage()
     local catalog=model.catalog(input_source)
+    -- Removing a duplicate menu item must not retire the stable user binding.
+    eq(catalog.by_id['tools.shortcuts-editor'].command,'script-binding user_shortcuts/open')
     local expected={
         ['script-binding playback_feedback/open-media-path']='file.open-location',
         ['script-binding playback_feedback/copy-media-path']='file.copy-location',

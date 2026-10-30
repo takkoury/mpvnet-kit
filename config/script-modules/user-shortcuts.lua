@@ -176,7 +176,7 @@ local additions = {
     {'tools.selector-properties', '工具与设置', '屏幕内播放器属性…', 'script-binding select/show-properties', true},
     {'tools.config-editor', '工具与设置', '打开原生配置编辑器…', 'script-message-to mpvnet show-conf-editor', true},
     {'tools.settings-editor', '工具与设置', '打开常用设置…', 'script-binding user_settings/open', true},
-    {'tools.shortcuts-editor', '工具与设置', '打开用户快捷键窗口…', 'script-binding user_shortcuts/open', true},
+    {'tools.shortcuts-editor', '工具与设置', '打开快捷键设置…', 'script-binding user_shortcuts/open', true},
     {'tools.native-input-editor', '工具与设置', '打开原生快捷键编辑器（高级）…', 'script-message-to mpvnet show-input-editor', true},
     {'tools.edit-mpv-conf', '工具与设置', '编辑 mpv.conf', 'script-message-to mpvnet edit-conf-file mpv.conf', true},
     {'tools.edit-input-conf', '工具与设置', '编辑 input.conf', 'script-message-to mpvnet edit-conf-file input.conf', true},
