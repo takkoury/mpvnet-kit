@@ -93,33 +93,45 @@ public static class MpvnetInstallerDpi {
     $frame.Controls.Add($scrollHost, 0, 0)
     $root = New-Layout $scrollHost 7
     $root.Padding = New-InstallerPadding 28 20 28 16
-    foreach($height in @(60,76,1,20,106,30)){Add-Row $root 'Absolute' $height}
+    foreach($height in @(64,64,1,20,106,30)){Add-Row $root 'Absolute' $height}
     Add-Row $root 'Percent' 100
     $playerHost = New-Object Windows.Forms.Panel
-    $root.Controls.Add($playerHost, 0, 0); $playerHost.Dock = 'Fill'; $playerHost.Margin = New-InstallerPadding 0
-    $playerLayout = New-Layout $playerHost 3; Add-Row $playerLayout 'Absolute' 18; Add-Row $playerLayout 'Absolute' 22; Add-Row $playerLayout 'Absolute' 20
-    $playerLayout.ColumnCount = 2; $playerLayout.ColumnStyles.Clear()
+    $root.Controls.Add($playerHost, 0, 0); $playerHost.Dock = 'Fill'; $playerHost.Margin = New-InstallerPadding 0 0 0 8
+    $playerLayout = New-Layout $playerHost 1; Add-Row $playerLayout 'Percent' 100
+    $playerLayout.ColumnCount = 3; $playerLayout.ColumnStyles.Clear()
+    [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute', (ConvertTo-InstallerPixels 76))))
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent', 100)))
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute', (ConvertTo-InstallerPixels 100))))
     $playerCaption = New-Label '播放器'; $playerCaption.ForeColor=$script:mutedColor; $playerCaption.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
-    $playerLayout.Controls.Add($playerCaption, 0, 0); $playerLayout.SetColumnSpan($playerCaption, 2)
-    $script:playerName = New-Label '尚未选择'; $playerLayout.Controls.Add($script:playerName,0,1)
-    $script:playerBox = New-ReadOnlyBox; $script:playerBox.Multiline = $true; $script:playerBox.WordWrap = $false
-    $script:playerBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9); $script:playerBox.ForeColor=$script:mutedColor
-    $script:playerBox.AccessibleName = '播放器程序路径'; $script:playerBox.TabIndex = 0; $playerLayout.Controls.Add($script:playerBox, 0, 2)
+    $playerCaption.TextAlign='TopLeft'; $playerCaption.Padding=New-InstallerPadding 0 9 0 0
+    $playerLayout.Controls.Add($playerCaption, 0, 0)
+    function New-PathSurface($Layout,[int]$Column) {
+        $surface=New-Object Windows.Forms.Panel
+        $surface.Dock='Fill';$surface.Margin=New-InstallerPadding 0;$surface.Padding=New-InstallerPadding 10 8 10 16
+        $surface.BackColor=[Drawing.Color]::FromArgb(27,27,27);$Layout.Controls.Add($surface,$Column,0)
+        return $surface
+    }
+    $playerSurface=New-PathSurface $playerLayout 1
+    $script:playerBox = New-ReadOnlyBox; $script:playerBox.Multiline = $true; $script:playerBox.WordWrap = $true; $script:playerBox.ScrollBars='Vertical'
+    $script:playerBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9); $script:playerBox.ForeColor=[Drawing.Color]::FromArgb(208,208,208);$script:playerBox.BackColor=$playerSurface.BackColor
+    $script:playerBox.AccessibleName = '播放器程序路径'; $script:playerBox.TabIndex = 0; $playerSurface.Controls.Add($script:playerBox)
     $script:playerBrowse = New-Button '选择…(&B)' 86; $script:playerBrowse.Anchor = 'Right'; $script:playerBrowse.TabIndex = 1
-    $script:playerBrowse.Margin = New-InstallerPadding 12 0 0 0; $playerLayout.Controls.Add($script:playerBrowse, 1, 1); $playerLayout.SetRowSpan($script:playerBrowse,2)
+    $script:playerBrowse.Margin = New-InstallerPadding 12 0 0 0; $playerLayout.Controls.Add($script:playerBrowse, 2, 0)
     $targetHost = New-Object Windows.Forms.Panel
-    $root.Controls.Add($targetHost, 0, 1); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 8 0 12
+    $root.Controls.Add($targetHost, 0, 1); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 0 0 8
     $targetHost.BackColor = $script:form.BackColor
-    $targetLayout = New-Layout $targetHost 2
-    Add-Row $targetLayout 'Absolute' 18; Add-Row $targetLayout 'Percent' 100
+    $targetLayout = New-Layout $targetHost 1; Add-Row $targetLayout 'Percent' 100
+    $targetLayout.ColumnCount=2; $targetLayout.ColumnStyles.Clear()
+    [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute',(ConvertTo-InstallerPixels 76))))
+    [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent',100)))
     $targetCaption = New-Label '配置目录'; $targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI',9); $targetCaption.ForeColor=$script:mutedColor
+    $targetCaption.TextAlign='TopLeft'; $targetCaption.Padding=New-InstallerPadding 0 9 0 0
     $targetLayout.Controls.Add($targetCaption, 0, 0)
+    $targetSurface=New-PathSurface $targetLayout 1
     $script:targetBox = New-ReadOnlyBox; $script:targetBox.Multiline = $true; $script:targetBox.WordWrap = $true; $script:targetBox.ScrollBars = 'Vertical'
     $script:targetBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
-    $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(188,188,188); $script:targetBox.Text = ''
-    $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; $targetLayout.Controls.Add($script:targetBox, 0, 1)
+    $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(208,208,208); $script:targetBox.BackColor=$targetSurface.BackColor; $script:targetBox.Text = ''
+    $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; $targetSurface.Controls.Add($script:targetBox)
     # Retain full diagnostics for the details text and snapshots, not extra rows.
     $script:sourceLabel = New-Label ''; $script:nextLabel = New-Label ''; $script:dependencyLabel = New-Label ''
     $separator=New-Object Windows.Forms.Panel; $separator.Dock='Fill';$separator.Margin=New-InstallerPadding 0
@@ -184,9 +196,8 @@ public static class MpvnetInstallerDpi {
         $script:primaryMode=if(-not $hasPlayer){'browse'}elseif($script:resultState -in @('current','completed','completed-check-failed')){'finish'}elseif(-not $script:plan -and $script:resultState -eq 'blocked'){'check'}elseif($canApply){'apply'}else{'none'}
         $script:playerBrowse.Enabled = $available
         $script:playerBrowse.Text=if($hasPlayer){'更换(&B)'}else{'选择…(&B)'}
-        $script:playerName.Text=if($hasPlayer){'mpv.net'}else{'尚未选择'}
         $targetHost.Visible=$hasPlayer
-        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasPlayer){76}else{0})
+        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasPlayer){64}else{0})
         $script:recheckButton.Enabled = $available -and $hasPlayer
         $script:recheckButton.Visible=$hasPlayer -and ($script:primaryMode -notin @('check','finish') -or $script:resultState -eq 'completed-check-failed')
         $script:installButton.Enabled = $available -and $script:primaryMode -ne 'none'

@@ -61,3 +61,8 @@ class InstallerUI(unittest.TestCase):
     def test_scroll_end_shows_whole_last_line_and_preserves_selection(self):
         for item in self.data['scroll']:
             self.assertTrue(item['complete'] and item['selection'], item)
+
+    def test_mouse_and_timer_messages_do_not_rewrite_edit_margins(self):
+        for item in self.data['idle']:
+            self.assertEqual(item['margin_writes'], 0, item)
+            self.assertTrue(item['selection'], item)

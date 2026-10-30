@@ -17,10 +17,18 @@ public sealed class InstallerProbe : KitInstallerForm {
     }
 }
 public static class InstallerProbeNative {
+    [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="SendMessageW")] public static extern System.IntPtr Send(System.IntPtr h,int m,System.IntPtr w,System.IntPtr l);
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     public struct Rect {public int Left,Top,Right,Bottom;}
     [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr SetThreadDpiAwarenessContext(System.IntPtr value);
     [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="SendMessageW")] public static extern System.IntPtr FormatRect(System.IntPtr h,int m,System.IntPtr w,ref Rect r);
+}
+public sealed class EditTrafficProbe : System.Windows.Forms.NativeWindow {
+    public int MarginWrites;
+    protected override void WndProc(ref System.Windows.Forms.Message m) {
+        if(m.Msg==0xD3)MarginWrites++;
+        base.WndProc(ref m);
+    }
 }
 '@
 Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition $code
@@ -132,4 +140,20 @@ foreach($height in @(180,196,220)) {
         $scrollChecks+=@{height=$height;complete=$last+($last-$previous) -le $rect.Bottom;selection=$box.SelectionStart -eq 8 -and $box.SelectionLength -eq 5}
     } finally {$box.Font.Dispose();$box.Dispose()}
 }
-@{frames=$frames;dialogs=$dialogs;detail_dialogs=$detailDialogs;choices=$results;scroll=$scrollChecks}|ConvertTo-Json -Depth 6 -Compress
+$idleChecks=@()
+foreach($bars in @('None','Vertical')) {
+    $box=New-Object KitInstallerTextBox
+    $probe=New-Object EditTrafficProbe
+    try {
+        $box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars=$bars
+        $box.Size=New-Object Drawing.Size(300,160);$box.Text=('Selectable text with wrapped lines. '*100)
+        [void]$box.Handle;$probe.AssignHandle($box.Handle);$box.Select(4,8)
+        $probe.MarginWrites=0
+        for($i=0;$i -lt 80;$i++) {
+            [void][InstallerProbeNative]::Send($box.Handle,0x200,[IntPtr]::Zero,[IntPtr](65536*20+20+$i))
+            [void][InstallerProbeNative]::Send($box.Handle,0x113,[IntPtr]::Zero,[IntPtr]::Zero)
+        }
+        $idleChecks+=@{bars=$bars;margin_writes=$probe.MarginWrites;selection=$box.SelectionStart -eq 4 -and $box.SelectionLength -eq 8}
+    } finally {$probe.ReleaseHandle();$box.Dispose()}
+}
+@{frames=$frames;dialogs=$dialogs;detail_dialogs=$detailDialogs;choices=$results;scroll=$scrollChecks;idle=$idleChecks}|ConvertTo-Json -Depth 6 -Compress

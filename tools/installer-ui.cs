@@ -51,8 +51,10 @@ public class KitInstallerButton : Button
             var textRect = new Rectangle((int)Math.Round(17 * scale), 0, Math.Max(1, Width - (int)Math.Round(19 * scale)), Height);
             TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ink,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.HidePrefix);
-            if (Focused && Enabled) using (var pen = new Pen(Color.FromArgb(18, 135, 187), Math.Max(1, scale)))
-                e.Graphics.DrawRectangle(pen, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+            if (Focused && Enabled && ShowFocusCues) using (var pen = new Pen(ink, Math.Max(1, scale))) {
+                int textWidth = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding).Width;
+                e.Graphics.DrawLine(pen, textRect.Left, Height - 4 * scale, Math.Min(Width - 2, textRect.Left + textWidth), Height - 4 * scale);
+            }
             return;
         }
         Color fill = primary ? Color.FromArgb(18, 135, 187) : understated ? parentColor : BackColor;
@@ -96,7 +98,7 @@ public sealed class KitInstallerTextBox : TextBox
     readonly ScrollStrip strip;
     ScrollBars logicalBars;
     bool syncing;
-    int wheelCarry;
+    int wheelCarry, appliedMargin = -1;
     public new ScrollBars ScrollBars {
         get { return logicalBars; }
         set {
@@ -134,7 +136,7 @@ public sealed class KitInstallerTextBox : TextBox
     protected override CreateParams CreateParams {
         get { var value = base.CreateParams; value.Style = (value.Style & ~0x00300000) | 0x02000000; return value; }
     }
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); SyncScroll(); }
+    protected override void OnHandleCreated(EventArgs e) { appliedMargin = -1; base.OnHandleCreated(e); strip.BringToFront(); SyncScroll(); }
     protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); SyncScroll(); }
     protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e); SyncScroll(); }
     protected override void OnResize(EventArgs e) { base.OnResize(e); SyncScroll(); }
@@ -161,10 +163,14 @@ public sealed class KitInstallerTextBox : TextBox
             strip.SetBounds(Math.Max(0, ClientSize.Width - width), 0, width, ClientSize.Height);
             // Reserve the strip even when all text fits, avoiding wrap oscillation.
             int margin = vertical ? width + Math.Max(2, (int)Math.Round(3 * DeviceDpi / 96.0)) : 2;
-            SendMessage(Handle, 0xD3, new IntPtr(2), new IntPtr(margin << 16));
+            // EM_SETMARGINS repaints native Edit, even when the value is unchanged.
+            // Mouse movement and selection timers must only read scroll state.
+            if (appliedMargin != margin) {
+                SendMessage(Handle, 0xD3, new IntPtr(2), new IntPtr(margin << 16));
+                appliedMargin = margin;
+            }
             strip.Sync(TotalLines, PageLines, FirstVisibleLine);
             strip.Visible = vertical && TotalLines > PageLines;
-            strip.BringToFront();
         } finally { syncing = false; }
     }
     protected override void WndProc(ref Message m)
@@ -173,6 +179,7 @@ public sealed class KitInstallerTextBox : TextBox
             Wheel((short)(m.WParam.ToInt64() >> 16)); m.Result = IntPtr.Zero; return;
         }
         base.WndProc(ref m);
+        if (m.Msg == 0x30) appliedMargin = -1; // Native font changes can reset margins.
         if (m.Msg == 0x100 || m.Msg == 0x101 || m.Msg == 0x200 || m.Msg == 0x202 || m.Msg == 0x113 ||
             m.Msg == 0x115 || m.Msg == 0xB6 || m.Msg == 0xB7 || m.Msg == 0xC || m.Msg == 0xC2 || m.Msg == 0x30)
             SyncScroll();
