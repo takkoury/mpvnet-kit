@@ -63,7 +63,7 @@ public sealed class AboutWindow : Window, IDisposable
         this.parent = parent; this.noShow = noShow;
         LoadInformation(data);
 
-        Title = "关于 mpv.net"; Width = 480; MinWidth = 360;
+        Title = "关于 mpv.net"; Width = 460; MinWidth = 360;
         SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
         WindowStyle = WindowStyle.None; ShowInTaskbar = false; Topmost = false;
         WindowStartupLocation = WindowStartupLocation.Manual;
@@ -90,28 +90,42 @@ public sealed class AboutWindow : Window, IDisposable
             VerticalAlignment = VerticalAlignment.Center });
         root.Children.Add(caption);
 
-        var body = new StackPanel { Margin = new Thickness(28, 22, 28, 12) };
-        body.Children.Add(Selectable("mpv.net", 28, "#F2F2F2"));
-        var host = Selectable("版本 " + fields["host_version"], 14, "#BFBFBF");
-        host.Margin = new Thickness(0, 4, 0, 22); body.Children.Add(host);
-        body.Children.Add(VersionRow("mpv", fields["mpv_version"]));
-        body.Children.Add(VersionRow("FFmpeg", fields["ffmpeg_version"]));
-        body.Children.Add(VersionRow("MediaInfo", fields["mediainfo_version"]));
+        var body = new StackPanel { Margin = new Thickness(24, 22, 24, 18) };
+        var identity = new Grid();
+        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var product = Selectable("mpv.net", 22, "#F2F2F2"); product.FontWeight = FontWeights.SemiBold;
+        product.VerticalAlignment = VerticalAlignment.Center; identity.Children.Add(product);
+        var host = Selectable(fields["host_version"], 14, "#BFBFBF");
+        host.TextAlignment = TextAlignment.Right; host.VerticalAlignment = VerticalAlignment.Center;
+        host.Margin = new Thickness(20, 0, 0, 0); Grid.SetColumn(host, 1); identity.Children.Add(host);
+        body.Children.Add(new Border { Child = identity, BorderBrush = Color("#2B2B2B"),
+            BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 0, 0, 18) });
+        var versions = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        versions.Children.Add(VersionRow("mpv", fields["mpv_version"]));
+        versions.Children.Add(VersionRow("FFmpeg", fields["ffmpeg_version"]));
+        versions.Children.Add(VersionRow("MediaInfo", fields["mediainfo_version"]));
+        body.Children.Add(versions);
         details = new Expander { Header = "许可与文件日期", IsExpanded = false,
-            Margin = new Thickness(0, 18, 0, 2), Foreground = Color("#BFBFBF") };
-        details.Content = Selectable(CopyrightText + "\n" + LicenseText +
-            "\n\n文件最后修改日期\nmpv.net：" + fields["host_modified"] +
-            "\nlibmpv-2.dll：" + fields["mpv_modified"] +
-            "\nMediaInfo.dll：" + fields["mediainfo_modified"], 12, "#BFBFBF");
+            Margin = new Thickness(0, 12, 0, 0), FontSize = 12, Foreground = Color("#BFBFBF") };
+        var information = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        information.Children.Add(Selectable(CopyrightText + "\n" + LicenseText, 12, "#BFBFBF"));
+        information.Children.Add(new TextBlock { Text = "文件最后修改日期", FontSize = 12,
+            Foreground = Color("#A6A6A6"), Margin = new Thickness(0, 18, 0, 10) });
+        information.Children.Add(VersionRow("mpv.net", fields["host_modified"], 12));
+        information.Children.Add(VersionRow("libmpv-2.dll", fields["mpv_modified"], 12));
+        information.Children.Add(VersionRow("MediaInfo.dll", fields["mediainfo_modified"], 12));
+        details.Content = information;
         body.Children.Add(details);
         var scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false };
         Grid.SetRow(scroll, 1); root.Children.Add(scroll);
-        var footer = new DockPanel { LastChildFill = false, Margin = new Thickness(28, 8, 28, 22) };
+        var footer = new DockPanel { LastChildFill = false, Margin = new Thickness(24, 12, 24, 14) };
         var close = ActionButton("关闭", "关闭关于窗口", false);
-        close.MinWidth = 88; close.Height = 34; close.Padding = new Thickness(16, 0, 16, 0);
+        close.MinWidth = 88; close.Height = 32; close.Padding = new Thickness(16, 0, 16, 0);
         DockPanel.SetDock(close, Dock.Right); footer.Children.Add(close);
-        Grid.SetRow(footer, 2); root.Children.Add(footer); Content = root;
+        var footerRegion = new Border { Child = footer, BorderBrush = Color("#292929"), BorderThickness = new Thickness(0, 1, 0, 0) };
+        Grid.SetRow(footerRegion, 2); root.Children.Add(footerRegion); Content = root;
 
         PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
             if (e.Key == Key.Escape) { e.Handled = true; Close(); }
@@ -134,7 +148,7 @@ public sealed class AboutWindow : Window, IDisposable
     void ConfigureReadingStyles()
     {
         // Retain the settings window's quiet, narrow dark scrollbar. Details
-        // use a text disclosure, with a small underline only for keyboard focus.
+        // use a text disclosure; focus changes text/arrow tone, with no underline.
         const string xaml = @"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
 <Style x:Key='AboutDetailsToggle' TargetType='ToggleButton'>
  <Setter Property='FocusVisualStyle' Value='{x:Null}'/><Setter Property='Foreground' Value='#BFBFBF'/>
@@ -142,13 +156,13 @@ public sealed class AboutWindow : Window, IDisposable
   <Border Background='Transparent' Padding='0,5,0,5'>
    <StackPanel Orientation='Horizontal'>
     <Path x:Name='arrow' Data='M 0,0 L 4,4 L 0,8' Stroke='#A6A6A6' StrokeThickness='1.2' StrokeStartLineCap='Round' StrokeEndLineCap='Round' Width='8' Height='8' Stretch='None' Margin='0,0,8,0' VerticalAlignment='Center'/>
-    <Border x:Name='focus' BorderBrush='Transparent' BorderThickness='0,0,0,1' Padding='0,1,0,2'><ContentPresenter Content='{TemplateBinding Content}' RecognizesAccessKey='True' VerticalAlignment='Center'/></Border>
+    <ContentPresenter Content='{TemplateBinding Content}' RecognizesAccessKey='True' VerticalAlignment='Center'/>
    </StackPanel>
   </Border>
   <ControlTemplate.Triggers>
    <Trigger Property='IsChecked' Value='True'><Setter TargetName='arrow' Property='Data' Value='M 0,0 L 4,4 L 8,0'/></Trigger>
    <Trigger Property='IsMouseOver' Value='True'><Setter Property='Foreground' Value='#E5E5E5'/></Trigger>
-   <Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='focus' Property='BorderBrush' Value='#777777'/></Trigger>
+   <Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='Foreground' Value='#E5E5E5'/><Setter TargetName='arrow' Property='Stroke' Value='#E5E5E5'/></Trigger>
   </ControlTemplate.Triggers>
  </ControlTemplate></Setter.Value></Setter>
 </Style>
@@ -176,13 +190,13 @@ public sealed class AboutWindow : Window, IDisposable
         AutomationProperties.SetName(box, text); return box;
     }
 
-    FrameworkElement VersionRow(string label, string value)
+    FrameworkElement VersionRow(string label, string value, double size = 14)
     {
         var row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.Children.Add(Selectable(label, 14, "#A6A6A6"));
-        var text = Selectable(value, 14, "#E5E5E5"); Grid.SetColumn(text, 1); row.Children.Add(text);
+        row.Children.Add(Selectable(label, size, "#A6A6A6"));
+        var text = Selectable(value, size, size < 14 ? "#BFBFBF" : "#E5E5E5"); Grid.SetColumn(text, 1); row.Children.Add(text);
         return row;
     }
 

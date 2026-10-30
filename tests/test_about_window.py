@@ -17,7 +17,8 @@ local files, bindings, events, calls, messages = {}, {}, {}, {}, {}
 local payload, reply, fail_write, aborted
 package.loaded.mp = {
  get_property_number=function() return 123 end, get_time=function() return 1 end,
- get_property=function(name) return ({['user-data/frontend/version']='7.1.2.0',['mpv-version']='mpv actual',['ffmpeg-version']='ffmpeg actual'})[name] end,
+ get_property=function() return '"quoted textual property"' end,
+ get_property_native=function(name) return ({['user-data/frontend/version']='7.1.2.0',['mpv-version']='mpv actual',['ffmpeg-version']='ffmpeg actual'})[name] end,
  command_native=function(args) return args[2] end,
  command_native_async=function(spec, callback) calls[#calls+1]={spec=spec,callback=callback}; return #calls end,
  add_key_binding=function(_,name,fn) bindings[name]=fn end,

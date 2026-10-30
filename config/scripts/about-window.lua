@@ -18,7 +18,8 @@ local function cleanup(session)
     os.remove(session.activation)
 end
 local function version(name)
-    local value = mp.get_property(name, '')
+    -- user-data string properties are JSON-quoted in the textual API.
+    local value = mp.get_property_native(name, '')
     return type(value) == 'string' and value:sub(1, 2048) or ''
 end
 local open
