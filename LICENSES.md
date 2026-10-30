@@ -30,6 +30,9 @@
 - `assets/screenshots/settings-shortcuts.png`
 - `config/helpers/capture-media.ps1`
 - `config/helpers/media-info-window.ps1`
+- `config/helpers/media-info-data.cs`
+- `config/helpers/media-info-view.cs`
+- `config/scripts/media-info.lua`
 - `config/helpers/media-path-action.ps1`
 - `config/helpers/playlist-window.ps1`
 - `config/scripts/user-shortcuts.lua`

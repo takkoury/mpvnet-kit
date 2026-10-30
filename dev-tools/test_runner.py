@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_media_info_controller.MediaInfoController',
         'test_about_window.AboutController',
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',
         'test_control_tooltips.ControlTooltips', 'test_enhancement_controls.EnhancementControls',
@@ -35,6 +36,7 @@ PROFILES = {
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
+        'test_media_info_data.MediaInfoDataTests', 'test_media_info_view.MediaInfoViewTests', 'test_media_info_controller.MediaInfoLauncher',
         'test_about_window.AboutWindowTests',
         'test_capture_single_format.CaptureOutputs', 'test_failure_feedback.CaptureHelperReasons',
         'test_playlist_window.PlaylistWindow', 'test_shortcuts_window.ShortcutsWindow',
@@ -58,6 +60,7 @@ REQUIREMENTS = {
                 'MPVNET_USER_UPGRADE_ROOT/OLD_PACKAGE/NEW_PACKAGE'),
 }
 OPTIONAL_SKIPS = {
+    'test_media_info_data.MediaInfoDataTests.test_native_report_matches_default_mediainfo_inform': 'MPVNET_TEST_MEDIAINFO',
     'test_user_shortcuts.UserShortcuts.test_native_snapshot_matches_cached_upstream_getdefaults': 'MPVNET_NATIVE_INPUT_HELP',
     'test_capture_single_format.CaptureOutputs.test_real_encoders_save_only_selected_file_and_remove_intermediate': 'MPVNET_TEST_FFMPEG',
     'test_capture_single_format.CaptureOutputs.test_commit_and_clipboard_failure_leave_existing_files_untouched': 'MPVNET_TEST_FFMPEG',
@@ -125,6 +128,7 @@ def preflight(profiles):
             raise RuntimeError('helpers 组需要 PATH 中可用的 powershell.exe')
         helper_root = _required('MPVNET_TEST_PLAYLIST_ARTIFACTS')
         _optional_file('MPVNET_TEST_FFMPEG')
+        _optional_file('MPVNET_TEST_MEDIAINFO')
     if 'install' not in profiles:
         if helper_root:
             checked_fixture_root(helper_root, ROOT, mode='unique')

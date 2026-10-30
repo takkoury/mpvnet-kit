@@ -3,6 +3,24 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/scripts/media-info.lua",
+      "destination": "config/scripts/media-info.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/media-info-data.cs",
+      "destination": "config/helpers/media-info-data.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/media-info-view.cs",
+      "destination": "config/helpers/media-info-view.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/scripts/about-window.lua",
       "destination": "config/scripts/about-window.lua",
       "component": "author",

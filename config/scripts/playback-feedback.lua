@@ -16,7 +16,6 @@ local saved_video
 local mark
 local reload_marks
 local window_scale_timer
-local info_active, info_request = false, nil
 local path_requests = {}
 local path_sequence = 0
 -- One in-memory association only; never retain request headers or infer a page from CID/CDN.
@@ -229,43 +228,7 @@ mp.add_key_binding(nil, "window-100", function()
     mp.osd_message("WINDOW 100%", 1)
 end)
 mp.add_key_binding(nil, "media-info", function()
-    local path = mp.get_property("path")
-    if info_active or not path then return end
-    local file = not path:find("://", 1, true) and utils.file_info(path)
-    if file and file.is_file then
-        -- Keep the accepted rich native dialog for actual local files.
-        mp.commandv("script-message-to", "mpvnet", "show-media-info", "msgbox")
-        return
-    end
-    local title = mp.get_property("media-title", "Media")
-    -- Technical URL titles can contain access tokens. Never send the input URL or headers.
-    if title:find("://", 1, true) or title == mp.get_property("filename") then
-        title = title:gsub("[?#].*$", "")
-    end
-    local width = mp.get_property_number("video-params/w")
-    local height = mp.get_property_number("video-params/h")
-    local fields = {
-        {label = "TITLE", value = title},
-        {label = "DURATION", value = time_text(mp.get_property_number("duration"), true)},
-        {label = "VIDEO FORMAT", value = mp.get_property("video-format", "--")},
-        {label = "RESOLUTION", value = width and height and string.format("%d × %d", width, height) or "--"},
-        {label = "FRAME RATE", value = mp.get_property("container-fps", "--")},
-        {label = "AUDIO CODEC", value = mp.get_property("audio-codec-name", "--")},
-        {label = "SAMPLE RATE", value = mp.get_property("audio-params/samplerate", "--")},
-        {label = "CHANNELS", value = mp.get_property("audio-params/channel-count", "--")},
-    }
-    local helper = mp.command_native({"expand-path", "~~/helpers/media-info-window.ps1"})
-    info_active = true
-    info_request = mp.command_native_async({name = "subprocess", args = {
-        paths.powershell(), "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", helper,
-        "-ParentPid", tostring(mp.get_property_number("pid")),
-    }, stdin_data = utils.format_json({fields = fields}), capture_stderr = true, playback_only = false},
-    function(success, result, error)
-        info_active, info_request = false, nil
-        if not success or (result and result.status ~= 0) then
-            mp.msg.warn("Media info window failed: " .. tostring(error or (result and result.stderr)))
-        end
-    end)
+    mp.commandv('script-message-to', 'media_info', 'open')
 end)
 mp.add_key_binding(nil, "osc-visibility", function()
     local mode = mp.get_property_native("user-data/osc/visibility") == "never" and "auto" or "never"
@@ -460,7 +423,6 @@ end)
 mp.register_event("shutdown", function()
     release_hold()
     if window_scale_timer then window_scale_timer:kill(); window_scale_timer = nil end
-    if info_request then mp.abort_async_command(info_request); info_request = nil end
     for path, request in pairs(path_requests) do mp.abort_async_command(request); os.remove(path) end
 end)
 capture_media_origin()

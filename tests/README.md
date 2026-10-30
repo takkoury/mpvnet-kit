@@ -77,6 +77,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 `AboutController`归入lua，检查关于窗口单helper、重复唤回、迟到打开重放、失败及退出清理；`AboutWindowTests`归入helpers，运行真实WPF启动器的ValidateOnly检查版本来源、完整信息、路径校验及无句柄／计时器。owner、实际激活和父播放器退出仍需隔离真窗试用。
 
+媒体信息由`MediaInfoController`（lua）、`MediaInfoDataTests`和`MediaInfoViewTests`（helpers）分别验证会话及地址隔离、原始报告与概览数据、完整行保留及搜索／复制。可选`MPVNET_TEST_MEDIAINFO`指向已有MediaInfo.dll，使用临时父进程与合成音频对照默认Inform原报告；不读取个人配置，不安装DLL。无此依赖时仅允许对应真实DLL用例跳过，隐藏WPF不替代用户键鼠与owner验收。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell

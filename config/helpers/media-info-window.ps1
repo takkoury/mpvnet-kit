@@ -1,75 +1,37 @@
-param(
-    [int]$ParentPid,
-    [switch]$ValidateOnly
-)
-
-$ErrorActionPreference = 'Stop'
-$utf8 = New-Object System.Text.UTF8Encoding($false)
-[Console]::InputEncoding = $utf8
-[Console]::OutputEncoding = $utf8
-$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
-$allowedLabels = @('TITLE', 'DURATION', 'VIDEO FORMAT', 'RESOLUTION', 'FRAME RATE', 'AUDIO CODEC', 'SAMPLE RATE', 'CHANNELS')
-$lines = foreach ($field in $payload.fields) {
-    if ($allowedLabels -notcontains [string]$field.label) { throw 'Unknown media information field.' }
-    '{0}: {1}' -f $field.label, [string]$field.value
-}
-$text = $lines -join [Environment]::NewLine
-
-if ($ValidateOnly) {
-    [Console]::Out.WriteLine($text)
-    exit 0
-}
-
-# Retain the original Process object so PID reuse cannot attach this window to a new process.
-try { $parentProcess = [System.Diagnostics.Process]::GetProcessById($ParentPid) }
-catch { exit 0 }
-if ($parentProcess.HasExited) { $parentProcess.Dispose(); exit 0 }
-
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
-$form = New-Object System.Windows.Forms.Form
-$form.Text = 'Media Information'
-$form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object System.Drawing.Size(640, 420)
-$form.MinimumSize = New-Object System.Drawing.Size(360, 240)
-
-$content = New-Object System.Windows.Forms.TextBox
-$content.Multiline = $true
-$content.ReadOnly = $true
-$content.WordWrap = $false
-$content.ScrollBars = 'Both'
-$content.Dock = 'Fill'
-$content.Font = New-Object System.Drawing.Font('Consolas', 11)
-$content.Text = $text
-$form.Controls.Add($content)
-
-$footer = New-Object System.Windows.Forms.FlowLayoutPanel
-$footer.Dock = 'Bottom'
-$footer.Height = 48
-$footer.FlowDirection = 'RightToLeft'
-$footer.Padding = New-Object System.Windows.Forms.Padding(9)
-$close = New-Object System.Windows.Forms.Button
-$close.Text = 'Close'
-$close.Size = New-Object System.Drawing.Size(90, 30)
-$close.Add_Click({ $form.Close() })
-$footer.Controls.Add($close)
-$form.Controls.Add($footer)
-$form.CancelButton = $close
-
-$timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 500
-$timer.Add_Tick({
-    try { if ($parentProcess.HasExited) { $form.Close() } }
-    catch { $form.Close() }
-})
+﻿param([Parameter(Mandatory=$true)][string]$RequestPath,[switch]$ValidateOnly,[switch]$NoShow)
+$ErrorActionPreference='Stop'
+$utf8=New-Object Text.UTF8Encoding($false)
+$writer=New-Object IO.StreamWriter([Console]::OpenStandardOutput(),$utf8)
+$writer.AutoFlush=$true
+$window=$null;$parentProcess=$null
+Add-Type -AssemblyName System.Web.Extensions
+$json=New-Object Web.Script.Serialization.JavaScriptSerializer
 try {
-    $timer.Start()
-    [void]$form.ShowDialog()
-}
-finally {
-    $timer.Stop()
-    $timer.Dispose()
-    $form.Dispose()
-    $parentProcess.Dispose()
+    if(-not [IO.Path]::IsPathRooted($RequestPath)){throw '媒体信息窗口请求路径无效。'}
+    $file=Get-Item -LiteralPath $RequestPath
+    if($file.Length -gt 262144){throw '媒体信息窗口请求过大。'}
+    $data=$json.DeserializeObject([IO.File]::ReadAllText($file.FullName,$utf8))
+    if($data.schema -ne 1 -or -not ($data.token -is [string]) -or $data.token.Length -gt 128 -or -not $data.token){throw '媒体信息窗口请求无效。'}
+    if($data.activation_path -cne ($RequestPath+'.activate')){throw '媒体信息窗口会话路径不匹配。'}
+    if(-not ($data.has_media -is [bool]) -or -not ($data.local_path -is [string]) -or -not ($data.title -is [string]) -or -not ($data.properties -is [Collections.IDictionary])){throw '媒体信息字段无效。'}
+    if($data.local_path -and -not [IO.Path]::IsPathRooted($data.local_path)){throw '媒体路径必须为绝对路径。'}
+    $parentProcess=[Diagnostics.Process]::GetProcessById([int]$data.parent_pid)
+    if($parentProcess.HasExited){throw '播放器已退出。'}
+    Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
+    $references=@('System.Core','System.Xaml', [Windows.Window].Assembly.Location,
+        [Windows.Media.Brushes].Assembly.Location,[Windows.Threading.Dispatcher].Assembly.Location)
+    Add-Type -ReferencedAssemblies $references -Path @((Join-Path $PSScriptRoot 'media-info-data.cs'),(Join-Path $PSScriptRoot 'media-info-view.cs'))
+    $media=[MediaInfoData]::Read($data,$parentProcess)
+    $window=New-Object MediaInfoView($data,$media,$parentProcess,[bool]($ValidateOnly -or $NoShow))
+    if($ValidateOnly -or $NoShow){$writer.WriteLine($json.Serialize($window.Snapshot()))}
+    else {
+        $window.Run()
+        $writer.WriteLine($json.Serialize(@{ok=$true;last_seen_serial=$window.LastSeenSerial}))
+    }
+} catch {
+    $writer.WriteLine($json.Serialize(@{ok=$false;error=$_.Exception.Message}))
+    exit 1
+} finally {
+    if($window){$window.Dispose()}
+    if($parentProcess){$parentProcess.Dispose()}
 }
