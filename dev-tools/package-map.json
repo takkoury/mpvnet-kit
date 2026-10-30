@@ -3,6 +3,24 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/scripts/about-window.lua",
+      "destination": "config/scripts/about-window.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/about-window.ps1",
+      "destination": "config/helpers/about-window.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/about-window.cs",
+      "destination": "config/helpers/about-window.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "assets/screenshots/settings-shortcuts.png",
       "destination": "assets/screenshots/settings-shortcuts.png",
       "component": "author",

@@ -200,7 +200,7 @@ local additions = {
     {'help.mpv-manual', '工具与设置', '帮助：mpv 使用手册', 'script-message-to mpvnet shell-execute https://mpv.io/manual/stable', true},
     {'help.mpvnet-manual', '工具与设置', '帮助：mpv.net 使用手册', 'script-message-to mpvnet shell-execute https://github.com/mpvnet-player/mpv.net/blob/main/docs/manual.md', true},
     {'help.awesome-mpv', '工具与设置', '帮助：mpv 扩展资源', 'script-message-to mpvnet shell-execute https://github.com/stax76/awesome-mpv', true},
-    {'help.about', '工具与设置', '关于 mpv.net', 'script-message-to mpvnet show-about', true},
+    {'help.about', '工具与设置', '关于 mpv.net', 'script-binding about_window/open', true},
     {'tools.context-menu', '工具与设置', '打开右键菜单（鼠标需离开控制栏）', 'script-message-to mpvnet show-menu', true},
 }
 for _, def in ipairs(additions) do definitions[#definitions+1] = def end
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-message-to mpvnet show-about', 'help.about'},
     {'script-binding playback_feedback/toggle-pause', 'playback.pause'},
     {'script-message-to mpvnet play-pause', 'playback.pause'}, {'cycle pause', 'playback.pause'},
     {'playlist-prev', 'playlist.previous'}, {'playlist-next', 'playlist.next'},

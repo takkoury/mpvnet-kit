@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_about_window.AboutController',
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',
         'test_control_tooltips.ControlTooltips', 'test_enhancement_controls.EnhancementControls',
         'test_enhancement_controls.ModernzEnhancementFooter',
@@ -34,6 +35,7 @@ PROFILES = {
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
+        'test_about_window.AboutWindowTests',
         'test_capture_single_format.CaptureOutputs', 'test_failure_feedback.CaptureHelperReasons',
         'test_playlist_window.PlaylistWindow', 'test_shortcuts_window.ShortcutsWindow',
         'test_user_preferences.UserPreferences', 'test_settings_storage.SettingsStorage',

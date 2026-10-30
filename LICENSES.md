@@ -43,6 +43,9 @@
 - `config/helpers/settings-storage.ps1`
 - `config/helpers/settings-window.ps1`
 - `config/helpers/settings-window.cs`
+- `config/helpers/about-window.cs`
+- `config/helpers/about-window.ps1`
+- `config/scripts/about-window.lua`
 - `config/helpers/settings-controls.cs`
 - `config/helpers/settings-shortcuts.cs`
 - `config/helpers/settings-chrome.cs`

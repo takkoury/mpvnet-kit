@@ -69,6 +69,10 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 ## 辅助进程与生命周期
 
+关于窗口由[about-window.lua](../config/scripts/about-window.lua)持有单实例helper及两份自有临时文件：不可变JSON请求保存当前实例版本和父PID，独立序号文件传递重复打开请求。[启动器](../config/helpers/about-window.ps1)校验请求与序号路径配对，[WPF窗口](../config/helpers/about-window.cs)保留父Process对象、验证owner窗口PID，每250ms消费更大的序号并唤回；父进程退出时关闭。关闭回执携带最后处理序号，Lua仅重放窗口停止读取之后的新打开请求，清理仅限本会话文件；媒体切换不关闭窗口。菜单及稳定动作`help.about`转向新入口，原命令在快捷键模型中作为语义别名保留。
+
+版本取当前实例的`user-data/frontend/version`、`mpv-version`与`ffmpeg-version`，MediaInfo版本及各文件最后修改日期读取父进程程序所在目录。读取失败明确显示“未能读取”，不使用固定版本；原mpv.net 7.1.2关于窗的版权和GPL v2信息完整保留。自有窗口属于父播放器但不禁用播放器，不发起联网或打开外部链接；高级用户直接调用宿主底层命令仍可用。验证模式不创建句柄、计时器或显示窗口。
+
 安装器继续由`tools/installer.ps1`持有检查计划、后台runspace、忙状态及Apply／Restore／Recover调用；[installer-ui.cs](../tools/installer-ui.cs)仅提供WinForms窗口、按钮、可选择的深色文本框和确认窗。主区显示目标、状态及一句说明，完整检查结果默认收起；右侧主按钮按状态选择播放器、执行、重新检查或完成关闭，还原独立位于左侧。安装器保留独立任务栏、双向缩放与最小化／最大化；确认窗归属于安装器，默认取消，Esc／关闭取消，摘要与可展开的完整详情分别滚动，按钮固定在右侧。确认期间禁止重入和重新检查，确认返回OK后仍走原计划token复核，核心维护模块未移入界面层。界面构建失败继续保留系统MessageBox兜底。
 
 `KitInstallerTextBox`保留原生Edit的文本选择和复制，以自有细滚动条替代亮色系统条；滚动范围使用EM_GETRECT和实际视觉行间距，不能以Font.Height近似高DPI下的原生行高。确认文本只统一换行用于显示，不修改来源内容。安装计划的releaseNotice按字典成员读取并纳入确认正文；不能用PSObject.Properties判断字典键。此层继续采用现有system-aware DPI，不承诺真实跨屏缩放已验证。

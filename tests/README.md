@@ -75,6 +75,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 `InstallerUI`归入helpers，编译真实`installer-ui.cs`并检查窗口能力、确认摘要／完整详情、收展高度与文字选区保持、取消默认、按钮布局和原生Edit滚底末行；不运行维护写入，不显示窗口。100%／150%／200%合成倍率检查不等同混合显示器DPI验收，真实选择文本／拖动及DWM像素仍需单独试用。
 
+`AboutController`归入lua，检查关于窗口单helper、重复唤回、迟到打开重放、失败及退出清理；`AboutWindowTests`归入helpers，运行真实WPF启动器的ValidateOnly检查版本来源、完整信息、路径校验及无句柄／计时器。owner、实际激活和父播放器退出仍需隔离真窗试用。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell

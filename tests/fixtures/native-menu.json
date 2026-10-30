@@ -134,6 +134,7 @@
     "stop"
   ],
   "replacements": {
+    "script-message-to mpvnet show-about": "script-binding about_window/open",
     "script-message-to mpvnet play-pause": "script-binding playback_feedback/toggle-pause",
     "playlist-prev": "script-binding playlist_controls/previous",
     "playlist-next": "script-binding playlist_controls/next",
