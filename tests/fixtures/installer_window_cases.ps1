@@ -33,6 +33,11 @@ public static class FixtureMessageBox {
     public static bool Hidden;
     public static bool DefaultCancel = true;
     public static string LastMessage = "";
+    public static bool ClosingCancelled(System.Windows.Forms.Form owner) {
+        var args=new System.Windows.Forms.FormClosingEventArgs(System.Windows.Forms.CloseReason.UserClosing,false);
+        typeof(System.Windows.Forms.Form).GetMethod("OnFormClosing",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(owner,new object[]{args});
+        return args.Cancel;
+    }
     public static System.Windows.Forms.DialogResult ShowConfirmation(object value, System.Windows.Forms.Form owner) {
         Confirmations++;
         var dialog=(System.Windows.Forms.Form)value;
@@ -100,9 +105,7 @@ function Show-FixtureConfirmation($Dialog,$Owner) {
         $before=[FixtureMessageBox]::Confirmations
         Invoke-FixtureClick $script:installButton
         Assert-Fixture ([FixtureMessageBox]::Confirmations -eq $before -and -not $script:busy) 'Repeated confirmation was not blocked'
-        $closing=New-Object Windows.Forms.FormClosingEventArgs([Windows.Forms.CloseReason]::UserClosing,$false)
-        [void][Windows.Forms.Form].GetMethod('OnFormClosing',[Reflection.BindingFlags]'Instance,NonPublic').Invoke($Owner,@($closing))
-        Assert-Fixture $closing.Cancel 'Owner closed during confirmation'
+        Assert-Fixture ([FixtureMessageBox]::ClosingCancelled($Owner)) 'Owner closed during confirmation'
     }
     if($NoShow) {
         $Dialog.Owner=$Owner;[void]$Dialog.Handle;$Dialog.PerformLayout()
@@ -242,6 +245,7 @@ $hook = @'
             }
         } catch {
             $script:fixtureError = $_.Exception.ToString()
+            $script:fixtureUiError = $script:logBox.Text
             if (-not $script:busy) { $script:fixtureTimer.Stop(); $script:form.Close() }
         }
     })
@@ -266,7 +270,7 @@ $source = $source.Replace('$PSScriptRoot', ("'" + (Join-Path $SourceRoot 'tools'
 & ([scriptblock]::Create($source)) -PackageRoot $PackageRoot -BackupRoot (Join-Path $FixtureRoot 'backups')
 if ($script:fixtureTimer) { $script:fixtureTimer.Dispose() }
 if ($script:fixtureContext) { $script:fixtureContext.Dispose() }
-$report = [ordered]@{ checks = $script:fixtureChecks.ToArray(); error = $script:fixtureError; noShow=[bool]$NoShow; confirmation = 'real custom confirmation controls with simulated button events'; input = 'in-process control events; no physical input'; source = (Join-Path $SourceRoot 'tools/installer.ps1') }
+$report = [ordered]@{ checks = $script:fixtureChecks.ToArray(); error = $script:fixtureError; uiError=$script:fixtureUiError; noShow=[bool]$NoShow; confirmation = 'real custom confirmation controls with simulated button events'; input = 'in-process control events; no physical input'; source = (Join-Path $SourceRoot 'tools/installer.ps1') }
 [IO.File]::WriteAllText((Join-Path $FixtureRoot 'result.json'), ($report | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
 if ($script:fixtureError) { throw $script:fixtureError }
 Write-Output ($report | ConvertTo-Json -Depth 8)
