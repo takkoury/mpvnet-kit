@@ -17,6 +17,8 @@ local local_values={}
 local runtime={}
 local retired={}
 local token,editor_running,editor_visible,closing='',false,false,false
+local open_page,open_serial='',0
+local queued_open,queued_page=false,nil
 local saving,saving_page,save_serial,save_page,save_error,save_ok,save_revision=false,'',0,'','',false,''
 local preview_serial,preview_error=0,''
 local action_serial,action_error=0,''
@@ -65,6 +67,7 @@ local function publish()
             apply_error='',default_source='自动选择',search_terms=id=='mpv_path' and '缩略图 进度条 预览 播放器 路径 mpv' or ''}
     end
     mp.set_property_native('user-data/mpvnet/settings',{schema=1,editor_token=token,
+        open_page=open_page,open_serial=open_serial,
         editor_visible=editor_visible,refresh_id=refresh_id,revision=revision,paths_revision=paths_revision,error=error_text,
         paths_error=paths_error,saving=saving,saving_page=saving_page,save_serial=save_serial,
         save_page=save_page,save_error=save_error,save_ok=save_ok,save_revision=save_revision,
@@ -218,17 +221,25 @@ local function preview(received,id,value)
     mp.commandv('script-message-to',field.script,'settings-preview',received,wire,previous_owner,id)
     publish()
 end
-local function open()
+local function open(target)
     if closing then return end
-    if editor_running then mp.commandv('script-message','mpvnet-settings-show',token);return end
+    if editor_running then
+        -- editor-close retires the token before the helper process exits.
+        -- Reopen only after that process releases the old window/session.
+        if token=='' then queued_open=true;queued_page=target or queued_page;return end
+        if target=='shortcuts' then open_page=target;open_serial=open_serial+1;publish() end
+        mp.commandv('script-message','mpvnet-settings-show',token);return
+    end
     session=session+1;token=instance..':editor:'..session
+    open_page=target=='shortcuts' and target or '';open_serial=open_page~='' and 1 or 0
     local pipe=mp.get_property('options/input-ipc-server','')
     if pipe=='' then
         pipe='\\\\.\\pipe\\mpvnet-settings-'..instance
         if not mp.set_property('options/input-ipc-server',pipe) then save_error='无法建立当前播放器的 IPC 通道';publish();return end
     end
     local path,err=request_file('editor',encode({schema=1,pipe=pipe,parent_pid=mp.get_property_number('pid',0),
-        script=mp.get_script_name(),token=token,settings_path=settings_path,local_path=local_path}))
+        script=mp.get_script_name(),token=token,settings_path=settings_path,local_path=local_path,
+        open_page=open_page,open_serial=open_serial}))
     if not path then save_error=err;publish();return end
     local opened_token=token
     editor_running,editor_visible=true,true;publish()
@@ -240,16 +251,26 @@ local function open()
         editor_running=false
         if not ok or not result or result.status~=0 then save_error='无法打开设置窗口' end
         publish()
+        if queued_open and not closing then
+            local next_page=queued_page;queued_open,queued_page=false,nil;open(next_page)
+        end
     end)
 end
-mp.add_key_binding(nil,'open',open)
+mp.add_key_binding(nil,'open',function() open() end)
+mp.register_script_message('open-shortcuts',function() open('shortcuts') end)
 mp.register_script_message('editor-ready',function(received) if current(received) then editor_visible=true;publish() end end)
 mp.register_script_message('editor-refresh',function(received,id)
     if not current(received) or saving or type(id)~='string' or #id<1 or #id>64 or not id:match('^[A-Za-z0-9%-]+$') then return end
     refresh_id=id;reload(false)
 end)
-mp.register_script_message('editor-close',function(received)
+mp.register_script_message('editor-close',function(received,received_serial)
     if current(received) then
+        -- A click can reach Lua after the window accepts close but before its
+        -- close notification arrives. Only replay requests that window never
+        -- saw; pending requests already seen when the user closed are dropped.
+        local seen=type(received_serial)=='string' and #received_serial<=16
+            and received_serial:match('^%d+$') and tonumber(received_serial) or nil
+        if seen and seen<open_serial and open_page=='shortcuts' then queued_open,queued_page=true,'shortcuts' end
         display_preview(received,'end')
         retire(received);cancel(nil,received);token='';editor_visible=false;publish()
     end

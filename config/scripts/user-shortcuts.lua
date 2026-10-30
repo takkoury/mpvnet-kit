@@ -14,7 +14,7 @@ local revision, observed_raw, observed_exists, observed_error = '', nil, nil, ni
 local document, effective, catalog
 local repairable, editable_actions = false, nil
 local error_text, save_error = '', ''
-local saving, editor_running, editor_visible, closing = false, false, false, false
+local saving, editor_visible, closing = false, false, false
 local refresh_id = ''
 local owned = {}
 
@@ -155,27 +155,9 @@ end
 
 local function open()
     if closing then return end
-    if editor_running then
-        editor_visible = true; publish()
-        mp.commandv('script-message', 'mpvnet-shortcuts-show', token)
-        return
-    end
-    local pipe = mp.get_property('options/input-ipc-server', '')
-    if pipe == '' then
-        pipe = '\\\\.\\pipe\\mpvnet-shortcuts-' .. token
-        if not mp.set_property('options/input-ipc-server', pipe) then
-            save_error = '无法建立当前播放器的 IPC 通道'; publish(); return
-        end
-    end
-    local path, err = request_file('editor', encode({schema=1, pipe=pipe,
-        parent_pid=mp.get_property_number('pid', 0), script=mp.get_script_name(), token=token, settings_path=settings_path}))
-    if not path then save_error = err; publish(); return end
-    editor_running, editor_visible = true, true; publish()
-    launch('Editor', path, function(ok, result)
-        editor_running, editor_visible = false, false
-        if not ok or not result or result.status ~= 0 then save_error = '无法打开快捷键窗口' end
-        publish()
-    end)
+    -- Keep the stable entry and shortcut persistence owner; the accepted
+    -- settings window owns the single visible editor and its close flow.
+    mp.commandv('script-message-to', 'user_settings', 'open-shortcuts')
 end
 
 mp.add_key_binding(nil, 'open', open)

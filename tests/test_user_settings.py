@@ -9,6 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class UserSettings(unittest.TestCase):
+    def test_shortcut_entry_reuses_window_and_survives_start_and_close_handoffs(self):
+        self.run_case('shortcut_entry_lifecycle')
+
+    def test_shortcut_entry_close_ack_replays_only_requests_not_seen_by_old_window(self):
+        self.run_case('shortcut_entry_close_ack_preserves_only_unseen_requests')
+
     @classmethod
     def setUpClass(cls):
         cls.lua = load_lua51()

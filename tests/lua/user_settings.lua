@@ -198,6 +198,48 @@ local function save(host,page,value)
     host.send('save',host.state().editor_token,page=='paths' and host.state().paths_revision or host.state().revision,page,value)
 end
 
+function shortcut_entry_lifecycle()
+    local host=instance(100)
+    host.properties['options/input-ipc-server']='\\\\.\\pipe\\existing-settings'
+    host.send('open-shortcuts')
+    local first=requests[#requests];local count=#requests;local token=host.state().editor_token
+    local root=assert(parser.parse(files[first.args.args[#first.args.args]],decode))
+    eq(root.values.open_page.value,'shortcuts');eq(root.values.open_serial.value,1)
+    eq(root.values.pipe.value,'\\\\.\\pipe\\existing-settings')
+    -- A second request before editor-ready must survive on the state bus.
+    host.send('open-shortcuts');eq(#requests,count);eq(host.state().open_serial,2)
+    eq(host.state().editor_token,token)
+    host.open();eq(host.state().open_serial,2);eq(#requests,count)
+    host.send('editor-ready',token);host.send('open-shortcuts')
+    eq(host.state().open_serial,3);eq(#requests,count)
+    -- Close retires the token before subprocess completion; do not lose reopen.
+    host.send('editor-close',token);eq(host.state().editor_token,'')
+    host.open();host.send('open-shortcuts');eq(#requests,count)
+    first.callback(true,{status=0});eq(#requests,count+1)
+    local next_token=host.state().editor_token;assert(next_token~=token and next_token~='')
+    eq(host.state().open_page,'shortcuts');eq(host.state().open_serial,1)
+    local second=requests[#requests]
+    host.send('editor-close',next_token);second.callback(true,{status=0})
+    host.open();eq(host.state().open_page,'');eq(host.state().open_serial,0)
+    local third=requests[#requests];host.send('editor-close',host.state().editor_token)
+    host.send('open-shortcuts');count=#requests;host.event('shutdown')
+    third.callback(true,{status=0});eq(#requests,count)
+end
+
+function shortcut_entry_close_ack_preserves_only_unseen_requests()
+    local host=instance(101);host.send('open-shortcuts')
+    local token=host.state().editor_token;local job=requests[#requests];local count=#requests
+    -- The helper has accepted close at serial 1; a new click reaches Lua first.
+    host.send('open-shortcuts');eq(host.state().open_serial,2)
+    host.send('editor-close',token,'1');job.callback(true,{status=0})
+    eq(#requests,count+1);assert(host.state().editor_token~=token)
+    token=host.state().editor_token;job=requests[#requests];count=#requests
+    host.send('open-shortcuts');eq(host.state().open_serial,2)
+    -- This request was seen behind the close prompt and explicitly discarded.
+    host.send('editor-close',token,'2');job.callback(true,{status=0})
+    eq(#requests,count);eq(host.state().editor_token,'')
+end
+
 function editor_refresh_reads_external_without_writing_or_changing_session()
     local host=instance(90);local token=host.open()
     eq(host.state().refresh_id,'')

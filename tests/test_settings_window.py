@@ -65,13 +65,80 @@ def complete_state():
 
 @unittest.skipUnless(os.name == 'nt', 'Requires Windows PowerShell/WPF')
 class SettingsWindow(unittest.TestCase):
-    def run_window(self, steps=(), initial=None, width=1100, height=720, render=False):
+    def test_shortcut_entry_starts_on_embedded_page(self):
+        data = self.run_window(initial=state(open_page='shortcuts', open_serial=1),
+                               entry=dict(open_page='shortcuts', open_serial=1))
+        self.assertEqual(data['page'], 'shortcuts')
+        self.assertTrue(data['embedded_shortcuts_visible'])
+        self.assertFalse(data['navigation_pending'])
+
+    def test_shortcut_navigation_preserves_drafts_and_consumes_each_serial_once(self):
+        incoming = state(open_page='shortcuts', open_serial=1)
+        steps = [dict(op='edit', id='sub-scale', text='1.2'), dict(op='search', text='字幕'),
+                 dict(op='state', state=incoming)]
+        data = self.run_window(steps)
+        self.assertEqual(data['page'], 'shortcuts')
+        self.assertTrue(data['embedded_shortcuts_visible'])
+        self.assertEqual(data['dirty_pages'], ['subtitles'])
+        self.assertEqual(data['drafts']['sub-scale']['text'], '1.2')
+        self.assertFalse(any(c[2] == 'save' for c in data['sent']))
+        data = self.run_window(steps + [dict(op='page', page='paths'), dict(op='state', state=incoming),
+                                       dict(op='state', state=state(open_page='shortcuts', open_serial=0))])
+        self.assertEqual(data['page'], 'paths')
+        self.assertEqual(data['navigation_serial'], 1)
+
+    def test_shortcut_navigation_waits_for_close_confirmation(self):
+        steps = [dict(op='edit', id='sub-scale', text='1.2'), dict(op='request-close'),
+                 dict(op='state', state=state(open_page='shortcuts', open_serial=1)), dict(op='navigation-poll')]
+        blocked = self.run_window(steps)
+        self.assertTrue(blocked['overlay_open'])
+        self.assertTrue(blocked['navigation_pending'])
+        self.assertEqual(blocked['page'], 'subtitles')
+        data = self.run_window(steps + [dict(op='close-choice', id='CloseCancel'), dict(op='navigation-poll')])
+        self.assertEqual(data['page'], 'shortcuts')
+        self.assertEqual(data['dirty_pages'], ['subtitles'])
+        closed = self.run_window(steps + [dict(op='close-choice', id='CloseDiscard'), dict(op='navigation-poll')])
+        self.assertTrue(closed['close_accepted'])
+        self.assertEqual(closed['page'], 'subtitles')
+        close_command = next(c for c in closed['sent'] if c[2] == 'editor-close')
+        self.assertEqual(close_command[4], '1')
+
+    def test_shortcut_navigation_waits_for_native_path_dialog(self):
+        steps = [dict(op='page', page='paths'), dict(op='native-dialog', open=True),
+                 dict(op='state', state=state(open_page='shortcuts', open_serial=1)), dict(op='navigation-poll')]
+        blocked = self.run_window(steps)
+        self.assertEqual(blocked['page'], 'paths')
+        self.assertTrue(blocked['navigation_pending'])
+        data = self.run_window(steps + [dict(op='native-dialog', open=False), dict(op='navigation-poll')])
+        self.assertEqual(data['page'], 'shortcuts')
+
+    def test_shortcut_navigation_waits_for_save_acknowledgement(self):
+        from test_settings_close import saved_state
+        incoming = state(open_page='shortcuts', open_serial=1)
+        steps = [dict(op='edit', id='sub-scale', text='1.2'), dict(op='save'),
+                 dict(op='state', state=incoming), dict(op='navigation-poll')]
+        blocked = self.run_window(steps)
+        self.assertTrue(blocked['saving'])
+        self.assertEqual(blocked['page'], 'subtitles')
+        data = self.run_window(steps + [dict(op='state', state=saved_state(incoming, 'subtitles', 1, **{'sub-scale': 1.2}))])
+        self.assertEqual(data['page'], 'shortcuts')
+        self.assertEqual(data['dirty_pages'], [])
+
+    def test_navigation_rejects_unknown_target_stale_token_and_bad_serial(self):
+        steps = [dict(op='state', state=state(open_page='paths', open_serial=99)),
+                 dict(op='state', state=state(open_page='shortcuts', open_serial=5, editor_token='stale')),
+                 dict(op='state', state=state(open_page='shortcuts', open_serial='bad'))]
+        data = self.run_window(steps)
+        self.assertEqual(data['page'], 'subtitles')
+        self.assertEqual(data['navigation_serial'], 0)
+
+    def run_window(self, steps=(), initial=None, width=1100, height=720, render=False, entry=None):
         with tempfile.TemporaryDirectory(prefix='mpvnet-settings-window-') as temp:
             request = Path(temp) / 'request.json'
             request.write_text(json.dumps(dict(schema=1, token=TOKEN, script='user_settings',
                 parent_pid=os.getpid(), pipe='fixture-unused', validation_state=initial or state(),
                 validation_steps=list(steps), validation_width=width, validation_height=height,
-                validation_render_path=str(Path(temp) / 'render.png') if render else ''), ensure_ascii=False), encoding='utf-8')
+                validation_render_path=str(Path(temp) / 'render.png') if render else '', **(entry or {})), ensure_ascii=False), encoding='utf-8')
             result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
                 '-File', str(ROOT / 'config/helpers/settings-window.ps1'), '-RequestPath', str(request),
                 '-ValidateOnly', '-NoShow'], capture_output=True, timeout=30)

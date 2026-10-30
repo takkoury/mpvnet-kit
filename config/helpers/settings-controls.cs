@@ -191,14 +191,18 @@ public sealed partial class SettingsEditor
     sealed class DialogOwner : System.Windows.Forms.IWin32Window { public IntPtr Handle { get; set; } }
     void BrowsePath(SettingsDraft.Field field)
     {
-        string selected = null;
-        if (field.Id == "capture_root") {
-            using (var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "选择截图与片段保存目录", SelectedPath = field.Text, ShowNewFolderButton = true })
-                if (dialog.ShowDialog(new DialogOwner { Handle = new WindowInteropHelper(this).Handle }) == System.Windows.Forms.DialogResult.OK) selected = dialog.SelectedPath;
-        } else {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择" + field.Label, Filter = "程序文件 (*.exe)|*.exe", CheckFileExists = true, Multiselect = false };
-            if (dialog.ShowDialog(this) == true) selected = dialog.FileName;
-        }
-        if (selected != null) { EditField(field, selected); SyncInputs(); }
+        if (nativeDialogOpen) return;
+        nativeDialogOpen = true;
+        try {
+            string selected = null;
+            if (field.Id == "capture_root") {
+                using (var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "选择截图与片段保存目录", SelectedPath = field.Text, ShowNewFolderButton = true })
+                    if (dialog.ShowDialog(new DialogOwner { Handle = new WindowInteropHelper(this).Handle }) == System.Windows.Forms.DialogResult.OK) selected = dialog.SelectedPath;
+            } else {
+                var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择" + field.Label, Filter = "程序文件 (*.exe)|*.exe", CheckFileExists = true, Multiselect = false };
+                if (dialog.ShowDialog(this) == true) selected = dialog.FileName;
+            }
+            if (selected != null) { EditField(field, selected); SyncInputs(); }
+        } finally { nativeDialogOpen = false; }
     }
 }

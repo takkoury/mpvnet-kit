@@ -210,6 +210,8 @@ public sealed partial class SettingsEditor : Window
     Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage, previewTitle; Button previewMode;
     bool fullPreview;
     string page = "subtitles", pendingPage, pendingRevision, localError = "";
+    long navigationSerial;
+    bool navigationPending, nativeDialogOpen;
     int pendingSerial, serial, sequence;
     bool syncing, saving, forceClose, finished, disconnected;
     bool displayRequested, displayAvailable, selectingPage;
@@ -231,6 +233,9 @@ public sealed partial class SettingsEditor : Window
         if (pipeName.StartsWith(@"\\.\pipe\", StringComparison.Ordinal)) pipeName = pipeName.Substring(9);
         if (pipeName.Length < 1 || pipeName.Length > 256 || pipeName.IndexOfAny(new[] { '\\', '/', ':', '\r', '\n', '\0' }) >= 0)
             throw new InvalidDataException("播放器连接无效。");
+        if (SettingsDraft.Str(request,"open_page") == "shortcuts") {
+            page = "shortcuts"; navigationSerial = ReadNavigationSerial(request);
+        }
         Build();
         Closing += OnClosing;
         Closed += delegate { Finish(); if (!validation && Application.Current != null) Application.Current.Shutdown(); };
@@ -624,6 +629,10 @@ public sealed partial class SettingsEditor : Window
     public void State(Dictionary<string, object> state)
     {
         if (SettingsDraft.Str(state, "editor_token") != token) return;
+        long incomingNavigation = ReadNavigationSerial(state);
+        if (SettingsDraft.Str(state,"open_page") == "shortcuts" && incomingNavigation > navigationSerial) {
+            navigationSerial = incomingNavigation; navigationPending = true;
+        }
         int nextSerial = Convert.ToInt32(SettingsDraft.Value(state, "save_serial") ?? 0);
         string committed = null;
         bool completed = (saving || settingsSaveUnconfirmed) && nextSerial > pendingSerial && SettingsDraft.Str(state, "save_page") == pendingPage;
@@ -651,6 +660,21 @@ public sealed partial class SettingsEditor : Window
             ClosePageSaved(committed != null,error);
         }
         CloseRefreshReceived("settings",SettingsDraft.Str(state,"refresh_id"));
+        ApplyPendingNavigation();
+    }
+    static long ReadNavigationSerial(Dictionary<string,object> state)
+    {
+        long value;
+        return Int64.TryParse(Convert.ToString(SettingsDraft.Value(state,"open_serial"),CultureInfo.InvariantCulture),
+            NumberStyles.None,CultureInfo.InvariantCulture,out value) && value > 0 ? value : 0;
+    }
+    void ApplyPendingNavigation()
+    {
+        if (!navigationPending || overlayOpen || nativeDialogOpen || saving || shortcuts.Saving ||
+            SettingsDraft.Flag(latest,"saving") || closeSaveRunning || settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed ||
+            forceClose || closeAccepted || finished || disconnected) return;
+        navigationPending = false;
+        search.Clear(); SelectPage("shortcuts"); Search();
     }
     void Send(object[] command)
     {
@@ -682,6 +706,7 @@ public sealed partial class SettingsEditor : Window
             AttachPlayerOwner();
             shortcuts.Tick();
             PollCloseSave();
+            ApplyPendingNavigation();
             if (disconnected) return;
             UpdatePlayerPreview();
             int count = 0;
@@ -716,7 +741,7 @@ public sealed partial class SettingsEditor : Window
         if (!forceClose && DirtyPages().Length > 0) { e.Cancel = true; if (!overlayOpen) ShowClosePrompt(); return; }
         closeAccepted = true;
         EndDisplay(); playerPreview.Hide();
-        try { Action("editor-close"); } catch { }
+        try { Action("editor-close", navigationSerial.ToString(CultureInfo.InvariantCulture)); } catch { }
     }
     public void Finish() { if (finished) return; finished = true; timer.Stop(); playerPreview.Dispose(); if (pipe != null) pipe.Dispose(); parent.Dispose(); }
     public void Run() { if (noShow) new Application().Run(); else new Application().Run(this); }
@@ -747,6 +772,8 @@ public sealed partial class SettingsEditor : Window
         {
             var step = UserPreferencesStorage.Object(entry); string op = SettingsDraft.Str(step, "op");
             if (op == "page") SelectPage(SettingsDraft.Str(step, "page"));
+            else if (op == "navigation-poll") ApplyPendingNavigation();
+            else if (op == "native-dialog") nativeDialogOpen = SettingsDraft.Flag(step,"open");
             else if (op == "edit") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); EditField(model.Fields[id], SettingsDraft.Str(step, "text")); SyncInputs(); }
             else if (op == "slide") { string id = SettingsDraft.Str(step, "id"); SelectPage(model.Fields[id].Page); ((Slider)editors[id]).Value = Convert.ToDouble(step["percent"], CultureInfo.InvariantCulture); }
             else if (op == "slide-release") { string id = SettingsDraft.Str(step, "id"); ReleaseSlider(model.Fields[id], (Slider)editors[id]); }
@@ -805,6 +832,7 @@ public sealed partial class SettingsEditor : Window
         string renderPath = SettingsDraft.Str(request, "validation_render_path");
         if (renderPath.Length > 0) RenderValidation(renderPath);
         return new { ok = true, shown = IsVisible, page = page, pages = SettingsDraft.Pages,
+            navigation_pending = navigationPending, navigation_serial = navigationSerial,
             show_in_taskbar = ShowInTaskbar, window_style = WindowStyle.ToString(), caption_height = System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight,
             close_accepted = closeAccepted, close_saving = closeSaveRunning, close_save_phase = closeSavePhase, close_saved_pages = closeSavedPages.ToArray(), save_unconfirmed = settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed,
             close_buttons = VisualChildren<Button>(rootPanel).Where(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b).StartsWith("Close",StringComparison.Ordinal)).Select(b => new { label = b.Content as string, width = b.ActualWidth, height = b.ActualHeight, background = b.Background.ToString(), enabled = b.IsEnabled }).ToArray(),

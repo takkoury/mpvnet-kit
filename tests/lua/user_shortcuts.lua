@@ -406,6 +406,7 @@ end
 
 function editor_refresh_reads_external_without_writing_or_changing_session()
     bindings.open();local token=state().editor_token
+    messages['editor-ready'](token)
     eq(state().refresh_id,'')
     local revision=state().revision;local count=#requests
     local raw='{"schema":1,"settings":{"sub-scale":2},"shortcuts":{"playback.pause":["F2"]}}'
@@ -507,18 +508,18 @@ end
 
 function editor_lifecycle()
     properties['options/input-ipc-server']='\\\\.\\pipe\\existing-instance'
-    bindings.open();eq(state().editor_visible,true)
-    local job,root,raw,path=request()
-    eq(root.values.pipe.value,'\\\\.\\pipe\\existing-instance');eq(root.values.script.value,'user_shortcuts')
-    eq(root.values.parent_pid.value,123);eq(root.values.token.value,state().editor_token)
-    eq(job.args.args[#job.args.args-2],'Editor');eq(job.args.playback_only,false)
-    local count=#requests;bindings.open();eq(#requests,count)
-    eq(commands[#commands][2],'mpvnet-shortcuts-show')
+    local count=#requests;local token=state().editor_token
+    bindings.open();eq(#requests,count)
+    eq(commands[#commands][1],'script-message-to')
+    eq(commands[#commands][2],'user_settings');eq(commands[#commands][3],'open-shortcuts')
+    bindings.open();eq(#requests,count);eq(state().editor_token,token)
+    eq(properties['options/input-ipc-server'],'\\\\.\\pipe\\existing-instance')
+    messages['editor-ready'](token);eq(state().editor_visible,true)
     messages['editor-close']('wrong');eq(state().editor_visible,true)
     messages['editor-close'](state().editor_token);eq(state().editor_visible,false)
     messages['editor-ready'](state().editor_token);eq(state().editor_visible,true)
-    events.shutdown();eq(commands[#commands][2],'mpvnet-shortcuts-close');eq(files[path],nil)
-    job.callback(false,{status=1});assert(not files[path])
+    events.shutdown();eq(commands[#commands][2],'mpvnet-shortcuts-close')
+    local before=#commands;bindings.open();eq(#commands,before)
 end
 
 function write_boundaries()

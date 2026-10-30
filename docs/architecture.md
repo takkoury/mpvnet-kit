@@ -11,7 +11,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 | 默认配置与菜单 | [mpv.conf](../config/mpv.conf)、[mpvnet.conf](../config/mpvnet.conf)、[input.conf](../config/input.conf)；菜单和键位调用宿主命令或脚本动作 | 文件保存项目默认，运行时属性由播放器持有；[菜单与默认键检查](../tests/test_context_menu.py) |
 | 控制栏 | [modernz.lua](../config/scripts/modernz.lua)；读取 `user-data/mpvnet/capture`、`enhancement`，向对应脚本发送动作 | ModernZ 管理布局、浮层、输入区域和字幕避让，不保存用户长期偏好；[响应式布局](../tests/test_responsive_osc.py)、[提示](../tests/test_control_tooltips.py)、[区间标记](../tests/test_seekbar_markers.py) |
 | 播放与字幕 | [playback-feedback.lua](../config/scripts/playback-feedback.lua)、[subtitle-controls.lua](../config/scripts/subtitle-controls.lua)；键盘与菜单调用已注册动作，必要时调用媒体信息或路径辅助程序 | 临时加速、Mark 和字幕调整由所属脚本管理；媒体切换时按各自规则恢复或清理；[失败反馈](../tests/test_failure_feedback.py)、[字幕](../tests/test_subtitle_controls.py) |
-| 用户快捷键 | [模型](../config/script-modules/user-shortcuts.lua)定义动作和覆盖规则；[控制层](../config/scripts/user-shortcuts.lua)加载、应用并发布 `user-data/mpvnet/shortcuts`；[窗口](../config/helpers/shortcuts-window.ps1)接收 `-RequestPath` | `mpvnet-user.json` 保存长期覆盖，稳定动作 ID 对应键位，不接收任意命令；[模型与运行层](../tests/test_user_shortcuts.py)、[原子保存](../tests/test_user_preferences.py)、[窗口](../tests/test_shortcuts_window.py) |
+| 用户快捷键 | [模型](../config/script-modules/user-shortcuts.lua)定义动作和覆盖规则；[控制层](../config/scripts/user-shortcuts.lua)加载、应用并发布 `user-data/mpvnet/shortcuts`；[设置页](../config/helpers/settings-shortcuts.cs)编辑草稿，[保存helper](../config/helpers/shortcuts-window.ps1)以 `-Operation Save -RequestPath` 写入 | `mpvnet-user.json` 保存长期覆盖，稳定动作 ID 对应键位，不接收任意命令；[模型与运行层](../tests/test_user_shortcuts.py)、[原子保存](../tests/test_user_preferences.py)、[内嵌设置页](../tests/test_settings_shortcuts.py) |
 | 播放列表 | [playlist-controls.lua](../config/scripts/playlist-controls.lua)通过 `-PayloadPath` 启动 [playlist-window.ps1](../config/helpers/playlist-window.ps1)，以 token 校验回传动作，并读取快捷键映射 | 真实队列和条目 ID 属于 mpv，窗口只维护搜索、选择和布局；[队列控制](../tests/test_playlist_controls.py)、[窗口与几何](../tests/test_playlist_window.py) |
 | 截图与片段 | [capture-controls.lua](../config/scripts/capture-controls.lua)以 `-PayloadPath` 调用 [capture-media.ps1](../config/helpers/capture-media.ps1)，将结果发布给控制栏 | Lua 持有 A/B、媒体代次、忙状态、所选格式和最近结果；helper 管理本次输出、FFmpeg 及临时文件；[单格式导出](../tests/test_capture_single_format.py) |
 | 画面增强 | [enhancement-controls.lua](../config/scripts/enhancement-controls.lua)接收 `set-preset`，发布 `user-data/mpvnet/enhancement` | 实例保留选择，每个媒体重新捕获基准；写入受控属性失败时尝试回滚；[增强回归](../tests/test_enhancement_controls.py) |
@@ -48,6 +48,10 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 控制栏窗口内画面由 [settings-preview.cs](../config/helpers/settings-preview.cs) 注册所属播放器的 DWM 实时缩略图，校验源窗口 PID，将客户区等比例显示在固定预览区域。它复用当前播放器的 ModernZ 渲染，不另起解码器、不保存截图、不转发预览区域输入。切到其他页、搜索结果或打开窗口内模态层时隐藏缩略图；设置关闭释放 DWM 句柄，源窗口最小化／不可用时隐藏画面并提示。布局按 WPF 逻辑单位转换到目标客户区，真实跨 DPI、特殊渲染器及最小化恢复仍需各自验证。
 
 [settings-shortcuts.cs](../config/helpers/settings-shortcuts.cs)提供内嵌动作目录，窗口通过同一IPC连接额外观察`user-data/mpvnet/shortcuts`，面板沿用该模块的token／revision／save契约，不通过设置保存入口改写键位。面板持有快捷键草稿与录键状态，向窗口公开保存状态和全局搜索条目；父窗口统一底部操作和关闭确认。局部搜索、分类或失焦取消录键，全局搜索不修改草稿。两类保存串行；同一JSON的其他域修改导致revision更新时，只有本页所有保存值／覆盖标记或快捷键基线完全未变、且此前未发生冲突才跟进revision；实际本页变化仍保留草稿并禁止覆盖，最终写入继续做原文比较。
+
+稳定入口`user_shortcuts/open`转发固定消息`user_settings/open-shortcuts`，由设置控制层持有唯一日常编辑窗口，不再从此入口启动旧独立Editor。控制层在初始请求和设置总线发布会话内`open_page`／`open_serial`，只接受快捷键目标，启动期间的重复请求不会因窗口尚未开始观察而丢失。窗口按序号消费一次，清除全局搜索并定位快捷键，保留各页草稿；普通设置入口只唤回已有窗口。保存、内部确认层、原生路径选择器或关闭流程期间保留待跳转请求，由后续Tick在安全时机处理，不改变快捷键保存token。
+
+关闭通知携带最后收到的导航序号。Lua仅将窗口尚未见过的新请求留到旧helper退出后重开；关闭确认中已收到并随关闭放弃的请求不重放。token退休后到进程退出之间的请求同样排队，禁止并存两个设置helper。缺少关闭序号的旧通知仍按原关闭语义处理。旧快捷键helper的Save接口和兼容Editor代码暂留，日常入口统一不等于本批删除兼容文件或完成M2-F所有原生入口替换。
 
 缩放编辑使用百分比滑块；模型发布常用滑块范围和步长，底层存储合法范围保持。窗口载入时仅夹紧滑块手柄，不夹紧草稿或保存值；超范围配置继续显示原百分比，用户主动操作才换成常用范围内值。字幕标签使用“字幕缩放”，保留“字号”等搜索别名。正式设置页仅使用controlbar模式显示源客户区底部35%区域，保留全宽；几何模块的旧subtitles/full模式保留回归兼容，不再作为字幕页的日常预览。几何只依赖容器、源尺寸、模式与位置，OSC缩放值不参与自动适配。实际客户区裁切经窗口外框、客户区原点及 DWM 源纹理尺寸映射到rcSource。纯几何检查见 [SettingsPreviewGeometry](../tests/test_settings_preview.py)。
 
