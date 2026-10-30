@@ -69,6 +69,10 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 ## 辅助进程与生命周期
 
+安装器继续由`tools/installer.ps1`持有检查计划、后台runspace、忙状态及Apply／Restore／Recover调用；[installer-ui.cs](../tools/installer-ui.cs)仅提供WinForms窗口、按钮、可选择的深色文本框和确认窗。安装器保留独立任务栏、双向缩放与最小化／最大化；确认窗归属于安装器，默认取消，Esc／关闭取消，长正文滚动且按钮固定。确认期间禁止重入和重新检查，确认返回OK后仍走原计划token复核，核心维护模块未移入界面层。界面构建失败继续保留系统MessageBox兜底。
+
+`KitInstallerTextBox`保留原生Edit的文本选择和复制，以自有细滚动条替代亮色系统条；滚动范围使用EM_GETRECT和实际视觉行间距，不能以Font.Height近似高DPI下的原生行高。确认文本只统一换行用于显示，不修改来源内容。安装计划的releaseNotice按字典成员读取并纳入确认正文；不能用PSObject.Properties判断字典键。此层继续采用现有system-aware DPI，不承诺真实跨屏缩放已验证。
+
 发行包可包含`docs/upgrade-notice.txt`。包读取器只从已通过manifest摘要校验的字节读取该提示，最大4096字节；缺少提示的旧包保持兼容。维护计划通过`releaseNotice`传给图形安装器与命令行文本输出，安装／更新的现有确认框展示同一份提示，恢复／还原不展示升级提示。此展示字段不改变安装、备份、冲突保护或事务顺序。
 
 Capture、Playlist、快捷键和标题路径操作使用各自拥有的 UTF-8 临时 JSON 文件传参，媒体地址等数据不拼成 shell 命令。Media Info 仍通过 `stdin_data` 传递字段；改接口时应检查对应调用方，不能假定所有 helper 使用相同传输方式。

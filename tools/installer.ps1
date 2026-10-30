@@ -27,6 +27,9 @@ public static class MpvnetInstallerDpi {
     if ($previousDpiContext -eq [IntPtr]::Zero) { throw '无法启用安装窗口的清晰 DPI 渲染，请使用 Windows 10 1607 或更新系统。' }
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+    if (-not ('KitInstallerForm' -as [type])) {
+        Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -Path (Join-Path $PSScriptRoot 'installer-ui.cs')
+    }
     [Windows.Forms.Application]::EnableVisualStyles()
     $dpiGraphics = [Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
     try { $script:uiScale = $dpiGraphics.DpiX / 96.0 } finally { $dpiGraphics.Dispose() }
@@ -41,20 +44,19 @@ public static class MpvnetInstallerDpi {
     $script:modulePath = Join-Path $PSScriptRoot 'maintenance.psm1'
     if (-not [IO.File]::Exists($script:modulePath)) { throw '安装器文件不完整，请重新解压完整配置包。' }
     $script:backupRoot = $BackupRoot; $script:packageRoot = $PackageRoot; $script:plan = $null; $script:worker = $null; $script:runspace = $null
-    $script:busy = $false; $script:installed = $false; $script:snapshotTaken = $false; $script:detailsExpanded = $false
+    $script:busy = $false; $script:confirming = $false; $script:installed = $false; $script:snapshotTaken = $false; $script:detailsExpanded = $false
     $script:lastResult = $null; $script:lastOperation = ''; $script:restoreLabel = '还原上次操作'; $script:preserveResult = $false
     $script:target = ''; $script:targetSource = ''; $script:targetExists = $null; $script:dependencies = @(); $script:resultState = 'idle'
-    $script:form = New-Object Windows.Forms.Form
+    $script:form = New-Object KitInstallerForm([single]$script:uiScale)
     $script:form.SuspendLayout()
     $script:form.Text = 'mpv.net 配置包 · 安装与更新'; $script:form.StartPosition = 'CenterScreen'
-    $script:form.ClientSize = New-InstallerSize 800 750
-    $script:form.MinimumSize = New-InstallerSize 776 760
-    $script:form.BackColor = [Drawing.Color]::FromArgb(27, 31, 39)
-    $script:form.ForeColor = [Drawing.Color]::FromArgb(233, 237, 243)
-    $script:form.Font = New-Object Drawing.Font('Microsoft YaHei UI', 9)
+    $script:form.ClientSize = New-InstallerSize 800 680
+    $script:form.MinimumSize = New-InstallerSize 776 620
+    $script:form.BackColor = [Drawing.Color]::FromArgb(21, 21, 21)
+    $script:form.ForeColor = [Drawing.Color]::FromArgb(242, 242, 242)
     # Fonts use points; scale layout metrics once, avoiding legacy WinForms partial/double autoscaling.
     $script:form.AutoScaleMode = 'None'; $script:form.KeyPreview = $true
-    $script:mutedColor = [Drawing.Color]::FromArgb(180, 190, 204)
+    $script:mutedColor = [Drawing.Color]::FromArgb(171, 171, 171)
     function New-Layout([Windows.Forms.Control]$Parent, [int]$Rows) {
         $panel = New-Object Windows.Forms.TableLayoutPanel
         $panel.Dock = 'Fill'; $panel.ColumnCount = 1; $panel.RowCount = $Rows
@@ -72,24 +74,24 @@ public static class MpvnetInstallerDpi {
         $label.TextAlign = 'MiddleLeft'; $label.TabStop = $false; return $label
     }
     function New-Button([string]$Text, [int]$Width) {
-        $button = New-Object Windows.Forms.Button
+        $button = New-Object KitInstallerButton
         $button.Text = $Text; $button.Size = New-InstallerSize $Width 36
-        $button.FlatStyle = 'Flat'; $button.BackColor = [Drawing.Color]::FromArgb(49, 62, 81)
-        $button.FlatAppearance.BorderColor = [Drawing.Color]::FromArgb(92, 110, 133)
+        $button.FlatStyle = 'Flat'; $button.BackColor = [Drawing.Color]::FromArgb(36, 36, 36)
+        $button.FlatAppearance.BorderColor = [Drawing.Color]::FromArgb(85, 85, 85)
         $button.ForeColor = $script:form.ForeColor; $button.UseVisualStyleBackColor = $false; return $button
     }
     function New-ReadOnlyBox {
-        $box = New-Object Windows.Forms.TextBox
+        $box = New-Object KitInstallerTextBox
         $box.Dock = 'Fill'; $box.ReadOnly = $true; $box.BorderStyle = 'FixedSingle'
-        $box.BackColor = [Drawing.Color]::FromArgb(40, 46, 57); $box.ForeColor = $script:form.ForeColor
+        $box.BackColor = [Drawing.Color]::FromArgb(36, 36, 36); $box.ForeColor = $script:form.ForeColor
         $box.Margin = New-InstallerPadding 0; return $box
     }
     # Keep the action bar reachable on shorter screens; the single-page content can scroll.
-    $frame = New-Layout $script:form 2; Add-Row $frame 'Percent' 100; Add-Row $frame 'Absolute' 68
+    $frame = New-Layout $script:form.ContentHost 2; Add-Row $frame 'Percent' 100; Add-Row $frame 'Absolute' 68
     $scrollHost = New-Object Windows.Forms.Panel
     $scrollHost.Dock = 'Fill'; $scrollHost.AutoScroll = $true; $scrollHost.Margin = New-InstallerPadding 0
     $frame.Controls.Add($scrollHost, 0, 0)
-    $root = New-Layout $scrollHost 4; $root.Dock = 'Top'; $root.Height = ConvertTo-InstallerPixels 650
+    $root = New-Layout $scrollHost 4; $root.Dock = 'Top'; $root.Height = ConvertTo-InstallerPixels 570
     $root.Padding = New-InstallerPadding 24 16 24 16
     Add-Row $root 'Absolute' 70; Add-Row $root 'Absolute' 76; Add-Row $root 'Absolute' 120
     Add-Row $root 'Percent' 100
@@ -113,13 +115,13 @@ public static class MpvnetInstallerDpi {
     $script:playerBrowse.Margin = New-InstallerPadding 12 0 0 0; $playerLayout.Controls.Add($script:playerBrowse, 1, 1)
     $targetHost = New-Object Windows.Forms.Panel
     $root.Controls.Add($targetHost, 0, 2); $targetHost.Dock = 'Fill'; $targetHost.Margin = New-InstallerPadding 0 2 0 10
-    $targetHost.BackColor = [Drawing.Color]::FromArgb(32, 43, 56)
+    $targetHost.BackColor = $script:form.BackColor
     $targetLayout = New-Layout $targetHost 3; $targetLayout.Padding = New-InstallerPadding 12 8 12 8
     Add-Row $targetLayout 'Absolute' 24; Add-Row $targetLayout 'Percent' 100; Add-Row $targetLayout 'Absolute' 32
     $targetCaption = New-Label '配置目录'; $targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI', 10, [Drawing.FontStyle]::Bold)
     $targetLayout.Controls.Add($targetCaption, 0, 0)
     $script:targetBox = New-ReadOnlyBox; $script:targetBox.Multiline = $true; $script:targetBox.WordWrap = $true; $script:targetBox.ScrollBars = 'Vertical'
-    $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(104, 193, 237); $script:targetBox.Text = '选择播放器后自动判断。'
+    $script:targetBox.ForeColor = $script:form.ForeColor; $script:targetBox.Text = '选择播放器后自动判断。'
     $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; $targetLayout.Controls.Add($script:targetBox, 0, 1)
     $script:sourceLabel = New-Label '识别来源与目录状态会显示在这里。'; $script:sourceLabel.ForeColor = $script:mutedColor
     $targetLayout.Controls.Add($script:sourceLabel, 0, 2)
@@ -143,14 +145,14 @@ public static class MpvnetInstallerDpi {
     $script:detailsButton.Margin = New-InstallerPadding 0 2 0 2; $script:detailsButton.TabIndex = 0
     $script:resultLayout.Controls.Add($script:detailsButton, 0, 5)
     $script:logBox = New-ReadOnlyBox; $script:logBox.Multiline = $true; $script:logBox.WordWrap = $true; $script:logBox.ScrollBars = 'Vertical'
-    $script:logBox.BackColor = [Drawing.Color]::FromArgb(20, 24, 31); $script:logBox.AccessibleName = '完整检查详情'; $script:logBox.TabIndex = 1; $script:logBox.Visible = $false
+    $script:logBox.BackColor = [Drawing.Color]::FromArgb(27, 27, 27); $script:logBox.AccessibleName = '完整检查详情'; $script:logBox.TabIndex = 1; $script:logBox.Visible = $false
     $script:logBox.Text = '选择播放器后显示文件变更、备份位置及无法继续的具体原因。'
     $script:resultLayout.Controls.Add($script:logBox, 0, 6)
     $footer = New-Object Windows.Forms.FlowLayoutPanel
     $footer.Dock = 'Fill'; $footer.FlowDirection = 'RightToLeft'; $footer.WrapContents = $false
     $footer.Padding = New-InstallerPadding 24 12 24 16; $footer.Margin = New-InstallerPadding 0; $frame.Controls.Add($footer, 0, 1)
     $script:installButton = New-Button '开始安装(&I)' 140; $script:installButton.TabIndex = 1
-    $script:installButton.Margin = New-InstallerPadding 12 0 0 0; $script:installButton.BackColor = [Drawing.Color]::FromArgb(22, 111, 161)
+    $script:installButton.Margin = New-InstallerPadding 12 0 0 0; $script:installButton.Primary = $true
     $script:recheckButton = New-Button '重新检查(&R)' 120; $script:recheckButton.TabIndex = 0; $script:recheckButton.Margin = New-InstallerPadding 0
     $script:restoreButton = New-Button '还原上次操作(&U)' 164; $script:restoreButton.TabIndex = 2
     $script:restoreButton.Margin = New-InstallerPadding 12 0 0 0
@@ -158,14 +160,16 @@ public static class MpvnetInstallerDpi {
     $headingHost.TabIndex = 0; $playerHost.TabIndex = 1; $targetHost.TabIndex = 2; $resultHost.TabIndex = 3; $footer.TabIndex = 4
     function Set-DetailsExpanded([bool]$Expanded) {
         $script:detailsExpanded = $Expanded; $script:logBox.Visible = $Expanded
+        $root.Height = ConvertTo-InstallerPixels $(if ($Expanded) { 790 } else { 570 })
         $script:detailsButton.Text = if ($Expanded) { '收起检查详情(&D)' } else { '展开检查详情(&D)' }
     }
     function Update-Enabled {
-        $script:playerBrowse.Enabled = -not $script:busy
-        $script:recheckButton.Enabled = -not $script:busy -and [bool]$script:playerBox.Text
-        $script:installButton.Enabled = -not $script:busy -and $null -ne $script:plan -and [bool]$script:plan.eligible -and $script:plan.action -in @('install', 'update', 'recover')
-        $script:restoreButton.Enabled = -not $script:busy -and $null -ne $script:plan -and [bool]$script:plan.canRestore -and [bool]$script:plan.restorePlanToken
-        $script:detailsButton.Enabled = -not $script:busy; $script:form.UseWaitCursor = $script:busy
+        $available = -not $script:busy -and -not $script:confirming
+        $script:playerBrowse.Enabled = $available
+        $script:recheckButton.Enabled = $available -and [bool]$script:playerBox.Text
+        $script:installButton.Enabled = $available -and $null -ne $script:plan -and [bool]$script:plan.eligible -and $script:plan.action -in @('install', 'update', 'recover')
+        $script:restoreButton.Enabled = $available -and $null -ne $script:plan -and [bool]$script:plan.canRestore -and [bool]$script:plan.restorePlanToken
+        $script:detailsButton.Enabled = $available; $script:form.UseWaitCursor = $script:busy
     }
     function Set-Failure([string]$Title, [string]$Detail) {
         $script:plan = $null; $script:resultState = 'blocked'; $script:statusLabel.Text = $Title
@@ -312,7 +316,7 @@ public static class MpvnetInstallerDpi {
         $script:async = $script:worker.BeginInvoke(); $script:timer.Start()
     }
     function Start-AutomaticCheck([bool]$KeepResult = $false) {
-        if ($script:busy -or -not $script:playerBox.Text) { return }
+        if ($script:busy -or $script:confirming -or -not $script:playerBox.Text) { return }
         $script:preserveResult = $KeepResult; $script:plan = $null
         if (-not $KeepResult) {
             $script:lastResult = $null; $script:target = ''; $script:targetSource = ''; $script:targetExists = $null; $script:dependencies = @()
@@ -362,7 +366,7 @@ public static class MpvnetInstallerDpi {
         } finally { $dialog.Dispose() }
     })
     function Confirm-Maintenance([string]$Operation) {
-        if (-not $script:plan -or $script:busy) { return }
+        if (-not $script:plan -or $script:busy -or $script:confirming) { return }
         if ($Operation -eq 'Restore') {
             if (-not $script:plan.canRestore -or -not $script:plan.restorePlanToken) { return }
             $caption = $script:restoreLabel
@@ -384,14 +388,19 @@ public static class MpvnetInstallerDpi {
             else { $caption = '开始更新'; $description = '更新前将自动备份旧配置，备份验证通过后开始更新。' }
             $description += "`r`n文件变更：$($script:plan.changedFiles) 个（新增 $($script:plan.addedFiles) 个）。"
         }
-        if ($Operation -eq 'Apply' -and $script:plan.action -in @('install','update') -and $script:plan.PSObject.Properties['releaseNotice'] -and $script:plan.releaseNotice) {
+        # The maintenance view is an ordered dictionary: its keys are not
+        # PSObject.Properties, although normal member lookup exposes them.
+        if ($Operation -eq 'Apply' -and $script:plan.action -in @('install','update') -and $script:plan.releaseNotice) {
             $description += "`r`n`r`n" + $script:plan.releaseNotice
         }
         $message = $description + "`r`n`r`n播放器：$($script:playerBox.Text)`r`n配置目录：$($script:plan.target)`r`n来源：$($script:plan.targetSourceLabel)`r`n`r`n请确认所有 mpv.net 实例均已退出。"
-        if ([Windows.Forms.MessageBox]::Show($script:form, $message, $caption, 'OKCancel', 'Question', 'Button2') -eq 'OK') {
-            try { Start-Work $Operation }
-            catch { Dispose-Worker; $script:busy = $false; Set-Failure '操作未启动' $_.Exception.Message; Update-Enabled }
-        }
+        $confirmation = $null
+        try {
+            $script:confirming = $true; Update-Enabled
+            $confirmation = New-Object KitInstallerConfirmation([single]$script:uiScale, $message, $caption, $caption)
+            if ($confirmation.ShowDialog($script:form) -eq 'OK') { Start-Work $Operation }
+        } catch { Dispose-Worker; $script:busy = $false; Set-Failure '操作未启动' $_.Exception.Message }
+        finally { if ($confirmation) { $confirmation.Dispose() }; $script:confirming = $false; Update-Enabled }
     }
     $script:installButton.Add_Click({ Confirm-Maintenance 'Apply' })
     $script:restoreButton.Add_Click({ Confirm-Maintenance 'Restore' })
@@ -402,7 +411,10 @@ public static class MpvnetInstallerDpi {
         }
     })
     $script:form.Add_FormClosing({ param($sender, $eventArgs)
-        if ($script:busy) { $eventArgs.Cancel = $true; $script:nextLabel.Text = '正在处理，请等待完成后关闭窗口。' }
+        if ($script:busy -or $script:confirming) {
+            $eventArgs.Cancel = $true
+            if ($script:busy) { $script:nextLabel.Text = '正在处理，请等待完成后关闭窗口。' }
+        }
     })
     if ($PlayerPath) { $script:playerBox.Text = $PlayerPath }
     $workingArea = [Windows.Forms.Screen]::FromControl($script:form).WorkingArea

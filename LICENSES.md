@@ -71,6 +71,7 @@
 - `tools/common.psm1`
 - `tools/install.ps1`
 - `tools/installer.ps1`
+- `tools/installer-ui.cs`
 - `tools/restore.ps1`
 - `tools/legacy-releases.json`
 - `tools/legacy-install.psm1`

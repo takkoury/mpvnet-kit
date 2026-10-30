@@ -345,6 +345,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "tools/installer-ui.cs",
+      "destination": "tools/installer-ui.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "tools/clean-install.psm1",
       "destination": "tools/clean-install.psm1",
       "component": "author",

@@ -71,6 +71,10 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 `tests/fixtures/installer_window_cases.ps1` 是单独的原生窗口夹具，接收 `-SourceRoot`、`-PackageRoot` 和新的仓外 `-FixtureRoot`，需在 Windows PowerShell 的 STA 模式下显式运行。它模拟确认答案并触发真实控件事件，与物理键鼠、跨 DPI 和人工观感分别记录，不由默认测试组启动。
 
+该夹具增加`-NoShow`后不显示窗口，仍通过真实安装器控件事件完成取消、新装、阻断、过期计划拒绝和还原；自有确认窗由实际按钮选择结果。`-UpgradeFrom <旧生成包>`可另测旧包更新、取消和还原，精确比较运行文件、收据及用户JSON。两种模式均使用新的合成目标，不执行占位mpvnet.exe；运行中播放器枚举仅在夹具进程内替换，不提供生产绕过开关。离屏图由隐藏控件逐层绘制，不是桌面截图。
+
+`InstallerUI`归入helpers，编译真实`installer-ui.cs`并检查窗口能力、确认正文／取消默认、按钮布局和原生Edit滚底末行；不运行维护写入，不显示窗口。混合显示器DPI、真实选择文本／拖动及DWM像素仍需单独试用。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell
