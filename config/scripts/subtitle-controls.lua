@@ -1,6 +1,7 @@
 -- Primary subtitle controls; the Bilibili plugin keeps ownership of its secondary track.
 local mp = require("mp")
-local input = require("mp.input")
+local selector
+local selector_generation = 0
 local adjusting = false
 local saved_adjustment
 local position
@@ -30,32 +31,62 @@ local function no_subtitle()
     mp.osd_message("NO SUBTITLE", 1)
 end
 
-local function select_subtitle()
-    local tracks, items = ordinary_tracks(), {}
-    local sid = mp.get_property_native("sid")
-    local selected
-    for i, track in ipairs(tracks) do
-        local current = tostring(track.id) == tostring(sid)
-        items[i] = (current and "●" or "○") .. " " .. (track.title or track.lang or "Subtitle")
-            .. " (" .. tostring(track.id) .. (track.codec and " / " .. track.codec or "") .. ")"
-        if current then selected = i end
+local function close_selector()
+    selector_generation = selector_generation + 1
+    if selector then selector.close() end
+end
+
+local function refresh_selector()
+    if selector and selector.is_open() then
+        selector.update(ordinary_tracks(), mp.get_property_native('sid'))
     end
-    if #tracks == 0 then return end
-    input.select({
-        prompt = "Select a subtitle:", items = items, default_item = selected,
-        submit = function(index)
-            local choice = tracks[index]
-            if not choice then return end
-            for _, current in ipairs(ordinary_tracks()) do
-                if current.id == choice.id then
-                    mp.set_property("sid", tostring(current.id) == tostring(mp.get_property_native("sid"))
-                        and "no" or tostring(current.id))
-                    return
+end
+
+local function select_subtitle()
+    if not selector then
+        local ok, module = pcall(dofile, mp.command_native({'expand-path', '~~/script-modules/subtitle-selector.lua'}))
+        if not ok or type(module) ~= 'table' or type(module.open) ~= 'function' then
+            mp.osd_message('无法打开字幕选择器，请检查配置包文件。', 3)
+            return
+        end
+        selector = module
+    end
+    selector_generation = selector_generation + 1
+    local generation = selector_generation
+    local opened, error = selector.open({tracks=ordinary_tracks(), current_id=mp.get_property_native('sid'),
+        submit=function(id)
+            if generation ~= selector_generation or not selector.is_open() then
+                return false, '媒体已切换，请重新打开选择器。'
+            end
+            local target
+            if tonumber(id) == 0 then target = 'no'
+            else
+                for _, track in ipairs(ordinary_tracks()) do
+                    if tostring(track.id) == tostring(id) then
+                        target = tostring(track.id) == tostring(mp.get_property_native('sid')) and 'no' or tostring(track.id)
+                        break
+                    end
                 end
             end
+            if not target then
+                refresh_selector()
+                return false, '该字幕已移除，请重新选择。'
+            end
+            local ok = mp.set_property('sid', target)
+            if not ok then return false, '未能切换字幕，请重试。' end
+            return true
+        end,
+        close=function()
+            if generation == selector_generation then selector_generation = selector_generation + 1 end
         end,
     })
+    if not opened then mp.osd_message(error or '无法打开字幕选择器，请重试。', 3) end
 end
+mp.observe_property('track-list', 'native', refresh_selector)
+mp.observe_property('sid', 'native', refresh_selector)
+mp.register_event('start-file', close_selector)
+mp.register_event('end-file', close_selector)
+mp.register_event('shutdown', close_selector)
 
 local function cycle_subtitle(direction)
     local tracks = ordinary_tracks()

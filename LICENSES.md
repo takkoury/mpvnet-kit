@@ -68,6 +68,7 @@
 - `config/scripts/playback-feedback.lua`
 - `config/scripts/playlist-controls.lua`
 - `config/scripts/subtitle-controls.lua`
+- `config/script-modules/subtitle-selector.lua`
 - `docs/configuration.md`
 - `docs/features.md`
 - `docs/installation.md`

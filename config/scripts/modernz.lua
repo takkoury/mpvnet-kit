@@ -4796,6 +4796,7 @@ local function has_mid_action(e)
 end
 
 local function refresh_input_area()
+    if state.subtitle_selector_open or state.subtitle_selector_console_wait then return end
     if not state.osc_visible then
         set_virt_mouse_area(0, 0, 0, 0, "input")
         set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
@@ -4876,6 +4877,7 @@ local function refresh_input_area()
 end
 
 local function process_event(source, what)
+    if state.subtitle_selector_open or state.subtitle_selector_console_wait then return end
     local action = string.format("%s%s", source, what and ("_" .. what) or "")
     local popup = state.local_popovers and state.local_popovers[state.popover]
     -- The footer may extend beside the anchor; the explicit More toggle still
@@ -4978,7 +4980,7 @@ local function process_event(source, what)
 end
 
 local function do_enable_keybindings()
-    if state.enabled then
+    if state.enabled and not state.subtitle_selector_open and not state.subtitle_selector_console_wait then
         if not state.showhide_enabled then
             mp.enable_key_bindings("showhide", "allow-vo-dragging+allow-hide-cursor")
             mp.enable_key_bindings("showhide_wc", "allow-vo-dragging+allow-hide-cursor")
@@ -5003,6 +5005,7 @@ local function enable_osc(enable)
 end
 
 local function render()
+    if state.subtitle_selector_open or state.subtitle_selector_console_wait then render_wipe(state.osd); return end
     msg.trace("rendering")
     local current_screen_sizeX = state.osd_dimensions.w
     local current_screen_sizeY = state.osd_dimensions.h
@@ -5324,7 +5327,20 @@ observe_cached("idle-active", function()
     if state.idle_active and settings_display then settings_display.finish() end
     request_tick()
 end)
+local function restore_selector_mouse()
+    mp.enable_key_bindings("video_mouse", "allow-vo-dragging+allow-hide-cursor")
+    mp.enable_key_bindings("input_wheel")
+    mp.enable_key_bindings("input_mid")
+    update_video_mouse_area()
+    request_tick()
+end
 mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
+    if state.subtitle_selector_console_wait
+        and not mp.get_property_native("user-data/mpv/console/open", false)
+        and not mp.get_property_native("user-data/mpvnet/subtitle-selector/open", false) then
+        state.subtitle_selector_console_wait = false
+        restore_selector_mouse()
+    end
     if val and settings_display then settings_display.finish() end
     if val and user_opts.visibility == "auto" and not user_opts.showonselect and not state.keeponpause_active then
         -- clear pending thumbnail
@@ -5334,6 +5350,39 @@ mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
         osc_visible(false)
         wc_visible(false)
     end
+end)
+-- The selector owns its own input section. Suspend only our sections while it
+-- is open so later OSC mouse/resize events cannot steal its exclusive priority.
+mp.observe_property("user-data/mpvnet/subtitle-selector/open", "bool", function(_, val)
+    local open = val == true
+    if open == (state.subtitle_selector_open == true) then return end
+    state.subtitle_selector_open = open
+    if open then
+        state.subtitle_selector_console_wait = false
+        if settings_display then settings_display.finish() end
+        close_popover()
+        cancel_seekbar_drag()
+        state.active_element = nil
+        for _, name in ipairs({"video_mouse", "showhide", "showhide_wc", "input", "input_wheel", "input_mid",
+            "window-controls", "window-controls-title", "window-controls-ontop"}) do
+            mp.disable_key_bindings(name)
+            set_virt_mouse_area(0, 0, 0, 0, name)
+        end
+        state.showhide_enabled, state.input_enabled = false, false
+        state.windowcontrols_buttons, state.windowcontrols_title, state.windowcontrols_ontop = false, false, false
+        render_wipe(state.osd)
+        if thumbfast.width ~= 0 and thumbfast.height ~= 0 then mp.commandv("script-message-to", "thumbfast", "clear") end
+    else
+        -- These three base sections are normally enabled throughout OSC life;
+        -- input areas and conditional sections are rebuilt by the next render.
+        if mp.get_property_native("user-data/mpv/console/open", false) then
+            state.subtitle_selector_console_wait = true
+        else
+            state.subtitle_selector_console_wait = false
+            restore_selector_mouse()
+        end
+    end
+    request_tick()
 end)
 mp.observe_property("display-fps", "number", set_tick_delay)
 observe_cached("demuxer-cache-state", request_tick)

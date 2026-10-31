@@ -55,6 +55,21 @@ class SubtitleControls(unittest.TestCase):
     def test_complete_script_syntax(self):
         self.lua.check_syntax(SCRIPT)
 
+    def test_selector_preserves_danmaku_and_toggles_current(self):
+        self.run_case('selector_preserves_danmaku_and_toggles_current')
+
+    def test_selector_rejects_removed_and_danmaku_ids(self):
+        self.run_case('selector_rejects_removed_and_danmaku_ids')
+
+    def test_selector_lifecycle_rejects_stale_requests_and_cancel_writes_nothing(self):
+        self.run_case('selector_lifecycle_rejects_stale_requests_and_cancel_writes_nothing')
+
+    def test_selector_refreshes_without_writing_and_opens_empty(self):
+        self.run_case('selector_refreshes_without_writing_and_opens_empty')
+
+    def test_selector_reopen_retires_old_submit_and_reports_write_failure(self):
+        self.run_case('selector_reopen_retires_old_submit_and_reports_write_failure')
+
 
 if __name__ == '__main__':
     unittest.main()

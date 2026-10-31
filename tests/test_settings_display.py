@@ -76,6 +76,12 @@ class SettingsDisplay(unittest.TestCase):
     def test_idle_and_console_revoke_preview_display(self):
         self.run_case('idle_and_console')
 
+    def test_selector_suspends_mouse_sections_without_changing_visibility(self):
+        self.run_case('selector_suspends_mouse_sections_without_changing_visibility')
+
+    def test_selector_console_handoff_defers_mouse_restore_and_ignores_stale_event(self):
+        self.run_case('selector_console_handoff_defers_mouse_restore_and_ignores_stale_event')
+
 
 if __name__ == '__main__':
     unittest.main()

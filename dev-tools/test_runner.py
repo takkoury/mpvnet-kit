@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_subtitle_selector.SubtitleSelector',
         'test_media_info_controller.MediaInfoController',
         'test_about_window.AboutController',
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',

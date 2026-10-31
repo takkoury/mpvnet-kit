@@ -30,6 +30,7 @@ local mp={
 local opt={read_options=function(_,_,callback) option_callback=callback end}
 local request_tick,request_init,update_margins,reset_margins=noop,noop,noop,noop
 local close_popover,cancel_seekbar_drag,set_virt_mouse_area=noop,noop,noop
+local update_video_mouse_area=noop
 local render_wipe,is_image,check_path_url=noop,noop,noop
 local load_locale_file,validate_user_opts,set_osc_locale,set_icon_theme=noop,noop,noop,noop
 local set_osc_styles,set_time_styles,set_tick_delay=noop,noop,noop
@@ -194,4 +195,40 @@ function live_pause_previews_restore_policy()
     eq(user_opts.keeponpause,'no');eq(user_opts.showonpause,false)
     eq(user_opts.visibility,'auto');eq(state.keeponpause_active,false);eq(state.keeponpause_restore,nil)
     visible();send('end');pause(false);eq(user_opts.visibility,'auto')
+end
+
+function selector_suspends_mouse_sections_without_changing_visibility()
+    fixture('auto');state.osc_visible=true
+    local enabled,disabled={},{}
+    local video_area_restores=0
+    update_video_mouse_area=function() video_area_restores=video_area_restores+1 end
+    mp.enable_key_bindings=function(name) enabled[#enabled+1]=name end
+    mp.disable_key_bindings=function(name) disabled[name]=(disabled[name] or 0)+1 end
+    observers['user-data/mpvnet/subtitle-selector/open']('',true)
+    eq(state.subtitle_selector_open,true);eq(user_opts.visibility,'auto');eq(state.osc_visible,true)
+    for _,name in ipairs({'video_mouse','showhide','showhide_wc','input','input_wheel','input_mid','window-controls','window-controls-title','window-controls-ontop'}) do
+        eq(disabled[name],1)
+    end
+    do_enable_keybindings();eq(#enabled,0)
+    observers['user-data/mpvnet/subtitle-selector/open']('',true);eq(disabled.input,1)
+    observers['user-data/mpvnet/subtitle-selector/open']('',false)
+    eq(state.subtitle_selector_open,false);eq(user_opts.visibility,'auto');eq(state.osc_visible,true)
+    eq(enabled[1],'video_mouse');eq(enabled[2],'input_wheel');eq(enabled[3],'input_mid')
+    eq(video_area_restores,1)
+    do_enable_keybindings();eq(enabled[4],'showhide');eq(enabled[5],'showhide_wc')
+end
+function selector_console_handoff_defers_mouse_restore_and_ignores_stale_event()
+    fixture('auto');local enabled={}
+    mp.enable_key_bindings=function(name) enabled[#enabled+1]=name end
+    observers['user-data/mpvnet/subtitle-selector/open']('',true)
+    properties['user-data/mpv/console/open']=true
+    observers['user-data/mpvnet/subtitle-selector/open']('',false)
+    eq(state.subtitle_selector_console_wait,true);eq(#enabled,0)
+    do_enable_keybindings();eq(#enabled,0)
+    observers['user-data/mpv/console/open']('',false)
+    eq(state.subtitle_selector_console_wait,true);eq(#enabled,0)
+    properties['user-data/mpv/console/open']=false
+    observers['user-data/mpv/console/open']('',false)
+    eq(state.subtitle_selector_console_wait,false);eq(enabled[1],'video_mouse')
+    local count=#enabled;observers['user-data/mpv/console/open']('',false);eq(#enabled,count)
 end

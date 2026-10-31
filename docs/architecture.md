@@ -21,6 +21,14 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
+### 普通字幕选择器
+
+[subtitle-selector.lua](../config/script-modules/subtitle-selector.lua)是独立Lua/ASS屏幕内面板，只持展示、搜索和临时输入；`subtitle-controls`持有媒体代次及sid提交，过滤弹幕轨道，并在提交时重新验证当前轨道ID。显式关闭项使用id=0，选择当前轨道仍切到sid=no；不写secondary-sid或配置文件。start-file／end-file／shutdown使旧回调失效并关闭面板，track-list／sid变化刷新仍打开的列表。模块按需加载，不改变其他选择器和原控制台主题。
+
+现有mp.input.select由console固定渲染并强制单行，不能承接已确认双行条目；经能力检查和用户明确同意后采用独立渲染。面板只在打开期间启用自己的exclusive输入section，临时借用input-ime、cursor-autohide与window-dragging，关闭时仅在属性仍为自己的值时恢复。控制台打开时立即释放面板输入与绘制，IME旧值延后到控制台关闭再按所有权条件恢复，避免跨脚本观察次序覆盖控制台输入。
+
+面板发布`user-data/mpvnet/subtitle-selector/open`。ModernZ只在此期间暂停自己的鼠标section与绘制，后续mouse／resize事件不能重新抢输入；关闭后重建原显示与输入区域，不改visibility偏好。真实输入法组合、宿主拖窗、鼠标焦点及跨DPI仍需用户试用，mock与headless输入检查分别留证。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。
