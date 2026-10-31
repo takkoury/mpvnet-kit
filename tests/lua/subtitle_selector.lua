@@ -6,6 +6,7 @@ local named,sections,enabled,areas,observers,timers,overlays,events={}, {}, {}, 
 local define_count,flush_count,close_count=0,0,0
 local submitted,sets={},{}
 local fail_property
+local defer_focused = false
 local function emit(name,value)
     properties[name]=value
     local callbacks={};for _,fn in ipairs(observers[name] or {}) do callbacks[#callbacks+1]=fn end
@@ -41,7 +42,8 @@ local mp={
     disable_key_bindings=function(section) enabled[section]=nil end,
     set_mouse_area=function(x0,y0,x1,y1,section) areas[section]={x0,y0,x1,y1} end,
     observe_property=function(name,kind,fn)
-        observers[name]=observers[name] or {};table.insert(observers[name],fn);fn(name,properties[name])
+        observers[name]=observers[name] or {};table.insert(observers[name],fn)
+        if name~='focused' or not defer_focused then fn(name,properties[name]) end
     end,
     unobserve_property=function(fn)
         for name,list in pairs(observers) do for i=#list,1,-1 do if list[i]==fn then table.remove(list,i) end end end
@@ -213,7 +215,7 @@ function failed_open_and_zero_osd_restore()
     fail_property=nil;assert(open());local visible=data();width,height=0,0;emit('osd-dimensions',{w=0,h=0});eq(data(),'')
     width,height=320,240;emit('osd-dimensions',{w=width,h=height});assert(data()~='' and data()~=visible)
     for _,area in pairs(areas) do eq(area[3],320);eq(area[4],240) end
-    M.close();properties.focused=false;eq(open(),false);idle_resources()
+    M.close();properties.focused=false;assert(open());assert(M.is_open());M.close();idle_resources()
 end
 function missing_optional_property_error_does_not_become_number_base()
     properties['display-hidpi-scale']=nil
@@ -238,6 +240,37 @@ function thumb_drag_cancel_and_media_close_do_not_submit()
     M.close();idle_resources();eq(properties['input-ime'],false)
     assert(open({{id=100,title='Replacement media subtitle',lang='eng',codec='SRT',external=false}},100))
     old({event='up'});eq(#submitted,0);assert(M.is_open());invoke('ESC');idle_resources()
+end
+function initial_unfocused_notification_requires_a_prior_true_before_close()
+    properties.focused=false
+    assert(open(),'an initially unfocused embedded VO must still show the selector')
+    emit('focused',false);assert(M.is_open(),'initial/repeated false is not a focus-loss transition')
+    emit('focused',true);assert(M.is_open())
+    emit('focused',false);idle_resources()
+    eq(properties['input-ime'],false);eq(properties['cursor-autohide'],1000);eq(properties['window-dragging'],true)
+
+    -- mpv delivers initial observations on its event queue, after open returns.
+    -- Match the reported embedded-window failure without relying on a GUI.
+    defer_focused=true;properties.focused=false
+    assert(open());assert(M.is_open())
+    emit('focused',false);assert(M.is_open(),'deferred first false must not silently remove the overlay')
+    emit('focused',true);emit('focused',false);idle_resources()
+end
+function invalid_hidpi_values_use_visible_unit_scale()
+    for _,value in ipairs({0,-1,0/0,math.huge,-math.huge}) do
+        properties['display-hidpi-scale']=value
+        assert(open(),'invalid DPI should use 1 instead of failing to open')
+        local layer=overlay();assert(layer and layer.res_x==width and layer.res_y==height)
+        local first=assert(data():match('([^\n]+)'));local path=assert(first:match('}(.-){\\p0}'))
+        local left,top,right,bottom=math.huge,math.huge,-math.huge,-math.huge
+        for x,y in path:gmatch('([%d%.%-]+) ([%d%.%-]+)') do
+            x,y=tonumber(x),tonumber(y);left=math.min(left,x);right=math.max(right,x);top=math.min(top,y);bottom=math.max(bottom,y)
+        end
+        assert(math.abs((right-left)-440)<0.02,'invalid DPI collapsed or enlarged the visible panel')
+        assert(bottom-top>200 and left>=0 and top>=0 and right<=width and bottom<=height,'invalid DPI produced an invisible/out-of-frame panel')
+        assert(not data():lower():find('nan',1,true) and not data():lower():find('inf',1,true),'non-finite geometry leaked into ASS')
+        M.close();idle_resources()
+    end
 end
 function export_ass(output)
     local list=tracks(12)

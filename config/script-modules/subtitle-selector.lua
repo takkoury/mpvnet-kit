@@ -57,6 +57,13 @@ local function dimensions()
     local w, h = mp.get_osd_size()
     return math.max(0,tonumber(w) or 0), math.max(0,tonumber(h) or 0)
 end
+local function status(phase, detail)
+    local w,h=dimensions()
+    pcall(set,'user-data/mpvnet/subtitle-selector/status',{
+        phase=phase,detail=tostring(detail or ''),width=w,height=h,
+        dpi=tostring(native('display-hidpi-scale','unavailable')),focused=native('focused'),
+    })
+end
 local function position()
     local mouse = native('mouse-pos', {}) or {}
     return tonumber(mouse.x) or -1, tonumber(mouse.y) or -1, mouse.hover ~= false
@@ -353,11 +360,13 @@ end
 render=function()
     local s=active;if not s then return end
     local w,h=dimensions()
-    if w<2 or h<2 then s.overlay.data='';s.overlay:update();s.last_data=nil;return end
+    if w<2 or h<2 then s.overlay.data='';s.overlay:update();s.last_data=nil;status('waiting-osd');return end
     s.matches=filtered(s)
     local extra=s.error~='' and 28 or 0
     local minimum_height=#s.tracks==0 and 256 or #s.matches==0 and 270 or 248
-    local scale=math.max(0.000001,math.min(tonumber(native('display-hidpi-scale',1)) or 1,math.max(1,w-12)/440,math.max(1,h-12)/(minimum_height+extra)))
+    local dpi=tonumber(native('display-hidpi-scale',1)) or 1
+    if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
+    local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/440,math.max(1,h-12)/(minimum_height+extra)))
     local capacity=clamp(math.floor((h/scale-28-194-extra)/54),1,5)
     s.capacity=capacity;s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity))
     local rows=math.min(capacity,#s.matches)
@@ -449,6 +458,9 @@ render=function()
         s.overlay.res_x=w;s.overlay.res_y=h;s.overlay.data=data;s.overlay:update();s.last_data=data
     end
     all_input(s)
+    if s.status_w~=w or s.status_h~=h or s.status_scale~=scale then
+        s.status_w,s.status_h,s.status_scale=w,h,scale;status('rendered')
+    end
 end
 function M.is_open() return active~=nil end
 function M.update(tracks,id)
@@ -461,7 +473,7 @@ function M.update(tracks,id)
     end
     reset_tip(s);render();return true
 end
-function M.close()
+function M.close(reason)
     local s=active;if not s then restore_pending();return end
     active=nil
     for _,name in ipairs(s.binding_names) do mp.remove_key_binding(name) end
@@ -477,12 +489,13 @@ function M.close()
     end
     if s.overlay then s.overlay:remove() end;if s.measure then s.measure:remove() end
     pcall(set,published,false);close_console_watch()
+    status('closed',reason)
     if s.close then pcall(s.close) end
 end
 function M.open(options)
     if shutting_down then return false,'播放器正在退出。' end
     if type(options)~='table' or type(options.submit)~='function' then return false,'字幕选择入口无效。' end
-    if native('user-data/mpv/console/open',false) then return false,'控制台正在使用输入。' end
+    if native('user-data/mpv/console/open',false) then status('blocked','console');return false,'控制台正在使用输入。' end
     restore_pending()
     if active then
         active.submit=options.submit;active.close=options.close
@@ -491,7 +504,8 @@ function M.open(options)
     local s={tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
         chars={},cursor=0,query_offset=0,scroll=0,error='',binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=#s.tracks>0 and 'search' or 'close';active=s
-    local ok=pcall(function()
+    status('opening')
+    local ok,failure=pcall(function()
         for _,item in ipairs({{'input-ime',true},{'cursor-autohide','no'},{'window-dragging',false}}) do
             if not borrow(s,item[1],item[2]) then error('input-property') end
         end
@@ -500,7 +514,13 @@ function M.open(options)
         install_bindings(s);pcall(set,published,true);watch_console()
         if active~=s then return end
         s.dimensions_changed=function() if active==s then reset_tip(s);render() end end
-        s.focus_changed=function(_,focused) if active==s and focused==false then M.close() end end
+        s.focus_changed=function(_,focused)
+            if active~=s then return end
+            -- The first notification describes startup state, not a focus-loss
+            -- event. Embedded/startup windows may initially report false.
+            if focused==true then s.had_focus=true
+            elseif focused==false and s.had_focus then M.close('focus-lost') end
+        end
         mp.observe_property('osd-dimensions','native',s.dimensions_changed)
         mp.observe_property('display-hidpi-scale','native',s.dimensions_changed)
         mp.observe_property('focused','bool',s.focus_changed)
@@ -516,7 +536,9 @@ function M.open(options)
         render()
     end)
     if not ok then
-        s.close=nil;M.close();return false,'无法打开字幕选择器，请重试。'
+        s.close=nil;M.close();status('failed',failure)
+        if mp.msg then mp.msg.error('Subtitle selector startup failed: '..tostring(failure)) end
+        return false,'无法打开字幕选择器，请重试。'
     end
     return active==s
 end

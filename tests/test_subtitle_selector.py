@@ -50,6 +50,12 @@ class SubtitleSelector(unittest.TestCase):
     def test_thumb_drag_and_controller_media_close_cannot_submit_stale_row(self):
         self.run_case('thumb_drag_cancel_and_media_close_do_not_submit')
 
+    def test_initial_or_deferred_false_focus_does_not_close_until_true_was_seen(self):
+        self.run_case('initial_unfocused_notification_requires_a_prior_true_before_close')
+
+    def test_zero_negative_nan_and_infinite_dpi_use_a_visible_unit_scale(self):
+        self.run_case('invalid_hidpi_values_use_visible_unit_scale')
+
 
 if __name__ == '__main__':
     unittest.main()
