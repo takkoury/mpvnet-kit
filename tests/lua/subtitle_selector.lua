@@ -25,6 +25,7 @@ local mp={
     end,
     command_native=function(args)
         assert(args[1]=='escape-ass','no player command or shell operation expected')
+        assert(#args==2,'escape-ass must receive exactly one text argument')
         return args[2]:gsub('\n',' '):gsub('{','\\{'):gsub('}','\\}')
     end,
     add_key_binding=function(key,name,fn,flags)

@@ -30,8 +30,15 @@ local function chars(text)
     end
     return out
 end
-local function clean(text) return tostring(text or ''):gsub('[%z\1-\31\127]', ' ') end
-local function escape(text) return mp.command_native({'escape-ass', clean(text)}) or '' end
+local function clean(text)
+    local value=tostring(text or ''):gsub('[%z\1-\31\127]', ' ')
+    return value
+end
+local function escape(text)
+    local value,err=mp.command_native({'escape-ass', clean(text)})
+    if type(value)~='string' then error('ASS text escaping failed: '..tostring(err)) end
+    return value
+end
 local function ass_color(rgb) return rgb:sub(5,6) .. rgb:sub(3,4) .. rgb:sub(1,2) end
 local function normalize(tracks)
     local out, seen = {}, {}
@@ -363,27 +370,27 @@ render=function()
     if w<2 or h<2 then s.overlay.data='';s.overlay:update();s.last_data=nil;status('waiting-osd');return end
     s.matches=filtered(s)
     local extra=s.error~='' and 28 or 0
-    local minimum_height=#s.tracks==0 and 256 or #s.matches==0 and 270 or 248
+    local minimum_height=#s.tracks==0 and 244 or #s.matches==0 and 258 or 236
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
     if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
     local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/440,math.max(1,h-12)/(minimum_height+extra)))
-    local capacity=clamp(math.floor((h/scale-28-194-extra)/54),1,5)
+    local capacity=clamp(math.floor((h/scale-28-182-extra)/54),1,5)
     s.capacity=capacity;s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity))
     local rows=math.min(capacity,#s.matches)
     local listheight=#s.tracks==0 and 116 or 46+(rows>0 and rows*54 or 76)+8
-    local height=(46+60+extra+listheight+34)*scale
+    local height=(34+60+extra+listheight+34)*scale
     local x,y=(w-440*scale)/2,(h-height)/2
     local l={x=x,y=y,w=w,h=h,scale=scale,rows={}}
     s.layout=l
-    l.close={x=x+396*scale,y=y,w=44*scale,h=46*scale}
-    l.search={x=x+16*scale,y=y+60*scale,w=408*scale,h=36*scale}
-    local listtop=y+(106+extra)*scale
+    l.close={x=x+396*scale,y=y,w=44*scale,h=34*scale}
+    l.search={x=x+16*scale,y=y+48*scale,w=408*scale,h=36*scale}
+    local listtop=y+(94+extra)*scale
     local out={}
     rect(out,x,y,440*scale,height,'393939',8*scale);rect(out,x+1,y+1,440*scale-2,height-2,'151515',7*scale)
-    rect(out,x+1,y+1,440*scale-2,45*scale,'1C1C1C',6*scale)
-    add_text(out,'选择普通字幕',x+20*scale,y+13*scale,15*scale,'E5E5E5')
+    rect(out,x+1,y+1,440*scale-2,33*scale,'1C1C1C',6*scale)
+    add_text(out,'选择普通字幕',x+20*scale,y+7*scale,15*scale,'E5E5E5')
     if s.hover=='close' then rect(out,l.close.x+1,l.close.y+1,l.close.w-2,l.close.h-2,'8F2633') end
-    local cx,cy=l.close.x+22*scale,l.close.y+23*scale
+    local cx,cy=l.close.x+22*scale,l.close.y+17*scale
     stroke(out,cx-5*scale,cy-5*scale,cx+5*scale,cy+5*scale,1.3*scale,'BBBBBB');stroke(out,cx+5*scale,cy-5*scale,cx-5*scale,cy+5*scale,1.3*scale,'BBBBBB')
     if s.focus=='close' then
         local left,top,right,bottom=l.close.x+4*scale,l.close.y+4*scale,l.close.x+l.close.w-4*scale,l.close.y+l.close.h-4*scale
@@ -410,7 +417,7 @@ render=function()
         add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+9*scale,13*scale,'E5E5E5',clip)
     end
     if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+8*scale,scale,20*scale,'E5E5E5') end
-    if extra>0 then local message=fitted(s,s.error,404*scale,12*scale);add_text(out,message,x+18*scale,y+107*scale,12*scale,'D8B780') end
+    if extra>0 then local message=fitted(s,s.error,404*scale,12*scale);add_text(out,message,x+18*scale,y+95*scale,12*scale,'D8B780') end
     local function row(track,top,off)
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
         local r={x=x+8*scale,y=top,w=424*scale,h=(off and 43 or 52)*scale,id=id,title=off and '不显示普通字幕' or label(track)}
