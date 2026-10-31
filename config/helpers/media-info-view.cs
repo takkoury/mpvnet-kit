@@ -147,9 +147,9 @@ public sealed class MediaInfoView : Window, IDisposable
         identity.Children.Add(Segments(metadata.ToArray(), 12, "#AAAAAA"));
         Grid.SetRow(identity, 1); root.Children.Add(identity);
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(28,0,28,0) };
-        overviewTab = Button("概览", "概览", delegate { SelectPage("overview"); }, false, false);
-        detailTab = Button("详情", "详情", delegate { SelectPage("details"); }, false, false);
-        overviewTab.Margin = new Thickness(0,0,24,0); overviewTab.Padding = detailTab.Padding = new Thickness(0,8,0,8);
+        overviewTab = TabButton("概览", "overview");
+        detailTab = TabButton("详情", "details");
+        overviewTab.Margin = new Thickness(0,0,8,0);
         tabs.Children.Add(overviewTab); tabs.Children.Add(detailTab);
         var tabRegion = new Border { Child = tabs, BorderBrush = Tone("#303030"), BorderThickness = new Thickness(0,0,0,1) };
         Grid.SetRow(tabRegion, 2); root.Children.Add(tabRegion);
@@ -191,7 +191,9 @@ public sealed class MediaInfoView : Window, IDisposable
         Grid.SetColumn(confirm, 2); footer.Children.Add(confirm);
         var footerRegion = new Border { Child = footer, BorderBrush = Tone("#292929"), BorderThickness = new Thickness(0,1,0,0) };
         Grid.SetRow(footerRegion, 4); root.Children.Add(footerRegion); Content = root;
-        search.TextChanged += delegate { placeholder.Visibility = search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; RenderReport(); };
+        Action updatePlaceholder = delegate { placeholder.Visibility = search.Text.Length == 0 && !search.IsKeyboardFocusWithin ? Visibility.Visible : Visibility.Collapsed; };
+        search.TextChanged += delegate { updatePlaceholder(); RenderReport(); };
+        search.IsKeyboardFocusWithinChanged += delegate { updatePlaceholder(); };
         overviewTab.PreviewKeyDown += TabKey; detailTab.PreviewKeyDown += TabKey;
         PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
             if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { SelectPage("details"); search.Focus(); search.SelectAll(); e.Handled = true; }
@@ -213,6 +215,22 @@ public sealed class MediaInfoView : Window, IDisposable
 <Style TargetType='TextBox'><Setter Property='FocusVisualStyle' Value='{x:Null}'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='TextBox'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='3'><ScrollViewer x:Name='PART_ContentHost'/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#1287BB'/></Trigger></Style.Triggers></Style>
 <Style TargetType='ScrollBar'><Setter Property='Width' Value='10'/><Setter Property='Background' Value='#151515'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ScrollBar'><Grid Background='{TemplateBinding Background}'><Track x:Name='PART_Track' IsDirectionReversed='True' Orientation='Vertical' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' ViewportSize='{TemplateBinding ViewportSize}'><Track.DecreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageUpCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Background='#555555' CornerRadius='3' Width='6' HorizontalAlignment='Center'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command='{x:Static ScrollBar.PageDownCommand}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
 </ResourceDictionary>");
+    }
+    Button TabButton(string text, string target)
+    {
+        var template = (ControlTemplate)XamlReader.Parse(@"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
+<Grid Background='Transparent'><Border x:Name='surface' Background='Transparent' Margin='0,3,0,5' CornerRadius='3'/><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' Margin='14,0,14,2'/><Border x:Name='indicator' Background='Transparent' Height='2' Width='24' VerticalAlignment='Bottom' HorizontalAlignment='Center'/></Grid>
+<ControlTemplate.Triggers>
+<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='surface' Property='Background' Value='#222222'/><Setter Property='Foreground' Value='#EEEEEE'/></Trigger>
+<Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='surface' Property='Background' Value='#242424'/><Setter Property='Foreground' Value='#F2F2F2'/></Trigger>
+<Trigger Property='IsPressed' Value='True'><Setter TargetName='surface' Property='Background' Value='#303030'/></Trigger>
+<Trigger Property='Tag' Value='selected'><Setter TargetName='indicator' Property='Background' Value='#1287BB'/></Trigger>
+</ControlTemplate.Triggers></ControlTemplate>");
+        var tab = new Button { Content = text, MinWidth = 72, Height = 43, Template = template,
+            FocusVisualStyle = null, BorderThickness = new Thickness(0), Background = Brushes.Transparent };
+        AutomationProperties.SetName(tab, text);
+        tab.Click += delegate { SelectPage(target); };
+        return tab;
     }
     Button Button(string text, string name, Action action, bool primary, bool caption)
     {
@@ -365,7 +383,7 @@ public sealed class MediaInfoView : Window, IDisposable
         detailPage.Visibility = page == "details" ? Visibility.Visible : Visibility.Collapsed;
         foreach (Button tab in new[] { overviewTab, detailTab }) {
             bool selected = tab == (page == "overview" ? overviewTab : detailTab);
-            tab.BorderBrush = selected ? Tone("#1287BB") : Brushes.Transparent; tab.BorderThickness = new Thickness(0,0,0,selected ? 2 : 0);
+            tab.Tag = selected ? "selected" : "";
             tab.Foreground = Tone(selected ? "#EEEEEE" : "#AAAAAA");
         }
     }
