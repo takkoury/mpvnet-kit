@@ -295,6 +295,26 @@ function invalid_hidpi_values_use_visible_unit_scale()
         M.close();idle_resources()
     end
 end
+function metadata_columns_and_id_edges_stay_aligned()
+    local list={{id=1,title='First',lang='zh-Hant',codec='subrip',external=false},
+        {id=12,title='Second',lang='en',codec='ASS',external=true},
+        {id=123,title='Third',lang='',codec='hdmv_pgs_subtitle',external=false}}
+    assert(open(list,1))
+    local first=text_point('subrip');local second=text_point('ASS');local third
+    for line in data():gmatch('[^\n]+') do
+        if line:find('hdmv',1,true) then
+            third=tonumber(line:match('\\pos%(([%d%.%-]+),'))
+            assert(line:find('…',1,true),'long codec should be elided within its column')
+        end
+    end
+    eq(first,second,'codec centers differ');eq(first,third,'long codec must keep column center')
+    local right=text_point('#1');eq(right,text_point('#12'));eq(right,text_point('#123'))
+    for line in data():gmatch('[^\n]+') do
+        if line:match('#%d+$') then assert(line:find('\\an9',1,true),'IDs must use actual right anchor') end
+    end
+    text('Second');eq(text_point('ASS'),first,'filtering must not shift columns')
+    invoke('ESC');idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus)
@@ -313,4 +333,9 @@ function export_ass(output)
     properties['display-hidpi-scale']=1.5
     save('feedback-size',1469,826,tracks())
     save('keyboard-focus',1469,826,tracks(),true)
+    save('mixed-columns',1469,826,{
+        {id=1,title='简体中文',lang='zh',codec='subrip',external=false},
+        {id=12,title='English',lang='en',codec='ASS',external=true},
+        {id=123,title='日本語',lang='ja',codec='hdmv_pgs_subtitle',external=false},
+        {id=321,title='繁体中文字幕',lang='zh-Hant',codec='subrip',external=false}},true)
 end

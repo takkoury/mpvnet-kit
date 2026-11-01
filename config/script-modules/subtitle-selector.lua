@@ -114,8 +114,8 @@ local function fitted(s, text, width, size, bold)
     end
     return table.concat(parts,'',1,lo)..'…', true
 end
-local function add_text(out, text, x, y, size, color, clip, bold, centered)
-    local style = string.format('\\an%d\\pos(%.2f,%.2f)\\bord0\\shad0\\fnMicrosoft YaHei UI\\fs%.2f\\1c&H%s&\\b%d',centered and 4 or 7,x,y,size,ass_color(color),bold and 1 or 0)
+local function add_text(out, text, x, y, size, color, clip, bold, alignment)
+    local style = string.format('\\an%d\\pos(%.2f,%.2f)\\bord0\\shad0\\fnMicrosoft YaHei UI\\fs%.2f\\1c&H%s&\\b%d',alignment or 7,x,y,size,ass_color(color),bold and 1 or 0)
     if clip then style=style..string.format('\\clip(%.2f,%.2f,%.2f,%.2f)',clip.x,clip.y,clip.x+clip.w,clip.y+clip.h) end
     out[#out+1]='{'..style..'}'..escape(text)
 end
@@ -394,7 +394,7 @@ render=function()
     local out={}
     rect(out,x,y,panel_width*scale,height,'393939',8*scale);rect(out,x+1,y+1,panel_width*scale-2,height-2,'151515',7*scale)
     rect(out,x+1,y+1,panel_width*scale-2,33*scale,'1C1C1C',6*scale)
-    add_text(out,'选择普通字幕',x+20*scale,y+6*scale,16*scale,'E5E5E5')
+    add_text(out,'选择普通字幕',x+20*scale,y+17*scale,16*scale,'E5E5E5',nil,false,4)
     if s.hover=='close' then rect(out,l.close.x+1,l.close.y+1,l.close.w-2,l.close.h-2,'8F2633') end
     local cx,cy=l.close.x+22*scale,l.close.y+17*scale
     stroke(out,cx-5*scale,cy-5*scale,cx+5*scale,cy+5*scale,1.3*scale,'BBBBBB');stroke(out,cx+5*scale,cy-5*scale,cx-5*scale,cy+5*scale,1.3*scale,'BBBBBB')
@@ -412,7 +412,7 @@ render=function()
     local q=query(s);local prefix=table.concat(s.chars,'',1,s.cursor);local prefixwidth=measure(s,prefix,search_size*scale);local available=l.search.w-48*scale
     s.query_offset=clamp(s.query_offset,math.max(0,prefixwidth-available),prefixwidth)
     local clip={x=l.search.x+34*scale,y=l.search.y+4*scale,w=available+2*scale,h=l.search.h-8*scale}
-    if q=='' and s.focus~='search' then add_text(out,'查找字幕',l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,true)
+    if q=='' and s.focus~='search' then add_text(out,'查找字幕',l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,4)
     else
         local a,b=selection(s)
         if a~=b then
@@ -420,10 +420,25 @@ render=function()
             local right=measure(s,table.concat(s.chars,'',1,b),search_size*scale)-s.query_offset
             rect(out,l.search.x+36*scale+clamp(left,0,available),l.search.y+(l.search.h-20*scale)/2,math.max(0,clamp(right,0,available)-clamp(left,0,available)),20*scale,'174354')
         end
-        add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+l.search.h/2,search_size*scale,'E5E5E5',clip,false,true)
+        add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+l.search.h/2,search_size*scale,'E5E5E5',clip,false,4)
     end
     if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
     if extra>0 then local message=fitted(s,s.error,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
+    -- Shared columns use the whole track set, so scrolling/filtering cannot
+    -- shift separators. Missing fields leave their column empty.
+    local lang_width,codec_width,id_width=0,0,0
+    local has_language,has_codec=false,false
+    local function meta_language(track)
+        return track.lang~='' and label(track)~=language(track) and language(track) or ''
+    end
+    for _,track in ipairs(s.tracks) do
+        local lang=meta_language(track)
+        if lang~='' then has_language=true;lang_width=math.max(lang_width,measure(s,lang,meta_size*scale)) end
+        if track.codec~='' then has_codec=true;codec_width=math.max(codec_width,measure(s,track.codec,meta_size*scale)) end
+        id_width=math.max(id_width,measure(s,'#'..track.id,meta_size*scale))
+    end
+    lang_width=clamp(lang_width,24*scale,80*scale)
+    codec_width=clamp(codec_width,32*scale,84*scale)
     local function row(track,top,off)
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
         local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or 52)*scale,id=id,title=off and '不显示普通字幕' or label(track)}
@@ -431,24 +446,31 @@ render=function()
         local background=current and '152B35' or s.hover==id and '252525' or focused and '222222' or '151515'
         if focused then rect(out,r.x,r.y,r.w,r.h,'777777',4*scale);rect(out,r.x+scale,r.y+scale,r.w-2*scale,r.h-2*scale,background,3*scale)
         else rect(out,r.x,r.y,r.w,r.h,background,4*scale) end
-        local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or measure(s,'#'..id,meta_size*scale))
+        local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or id_width)
         local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
         add_text(out,title,tx,off and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or 'E5E5E5',
-            {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or 25)*scale},current,off)
+            {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or 25)*scale},current,off and 4 or 7)
         if current then
             local cx,cy=r.x+19*scale,r.y+r.h/2
             out[#out+1]=string.format('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H%s&\\p1}m %.2f %.2f l %.2f %.2f %.2f %.2f{\\p0}',
                 ass_color('54B8E3'),cx-3*scale,cy-5*scale,cx+4*scale,cy,cx-3*scale,cy+5*scale)
         end
         if not off then
-            local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale-measure(s,identifier,meta_size*scale),r.y+9*scale,meta_size*scale,'999999')
-            local meta={};if track.lang~='' and label(track)~=language(track) then meta[#meta+1]=language(track) end;if track.codec~='' then meta[#meta+1]=track.codec end
-            meta[#meta+1]=track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
+            local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             local sx=tx
-            for i,text in ipairs(meta) do
-                if i>1 then rect(out,sx+8*scale,r.y+31*scale,scale,10*scale,'555555');sx=sx+17*scale end
-                add_text(out,text,sx,r.y+36*scale,meta_size*scale,'AAAAAA',{x=tx,y=r.y+26*scale,w=width,h=20*scale},false,true);sx=sx+measure(s,text,meta_size*scale)
+            local function column(text,column_width,centered)
+                local value=fitted(s,text,column_width,meta_size*scale)
+                add_text(out,value,centered and sx+column_width/2 or sx,r.y+36*scale,meta_size*scale,'AAAAAA',
+                    {x=sx,y=r.y+26*scale,w=column_width,h=20*scale},false,centered and 5 or 4)
+                rect(out,sx+column_width+8*scale,r.y+31*scale,scale,10*scale,'555555')
+                sx=sx+column_width+17*scale
             end
+            if has_language then column(meta_language(track),lang_width,false) end
+            if has_codec then column(track.codec,codec_width,true) end
+            local source=track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
+            local source_width=math.max(0,tx+width-sx)
+            add_text(out,fitted(s,source,source_width,meta_size*scale),sx,r.y+36*scale,meta_size*scale,'AAAAAA',
+                {x=sx,y=r.y+26*scale,w=source_width,h=20*scale},false,4)
         end
     end
     if #s.tracks==0 then

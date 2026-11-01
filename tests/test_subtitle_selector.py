@@ -38,6 +38,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_outside_release_cancels_but_drag_or_canceled_event_does_not(self):
         self.run_case('outside_click_cancels_without_submit_or_drag_through')
 
+    def test_metadata_columns_and_ids_keep_alignment_across_lengths_and_filter(self):
+        self.run_case('metadata_columns_and_id_edges_stay_aligned')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 
