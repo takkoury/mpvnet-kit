@@ -108,7 +108,7 @@ local function idle_resources()
 end
 local function text_point(needle, title_only)
     for line in data():gmatch('[^\n]+') do
-        if line:sub(-#needle)==needle and (not title_only or line:find('\\fs14.00',1,true)) then
+        if line:sub(-#needle)==needle and (not title_only or line:find('\\fs18.00',1,true)) then
             local x,y=line:match('\\pos%(([%d%.%-]+),([%d%.%-]+)%)')
             if x then return tonumber(x),tonumber(y) end
         end
@@ -169,6 +169,28 @@ function scrolling_mouse_click_hover_and_dynamic_resize()
     invoke('END');invoke('UP');invoke('PGDWN');assert(M.is_open())
     invoke('Ctrl+f');text('English');local x,y=text_point('English',true);mouse(x+3,y+3);invoke('MBTN_LEFT',{event='down'});invoke('MBTN_LEFT',{event='up'})
     eq(submitted[1],5);idle_resources()
+end
+function outside_click_cancels_without_submit_or_drag_through()
+    assert(open())
+    mouse(1,1);invoke('MBTN_LEFT',{event='down'})
+    assert(M.is_open(),'keep input captured until release')
+    invoke('MBTN_LEFT',{event='up'});idle_resources();eq(#submitted,0)
+    eq(properties['user-data/mpvnet/subtitle-selector/status'].detail,'outside-click')
+    eq(properties['input-ime'],false);eq(properties['window-dragging'],true)
+
+    assert(open());local x,y=text_point('English',true)
+    mouse(x+3,y+3);invoke('MBTN_LEFT',{event='down'})
+    mouse(1,1);invoke('MBTN_LEFT',{event='up'})
+    assert(M.is_open(),'dragging out must not dismiss or select');eq(#submitted,0)
+    mouse(1,1);invoke('MBTN_LEFT',{event='down'})
+    mouse(x+3,y+3);invoke('MBTN_LEFT',{event='up'})
+    assert(M.is_open(),'press outside and release inside must not select');eq(#submitted,0)
+    mouse(1,1);invoke('MBTN_LEFT',{event='down'});invoke('MBTN_LEFT',{event='up',canceled=true})
+    assert(M.is_open(),'canceled click must not dismiss')
+    local tx,ty=text_point('选择普通字幕')
+    mouse(tx+2,ty+2);invoke('MBTN_LEFT');assert(M.is_open(),'blank caption is inside panel')
+    mouse(1,1,false);invoke('MBTN_LEFT');assert(M.is_open(),'outside the video is not an overlay click')
+    mouse(1,1);invoke('MBTN_LEFT');idle_resources();eq(#submitted,0)
 end
 function tooltip_and_empty_panel()
     local long='字幕 '..string.rep('完整长标题',18)..'.ass'
@@ -267,7 +289,7 @@ function invalid_hidpi_values_use_visible_unit_scale()
         for x,y in path:gmatch('([%d%.%-]+) ([%d%.%-]+)') do
             x,y=tonumber(x),tonumber(y);left=math.min(left,x);right=math.max(right,x);top=math.min(top,y);bottom=math.max(bottom,y)
         end
-        assert(math.abs((right-left)-440)<0.02,'invalid DPI collapsed or enlarged the visible panel')
+        assert(math.abs((right-left)-400)<0.02,'invalid DPI collapsed or enlarged the visible panel')
         assert(bottom-top>200 and left>=0 and top>=0 and right<=width and bottom<=height,'invalid DPI produced an invisible/out-of-frame panel')
         assert(not data():lower():find('nan',1,true) and not data():lower():find('inf',1,true),'non-finite geometry leaked into ASS')
         M.close();idle_resources()
@@ -275,8 +297,10 @@ function invalid_hidpi_values_use_visible_unit_scale()
 end
 function export_ass(output)
     local list=tracks(12)
-    local function save(name,w,h,items)
-        width,height=w,h;assert(open(items or list,3));local layer=overlay();local raw=layer.data
+    local function save(name,w,h,items,keyboard_focus)
+        width,height=w,h;assert(open(items or list,3))
+        if keyboard_focus then invoke('DOWN');invoke('DOWN') end
+        local layer=overlay();local raw=layer.data
         local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
         file=assert(io.open(output..'/'..name..'.ass','wb'))
         file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
@@ -286,4 +310,7 @@ function export_ass(output)
     save('normal',1280,720);save('narrow',320,240)
     local long=tracks(12);long[1].title='山间的一天 — 简体中文与日语双语字幕（校对版，含歌曲与注释）.ass'
     save('current-long-title',1280,720,long)
+    properties['display-hidpi-scale']=1.5
+    save('feedback-size',1469,826,tracks())
+    save('keyboard-focus',1469,826,tracks(),true)
 end

@@ -35,6 +35,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_scroll_wheel_and_mouse_click_use_visible_track_ids(self):
         self.run_case('scrolling_mouse_click_hover_and_dynamic_resize')
 
+    def test_outside_release_cancels_but_drag_or_canceled_event_does_not(self):
+        self.run_case('outside_click_cancels_without_submit_or_drag_through')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 
