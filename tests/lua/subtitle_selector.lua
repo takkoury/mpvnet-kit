@@ -108,7 +108,7 @@ local function idle_resources()
 end
 local function text_point(needle, title_only)
     for line in data():gmatch('[^\n]+') do
-        if line:sub(-#needle)==needle and (not title_only or line:find('\\fs18.00',1,true)) then
+        if line:sub(-#needle)==needle and (not title_only or line:find('\\fs16.00',1,true)) then
             local x,y=line:match('\\pos%(([%d%.%-]+),([%d%.%-]+)%)')
             if x then return tonumber(x),tonumber(y) end
         end
@@ -289,7 +289,7 @@ function invalid_hidpi_values_use_visible_unit_scale()
         for x,y in path:gmatch('([%d%.%-]+) ([%d%.%-]+)') do
             x,y=tonumber(x),tonumber(y);left=math.min(left,x);right=math.max(right,x);top=math.min(top,y);bottom=math.max(bottom,y)
         end
-        assert(math.abs((right-left)-400)<0.02,'invalid DPI collapsed or enlarged the visible panel')
+        assert(math.abs((right-left)-440)<0.02,'invalid DPI collapsed or enlarged the visible panel')
         assert(bottom-top>200 and left>=0 and top>=0 and right<=width and bottom<=height,'invalid DPI produced an invisible/out-of-frame panel')
         assert(not data():lower():find('nan',1,true) and not data():lower():find('inf',1,true),'non-finite geometry leaked into ASS')
         M.close();idle_resources()
