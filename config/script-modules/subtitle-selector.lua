@@ -114,8 +114,8 @@ local function fitted(s, text, width, size, bold)
     end
     return table.concat(parts,'',1,lo)..'…', true
 end
-local function add_text(out, text, x, y, size, color, clip, bold)
-    local style = string.format('\\an7\\pos(%.2f,%.2f)\\bord0\\shad0\\fnMicrosoft YaHei UI\\fs%.2f\\1c&H%s&\\b%d',x,y,size,ass_color(color),bold and 1 or 0)
+local function add_text(out, text, x, y, size, color, clip, bold, centered)
+    local style = string.format('\\an%d\\pos(%.2f,%.2f)\\bord0\\shad0\\fnMicrosoft YaHei UI\\fs%.2f\\1c&H%s&\\b%d',centered and 4 or 7,x,y,size,ass_color(color),bold and 1 or 0)
     if clip then style=style..string.format('\\clip(%.2f,%.2f,%.2f,%.2f)',clip.x,clip.y,clip.x+clip.w,clip.y+clip.h) end
     out[#out+1]='{'..style..'}'..escape(text)
 end
@@ -375,22 +375,22 @@ render=function()
     if w<2 or h<2 then s.overlay.data='';s.overlay:update();s.last_data=nil;status('waiting-osd');return end
     s.matches=filtered(s)
     local extra=s.error~='' and 28 or 0
-    local minimum_height=#s.tracks==0 and 244 or #s.matches==0 and 258 or 236
+    local minimum_height=#s.tracks==0 and 238 or #s.matches==0 and 240 or 218
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
     if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
     local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/panel_width,math.max(1,h-12)/(minimum_height+extra)))
-    local capacity=clamp(math.floor((h/scale-28-182-extra)/54),1,5)
+    local capacity=clamp(math.floor((h/scale-28-164-extra)/54),1,5)
     s.capacity=capacity;s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity))
     local rows=math.min(capacity,#s.matches)
-    local listheight=#s.tracks==0 and 116 or 46+(rows>0 and rows*54 or 76)+8
-    local height=(34+60+extra+listheight+34)*scale
+    local listheight=#s.tracks==0 and 116 or 34+(rows>0 and rows*54 or 76)+8
+    local height=(34+54+extra+listheight+34)*scale
     local x,y=(w-panel_width*scale)/2,(h-height)/2
     local l={x=x,y=y,w=w,h=h,scale=scale,rows={}}
     s.layout=l
     l.panel={x=x,y=y,w=panel_width*scale,h=height}
     l.close={x=x+(panel_width-44)*scale,y=y,w=44*scale,h=34*scale}
-    l.search={x=x+16*scale,y=y+48*scale,w=(panel_width-32)*scale,h=36*scale}
-    local listtop=y+(94+extra)*scale
+    l.search={x=x+16*scale,y=y+48*scale,w=(panel_width-32)*scale,h=30*scale}
+    local listtop=y+(88+extra)*scale
     local out={}
     rect(out,x,y,panel_width*scale,height,'393939',8*scale);rect(out,x+1,y+1,panel_width*scale-2,height-2,'151515',7*scale)
     rect(out,x+1,y+1,panel_width*scale-2,33*scale,'1C1C1C',6*scale)
@@ -405,45 +405,49 @@ render=function()
     end
     rect(out,l.search.x,l.search.y,l.search.w,l.search.h,s.focus=='search' and #s.tracks>0 and '1287BB' or '444444',4*scale)
     rect(out,l.search.x+scale,l.search.y+scale,l.search.w-2*scale,l.search.h-2*scale,'202020',3*scale)
-    local mx,my=l.search.x+18*scale,l.search.y+17*scale
+    local mx,my=l.search.x+18*scale,l.search.y+l.search.h/2-1.75*scale
     local previous
     for i=0,24 do local angle=i/24*math.pi*2;local p={mx+6.5*scale*math.cos(angle),my+6.5*scale*math.sin(angle)};if previous then stroke(out,previous[1],previous[2],p[1],p[2],1.3*scale,'999999') end;previous=p end
     stroke(out,mx+4.7*scale,my+4.7*scale,mx+10*scale,my+10*scale,1.3*scale,'999999')
     local q=query(s);local prefix=table.concat(s.chars,'',1,s.cursor);local prefixwidth=measure(s,prefix,search_size*scale);local available=l.search.w-48*scale
     s.query_offset=clamp(s.query_offset,math.max(0,prefixwidth-available),prefixwidth)
-    local clip={x=l.search.x+34*scale,y=l.search.y+4*scale,w=available+2*scale,h=28*scale}
-    if q=='' and s.focus~='search' then add_text(out,'查找字幕',l.search.x+36*scale,l.search.y+8*scale,search_size*scale,#s.tracks>0 and '999999' or '777777',clip)
+    local clip={x=l.search.x+34*scale,y=l.search.y+4*scale,w=available+2*scale,h=l.search.h-8*scale}
+    if q=='' and s.focus~='search' then add_text(out,'查找字幕',l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,true)
     else
         local a,b=selection(s)
         if a~=b then
             local left=measure(s,table.concat(s.chars,'',1,a),search_size*scale)-s.query_offset
             local right=measure(s,table.concat(s.chars,'',1,b),search_size*scale)-s.query_offset
-            rect(out,l.search.x+36*scale+clamp(left,0,available),l.search.y+7*scale,math.max(0,clamp(right,0,available)-clamp(left,0,available)),22*scale,'174354')
+            rect(out,l.search.x+36*scale+clamp(left,0,available),l.search.y+(l.search.h-20*scale)/2,math.max(0,clamp(right,0,available)-clamp(left,0,available)),20*scale,'174354')
         end
-        add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+8*scale,search_size*scale,'E5E5E5',clip)
+        add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+l.search.h/2,search_size*scale,'E5E5E5',clip,false,true)
     end
-    if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+8*scale,scale,20*scale,'E5E5E5') end
-    if extra>0 then local message=fitted(s,s.error,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+95*scale,meta_size*scale,'D8B780') end
+    if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
+    if extra>0 then local message=fitted(s,s.error,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
     local function row(track,top,off)
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
-        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 43 or 52)*scale,id=id,title=off and '不显示普通字幕' or label(track)}
+        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or 52)*scale,id=id,title=off and '不显示普通字幕' or label(track)}
         l.rows[#l.rows+1]=r
         local background=current and '152B35' or s.hover==id and '252525' or focused and '222222' or '151515'
         if focused then rect(out,r.x,r.y,r.w,r.h,'777777',4*scale);rect(out,r.x+scale,r.y+scale,r.w-2*scale,r.h-2*scale,background,3*scale)
         else rect(out,r.x,r.y,r.w,r.h,background,4*scale) end
         local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or measure(s,'#'..id,meta_size*scale))
         local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
-        add_text(out,title,tx,r.y+(off and 11 or 7)*scale,title_size*scale,current and '54B8E3' or 'E5E5E5',
-            {x=tx,y=r.y+2*scale,w=width,h=(off and 38 or 25)*scale},current)
-        if current then rect(out,r.x+16*scale,r.y+(off and 18 or 14)*scale,6*scale,6*scale,'54B8E3',3*scale) end
+        add_text(out,title,tx,off and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or 'E5E5E5',
+            {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or 25)*scale},current,off)
+        if current then
+            local cx,cy=r.x+19*scale,r.y+r.h/2
+            out[#out+1]=string.format('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H%s&\\p1}m %.2f %.2f l %.2f %.2f %.2f %.2f{\\p0}',
+                ass_color('54B8E3'),cx-3*scale,cy-5*scale,cx+4*scale,cy,cx-3*scale,cy+5*scale)
+        end
         if not off then
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale-measure(s,identifier,meta_size*scale),r.y+9*scale,meta_size*scale,'999999')
             local meta={};if track.lang~='' and label(track)~=language(track) then meta[#meta+1]=language(track) end;if track.codec~='' then meta[#meta+1]=track.codec end
             meta[#meta+1]=track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
             local sx=tx
             for i,text in ipairs(meta) do
-                if i>1 then rect(out,sx+8*scale,r.y+32*scale,scale,10*scale,'555555');sx=sx+17*scale end
-                add_text(out,text,sx,r.y+29*scale,meta_size*scale,'AAAAAA',{x=tx,y=r.y+28*scale,w=width,h=20*scale});sx=sx+measure(s,text,meta_size*scale)
+                if i>1 then rect(out,sx+8*scale,r.y+31*scale,scale,10*scale,'555555');sx=sx+17*scale end
+                add_text(out,text,sx,r.y+36*scale,meta_size*scale,'AAAAAA',{x=tx,y=r.y+26*scale,w=width,h=20*scale},false,true);sx=sx+measure(s,text,meta_size*scale)
             end
         end
     end
@@ -453,10 +457,10 @@ render=function()
         add_text(out,hint,x+(panel_width*scale-measure(s,hint,meta_size*scale))/2,listtop+60*scale,meta_size*scale,'AAAAAA')
     else
         row(nil,listtop,true)
-        if #s.matches==0 then local message='没有匹配的字幕';add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+76*scale,search_size*scale,'AAAAAA') end
-        for i=1,rows do row(s.matches[s.scroll+i],listtop+(46+(i-1)*54)*scale,false) end
+        if #s.matches==0 then local message='没有匹配的字幕';add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+64*scale,search_size*scale,'AAAAAA') end
+        for i=1,rows do row(s.matches[s.scroll+i],listtop+(34+(i-1)*54)*scale,false) end
         if #s.matches>capacity then
-            local top=listtop+46*scale;local bh=rows*54*scale
+            local top=listtop+34*scale;local bh=rows*54*scale
             local th=math.min(bh,math.max(24*scale,bh*capacity/#s.matches));local ty=top+(bh-th)*s.scroll/(#s.matches-capacity)
             l.scrollbar={x=x+(panel_width-14)*scale,y=top,w=10*scale,h=bh};l.thumb={x=x+(panel_width-12)*scale,y=ty,w=6*scale,h=th}
             rect(out,l.thumb.x,l.thumb.y,l.thumb.w,l.thumb.h,s.drag and '1287BB' or '707070',3*scale)
