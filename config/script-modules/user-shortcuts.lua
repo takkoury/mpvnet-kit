@@ -105,7 +105,7 @@ local additions = {
     {'audio.select', '音频', '选择音轨…', 'script-binding track_selection/select-audio', true},
     {'audio.next', '音频', '下一条音轨', 'script-message-to mpvnet cycle-audio'},
     {'audio.previous', '音频', '上一条音轨', 'cycle audio down'},
-    {'audio.device', '音频', '选择音频设备…', 'script-binding select/select-audio-device', true},
+    {'audio.device', '音频', '选择音频设备…', 'script-binding track_selection/select-device', true},
     {'audio.load', '音频', '加载外挂音频…', 'script-message-to mpvnet load-audio', true},
     {'audio.mute', '音频', '静音／取消静音', 'cycle mute'},
     {'audio.volume-up', '音频', '增加音量 2', 'add volume 2'},
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-audio-device', 'audio.device'},
     {'script-binding select/select-chapter', 'chapter.select'},
     {'script-binding select/select-aid', 'audio.select'},
     {'script-message-to mpvnet show-about', 'help.about'},

@@ -398,6 +398,23 @@ function chapter_single_rows_search_navigation_and_no_off_action()
     assert(M.open({kind='chapter',tracks={},current_id=0,submit=function() error('empty cannot submit') end}))
     assert(data():find('没有可用章节',1,true));invoke('ENTER');idle_resources()
 end
+function device_rows_notice_identifier_search_and_tooltip()
+    local list={{id=2,title='自动选择',device_name='auto'},
+        {id=8,title='耳机',detail_title='耳机原始名称',device_name='wasapi/{abcdef}'}}
+    assert(M.open({kind='device',tracks=list,current_id=0,notice='已选设备不在列表中，可重新选择。',submit=function(id) submitted[#submitted+1]=id;return true end}))
+    assert(data():find('选择音频设备',1,true));assert(data():find('已选设备不在列表中',1,true))
+    assert(not data():find('关闭音轨',1,true) and not data():find('不显示普通字幕',1,true))
+    assert(not data():find('#8',1,true),'device should not display synthetic numeric IDs')
+    invoke('DOWN');tick(.6);assert(data():find('不固定某个设备',1,true))
+    invoke('DOWN');tick(.6);assert(data():find('耳机原始名称',1,true));assert(data():find('wasapi/',1,true))
+    invoke('Ctrl+f');text('abcdef');invoke('ENTER');eq(submitted[1],8);idle_resources()
+    assert(M.open({kind='device',tracks=list,current_id=2,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    invoke('DOWN');invoke('ENTER');eq(submitted[2],2,'current selection must remain same positive ID')
+    assert(M.open({kind='device',tracks=list,current_id=0,notice='已选设备不在列表中，可重新选择。',submit=function() return true end}))
+    M.update(list,2,'');assert(not data():find('已选设备不在列表中',1,true));M.close()
+    assert(M.open({kind='device',tracks={},current_id=0,submit=function() error('no device cannot submit') end}))
+    assert(data():find('没有可用音频设备',1,true));invoke('ENTER');idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus,kind)
@@ -434,4 +451,9 @@ function export_ass(output)
     save('compare-audio',1469,826,comparison,false,'audio')
     comparison[1].codec='subrip';comparison[2].codec='ass';comparison[3].codec='subrip'
     save('compare-subtitle',1469,826,comparison,false,'subtitle')
+    save('device',1469,826,{
+        {id=3,title='自动选择',device_name='auto'},
+        {id=4,title='扬声器（Realtek(R) Audio）',device_name='wasapi/{demo-speakers}'},
+        {id=5,title='耳机（USB Audio Device）',device_name='wasapi/{demo-headset}'},
+        {id=6,title='显示器音频（NVIDIA High Definition Audio）',device_name='wasapi/{demo-display}'}},false,'device')
 end

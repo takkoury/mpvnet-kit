@@ -31,6 +31,13 @@ def _case(name):
 
 
 for _name in (
+    'device_auto_repeat_and_identity_submission',
+    'device_reorder_remove_reinsert_never_reuses_identity',
+    'device_empty_invalid_names_and_missing_selected_notice',
+    'device_duplicate_descriptions_and_unicode_suffixes_are_distinct',
+    'device_failure_readback_mismatch_and_sync_observer_retry',
+    'device_disappearing_without_notice_never_writes_fallback',
+    'device_observers_media_and_cross_kind_retire_callbacks',
     'lazy_load_and_named_bindings',
     'audio_metadata_and_filter_are_preserved',
     'current_audio_and_explicit_off_disable_audio',

@@ -143,6 +143,10 @@ function configured_hints_and_dispatch()
     bind_buttons("chapter_prev")
     elements.chapter_prev.eventresponder.mbtn_right_up()
     eq(commands[#commands], "script-binding track_selection/select-chapter")
+    user_opts.vol_ctrl_mbtn_right_command = "script-binding select/select-audio-device"
+    bind_buttons("vol_ctrl")
+    elements.vol_ctrl.eventresponder.mbtn_right_up()
+    eq(commands[#commands], "script-binding track_selection/select-device")
 end
 
 function title_and_custom_bindings()

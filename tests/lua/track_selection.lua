@@ -15,13 +15,15 @@ local function get(name, default)
     if properties[name] ~= nil then return properties[name] end
     return default
 end
-local set_failure, load_failure, open_failure
+local set_failure, load_failure, open_failure, readback_override, notify_device_write
 local loads = 0
 local mp = {
     get_property_native=get,
     set_property=function(name, value)
         if set_failure then return nil,'rejected' end
-        writes[#writes+1]={name,value};properties[name]=value;return true
+        writes[#writes+1]={name,value};properties[name]=readback_override or value
+        if notify_device_write and name=='audio-device' then observers['audio-device']() end
+        return true
     end,
     command_native=function(args)
         assert(args[1]=='expand-path' and args[2]=='~~/script-modules/track-selector.lua')
@@ -47,8 +49,8 @@ local renderer = {
         if request then request.close() end
     end,
     is_open=function() return opened end,
-    update=function(tracks,current)
-        calls[#calls+1]='update';request.tracks=tracks;request.current_id=current
+    update=function(tracks,current,notice)
+        calls[#calls+1]='update';request.tracks=tracks;request.current_id=current;request.notice=notice
     end,
 }
 local dofile=function(path)
@@ -300,4 +302,92 @@ function chapter_cross_kind_retirement_rejects_old_submissions()
     assert(request.submit(5));eq(properties.aid,'5')
     old=request;bindings['select-chapter']();clear();eq(old.submit(0),false);old.close()
     assert(request.submit(2));eq(properties.chapter,'1');eq(properties.sid,1)
+end
+
+local function device_fixture()
+    properties['audio-device-list']={{name='auto',description='Automatic'},
+        {name='wasapi/speakers',description='扬声器'}, {name='wasapi/headset',description='耳机'}}
+    properties['audio-device']='auto'
+    bindings['select-device']()
+end
+local function device_row(name)
+    for _,row in ipairs(request.tracks) do if row.device_name==name then return row end end
+end
+local function device_preserves_other_settings()
+    eq(properties.aid,3);eq(properties.sid,1);eq(properties['secondary-sid'],2)
+    eq(properties.volume,83);eq(properties.mute,false);eq(properties['sub-visibility'],true)
+    for _,write in ipairs(writes) do eq(write[1],'audio-device') end
+end
+function device_auto_repeat_and_identity_submission()
+    device_fixture();eq(request.kind,'device');eq(device_row('auto').title,'自动选择')
+    eq(request.current_id,device_row('auto').id);eq(request.notice,'')
+    local id=device_row('wasapi/headset').id
+    clear();assert(request.submit(id));eq(properties['audio-device'],'wasapi/headset')
+    assert(request.submit(id));eq(writes[2][2],'wasapi/headset')
+    assert(request.submit(device_row('auto').id));eq(properties['audio-device'],'auto')
+    device_preserves_other_settings()
+end
+function device_reorder_remove_reinsert_never_reuses_identity()
+    device_fixture();local a=device_row('wasapi/speakers').id;local b=device_row('wasapi/headset').id
+    properties['audio-device-list']={{name='wasapi/headset',description='Headset renamed'}, {name='wasapi/new',description='New'}}
+    observers['audio-device-list']();eq(device_row('wasapi/headset').id,b)
+    local c=device_row('wasapi/new').id;assert(c~=a and c~=b);eq(request.current_id,0);assert(request.notice~='')
+    clear();eq(request.submit(a),false);eq(#writes,0)
+    assert(request.submit(b));eq(properties['audio-device'],'wasapi/headset')
+    properties['audio-device-list']={{name='wasapi/new'},{name='wasapi/speakers'},{name='wasapi/headset'}}
+    observers['audio-device-list']();eq(device_row('wasapi/speakers').id,a);eq(device_row('wasapi/new').id,c)
+    -- A reordering without any notification still submits the original name.
+    properties['audio-device-list']={{name='wasapi/headset'},{name='wasapi/new'},{name='wasapi/speakers'}}
+    assert(request.submit(a));eq(properties['audio-device'],'wasapi/speakers');device_preserves_other_settings()
+end
+function device_empty_invalid_names_and_missing_selected_notice()
+    properties['audio-device-list']={{name=''},{name='  '},{name=false},{name='bad\nname'},{description='no name'}}
+    bindings['select-device']();eq(#request.tracks,0);eq(request.current_id,0);eq(request.notice,'')
+    clear();eq(request.submit(0),false);eq(#writes,0)
+    properties['audio-device-list']={{name='unique',description=''}, {name='unique',description='duplicate id'}}
+    observers['audio-device-list']();eq(#request.tracks,1);eq(request.tracks[1].title,'unique');assert(request.notice~='')
+    properties['audio-device']='unique';observers['audio-device']();eq(request.current_id,request.tracks[1].id);eq(request.notice,'')
+end
+function device_duplicate_descriptions_and_unicode_suffixes_are_distinct()
+    local names={'wasapi/甲相同后缀abcdef','wasapi/乙相同后缀abcdef','wasapi/另一个abcdef'}
+    properties['audio-device-list']={}
+    for _,name in ipairs(names) do properties['audio-device-list'][#properties['audio-device-list']+1]={name=name,description='同名设备'} end
+    properties['audio-device-list'][4]={name='literal',description='同名设备 · abcdef'}
+    bindings['select-device']();local titles={}
+    local function valid_utf8(text)
+        local at=1
+        while at<=#text do
+            local b=text:byte(at);local size=b<128 and 1 or b>=194 and b<224 and 2 or b>=224 and b<240 and 3 or b>=240 and b<245 and 4
+            assert(size,'orphan UTF8 continuation')
+            for j=1,size-1 do local next=text:byte(at+j);assert(next and next>=128 and next<192,'truncated UTF8') end
+            at=at+size
+        end
+    end
+    for _,row in ipairs(request.tracks) do assert(not titles[row.title]);titles[row.title]=true;valid_utf8(row.title);assert(row.detail_title~='') end
+    local target=device_row(names[2]);assert(request.submit(target.id));eq(properties['audio-device'],names[2])
+    renderer.close()
+    properties['audio-device-list']={{name='named-auto',description='自动选择'},{name='auto',description='Automatic'}}
+    bindings['select-device']();eq(device_row('auto').title,'自动选择')
+    assert(device_row('named-auto').title~=device_row('auto').title)
+end
+function device_failure_readback_mismatch_and_sync_observer_retry()
+    device_fixture();local id=device_row('wasapi/headset').id;clear()
+    set_failure=true;eq(request.submit(id),false);eq(#writes,0);assert(opened)
+    set_failure=false;readback_override='auto';eq(request.submit(id),false);eq(properties['audio-device'],'auto');assert(opened)
+    readback_override=nil;notify_device_write=true;assert(request.submit(id));eq(properties['audio-device'],'wasapi/headset')
+    eq(request.current_id,id);eq(request.notice,'');device_preserves_other_settings()
+end
+function device_disappearing_without_notice_never_writes_fallback()
+    device_fixture();local id=device_row('wasapi/headset').id;clear()
+    properties['audio-device-list']={{name='auto'},{name='replacement'}}
+    eq(request.submit(id),false);eq(#writes,0);eq(properties['audio-device'],'auto')
+    eq(request.submit(0),false);eq(#writes,0);device_preserves_other_settings()
+end
+function device_observers_media_and_cross_kind_retire_callbacks()
+    device_fixture();clear();observers['track-list']();observers.aid();observers.sid();observers.chapter();eq(#calls,0)
+    local old=request;events['start-file']();clear();eq(old.submit(1),false);eq(#writes,0)
+    bindings['select-device']();old=request;bindings['select-audio']();clear()
+    observers['audio-device-list']();observers['audio-device']();eq(#calls,0)
+    eq(old.submit(1),false);old.close();assert(opened);eq(request.kind,'audio');eq(#writes,0)
+    assert(request.submit(5));eq(properties.aid,'5')
 end

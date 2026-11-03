@@ -253,7 +253,7 @@ local user_opts = {
 
     -- volume mouse actions
     vol_ctrl_mbtn_left_command = "no-osd cycle mute",
-    vol_ctrl_mbtn_right_command = "script-binding select/select-audio-device",
+    vol_ctrl_mbtn_right_command = "script-binding track_selection/select-device",
     vol_ctrl_mbtn_mid_command = "",
     vol_ctrl_wheel_down_command = "osd-msg add volume -5",
     vol_ctrl_wheel_up_command = "osd-msg add volume 5",
@@ -3940,6 +3940,7 @@ end
 -- use_down: if true, uses _down instead of _up (for softrepeat buttons)
 local function bind_buttons(element_name, use_down)
     local function current_command(command)
+        if command == "script-binding select/select-audio-device" then return "script-binding track_selection/select-device" end
         if command == "script-binding select/select-chapter" then return "script-binding track_selection/select-chapter" end
         if command == "script-binding select/select-aid" then
             return "script-binding track_selection/select-audio"

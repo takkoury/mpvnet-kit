@@ -81,6 +81,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 `SubtitleSelector`归入lua，验证共用ASS面板的Unicode编辑、选中／取消、音轨紧凑列与竖线留白／按需详情、章节单行时间／无关闭项／原索引过滤、跨类型单一输入所有者、临时输入属性和控制台交接；`TrackSelection`验证媒体／会话代次、aid／sid独立提交、章节索引与快照校验、失效／失败与弹幕隔离，`SubtitleControls`保留旧选择入口转发及字幕调整回归，`SettingsDisplay`检查ModernZ临时让出鼠标section且不改变visibility。真实输入法候选、鼠标焦点、宿主拖窗与跨DPI需实际播放器试用；ASS离屏图和headless核心输入检查不替代这些验收。
 
+设备选择也由`SubtitleSelector`／`TrackSelection`覆盖：单行／无关闭项、完整标识搜索与详情、缺失已选提示、会话内稳定name映射、重排／热移除／重插、同名与后缀碰撞、setter及回读失败、旧回调隔离和无关属性保持。真实核心的无声auto提交检查只验证配置接口，不代表物理输出设备、热插拔或实际发声验收。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell

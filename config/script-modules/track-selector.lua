@@ -1,4 +1,4 @@
--- Shared subtitle/audio/chapter picker. Rendering and temporary input only; the caller owns
+-- Shared track/chapter/device picker. Rendering and temporary input only; the caller owns
 -- selection, media generations and item discovery. Input APIs match mpv's console,
 -- but this editor uses its own character-array state (no console implementation).
 local mp = require('mp')
@@ -16,6 +16,8 @@ local profiles={
         empty='没有可用音轨',hint='此媒体没有可选择的音轨。',nomatch='没有匹配的音轨',failed='无法切换音轨，请重新选择。'},
     chapter={title='选择章节',search='查找章节',fallback='章节 ',
         empty='没有可用章节',hint='此媒体没有章节信息。',nomatch='没有匹配的章节',failed='未能跳转到该章节，请重试。'},
+    device={title='选择音频设备',search='查找设备',fallback='音频设备 #',
+        empty='没有可用音频设备',hint='设备列表为空，请稍后重试。',nomatch='没有匹配的设备',failed='未能切换设备，请重新选择。'},
 }
 
 local function native(name, default)
@@ -60,6 +62,8 @@ local function normalize(tracks)
             seen[id] = true
             out[#out + 1] = {id=id, title=type(track.title)=='string' and track.title or '',
                 time_text=type(track.time_text)=='string' and track.time_text or '',
+                device_name=type(track.device_name)=='string' and track.device_name or '',
+                detail_title=type(track.detail_title)=='string' and track.detail_title or '',
                 lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
                 channels=positive(track['demux-channel-count']),rate=positive(track['demux-samplerate']),
                 bitrate=positive(track['demux-bitrate']) or positive(track['hls-bitrate']),
@@ -121,7 +125,7 @@ local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
         local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
-            s.kind=='audio' and table.concat(audio_details(track),' ') or '',track.time_text}, ' '):lower()
+            s.kind=='audio' and table.concat(audio_details(track),' ') or '',track.time_text,track.device_name,track.detail_title}, ' '):lower()
         if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
     end
     return result
@@ -178,7 +182,7 @@ local function caret(s) s.caret=true; s.blink=now() end
 local function focus_row(s,id)
     if id==nil then return end
     s.focus='row';s.focus_id=id; reset_tip(s)
-    if (s.kind=='audio' or s.kind=='chapter') and id~=0 then s.tip_focus=id end
+    if (s.kind=='audio' or not s.profile.off) and id~=0 then s.tip_focus=id end
     if id~=0 then
         for index,track in ipairs(s.matches) do
             if track.id==id then
@@ -217,8 +221,8 @@ local function submit(s,id)
 end
 local function move_rows(s,delta)
     if #s.tracks==0 then return end
-    if s.kind=='chapter' and #s.matches==0 then return end
-    local first=s.kind=='chapter' and 1 or 0
+    if not s.profile.off and #s.matches==0 then return end
+    local first=s.profile.off and 0 or 1
     local index
     if s.focus=='row' then
         if s.focus_id==0 then index=0 end
@@ -287,7 +291,7 @@ mouse_move=function()
     local changed=s.hover~=hit;s.hover=hit
     if row and (row.elided or row.details) then
         if not s.tip or s.tip.id~=hit or math.abs(x-s.tip.x)>4*s.layout.scale or math.abs(y-s.tip.y)>4*s.layout.scale then
-            s.tip={id=hit,title=row.title,details=row.details,x=x,y=y,due=now()+0.55,phase='waiting'};changed=true
+            s.tip={id=hit,title=row.tip_title or row.title,details=row.details,x=x,y=y,due=now()+0.55,phase='waiting'};changed=true
         end
     elseif s.tip then reset_tip(s);changed=true end
     if changed then render() end
@@ -343,8 +347,7 @@ key=function(name, info)
     elseif name=='home' or name=='end' then
         if s.focus=='search' then s.cursor=name=='home' and 0 or #s.chars;s.anchor=nil;caret(s);render()
         elseif #s.tracks>0 then
-            local first=s.kind=='chapter' and (s.matches[1] and s.matches[1].id) or 0
-            if s.kind=='chapter' and #s.matches==0 then first=nil end
+            local first=s.profile.off and 0 or (s.matches[1] and s.matches[1].id)
             focus_row(s,name=='home' and first or (#s.matches>0 and s.matches[#s.matches].id or first));render()
         end
     elseif name=='search' and #s.tracks>0 then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
@@ -362,7 +365,7 @@ key=function(name, info)
     elseif name=='tab' then
         reset_tip(s)
         if s.focus=='search' and #s.tracks>0 then
-            if s.kind=='chapter' then
+            if not s.profile.off then
                 if s.matches[1] then focus_row(s,s.matches[1].id) else s.focus='close' end
             else focus_row(s,0) end
         elseif s.focus=='row' then s.focus='close';s.focus_id=nil
@@ -433,8 +436,9 @@ render=function()
     local w,h=dimensions()
     if w<2 or h<2 then s.overlay.data='';s.overlay:update();s.last_data=nil;status('waiting-osd');return end
     s.matches=filtered(s)
-    local extra=s.error~='' and 28 or 0
-    local single=s.kind=='chapter'
+    local notice=s.error~='' and s.error or s.notice
+    local extra=notice~='' and 28 or 0
+    local single=not s.profile.off
     local off_step,row_step=single and 0 or 34,single and 40 or 54
     local minimum_height=122+(#s.tracks==0 and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
@@ -484,7 +488,7 @@ render=function()
         add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+l.search.h/2,search_size*scale,'E5E5E5',clip,false,4)
     end
     if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
-    if extra>0 then local message=fitted(s,s.error,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
+    if extra>0 then local message=fitted(s,notice,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
     -- Shared columns use the whole track set, so scrolling/filtering cannot
     -- shift separators. Missing fields leave their column empty.
     local lang_width,codec_width,id_width,channel_width=0,0,0,36*scale
@@ -507,11 +511,16 @@ render=function()
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
         local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or single and 38 or 52)*scale,id=id,title=off and s.profile.off or label(track,s.kind)}
         if not off and s.kind=='audio' then r.details=audio_details(track) end
+        if s.kind=='device' then
+            r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
+            r.tip_title=track.detail_title~='' and clean(track.detail_title) or r.title
+        end
         l.rows[#l.rows+1]=r
         local background=current and '152B35' or s.hover==id and '252525' or focused and '222222' or '151515'
         if focused then rect(out,r.x,r.y,r.w,r.h,'777777',4*scale);rect(out,r.x+scale,r.y+scale,r.w-2*scale,r.h-2*scale,background,3*scale)
         else rect(out,r.x,r.y,r.w,r.h,background,4*scale) end
         local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or id_width)
+        if s.kind=='device' then width=r.w-50*scale end
         local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
         add_text(out,title,tx,(off or single) and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or 'E5E5E5',
             {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or single and 34 or 25)*scale},current,(off or single) and 4 or 7)
@@ -522,7 +531,7 @@ render=function()
         end
         if not off then
             if single then
-                add_text(out,track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6)
+                if s.kind=='chapter' then add_text(out,track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if s.kind=='audio' then
@@ -577,13 +586,13 @@ render=function()
         end
     end
     local footer=y+height-34*scale;rect(out,x+1,footer,panel_width*scale-2,scale,'2C2C2C')
-    add_text(out,single and '↑ ↓ 移动　Enter 跳转　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(single and ' 章' or ' 条')
+    add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     if s.tip_focus then
         for _,r in ipairs(l.rows) do
             if r.id==s.tip_focus and (r.details or r.elided) then
-                s.tip={id=r.id,title=r.title,details=r.details,x=r.x+32*scale,y=r.y+r.h,due=now()+0.55,phase='waiting'}
+                s.tip={id=r.id,title=r.tip_title or r.title,details=r.details,x=r.x+32*scale,y=r.y+r.h,due=now()+0.55,phase='waiting'}
                 break
             end
         end
@@ -600,9 +609,9 @@ render=function()
     end
 end
 function M.is_open() return active~=nil end
-function M.update(tracks,id)
+function M.update(tracks,id,notice)
     local s=active;if not s then return false end
-    s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s)
+    s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
     if #s.tracks==0 then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
@@ -639,10 +648,10 @@ function M.open(options)
     if active and active.kind~=kind then M.close('switch-kind') end
     if active then
         active.submit=options.submit;active.close=options.close
-        M.update(options.tracks,options.current_id);active.focus=#active.tracks>0 and 'search' or 'close';caret(active);render();return true
+        M.update(options.tracks,options.current_id,options.notice);active.focus=#active.tracks>0 and 'search' or 'close';caret(active);render();return true
     end
     local s={kind=kind,profile=profiles[kind],tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
-        chars={},cursor=0,query_offset=0,scroll=0,error='',binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
+        chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=#s.tracks>0 and 'search' or 'close';active=s
     status('opening')
     local ok,failure=pcall(function()
