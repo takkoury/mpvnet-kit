@@ -224,6 +224,7 @@ function native_catalog_coverage()
         end
     end
     local aliases={
+        ['script-binding select/select-aid']='audio.select',
         ['script-message-to mpvnet play-pause']='playback.pause',
         ['script-binding playback_feedback/toggle-pause']='playback.pause',
         ['playlist-prev']='playlist.previous',['playlist-next']='playlist.next',
@@ -233,6 +234,7 @@ function native_catalog_coverage()
         ['cycle sub-visibility']='subtitle.toggle', ['script-binding osc/visibility']='window.osc',
     }
     for command,id in pairs(aliases) do eq(catalog.by_command[command].id,id) end
+    eq(catalog.by_command['script-binding select/select-aid'].command,'script-binding track_selection/select-audio')
     assert(catalog.by_command['multiply speed 2.0'].id~='playback.speed-up')
     assert(catalog.by_command['async screenshot'].id~='capture.screenshot')
     assert(catalog.by_command['script-message-to mpvnet open-clipboard'].id~='tools.clipboard-url')

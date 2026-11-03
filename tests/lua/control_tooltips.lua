@@ -124,7 +124,7 @@ function configured_hints_and_dispatch()
         {"sub_track", "shift+mbtn_left_down", "script-binding subtitle_controls/select"},
         {"sub_track", "mbtn_right_up", "script-binding subtitle_controls/adjust-mode"},
         {"vol_ctrl", "mbtn_left_up", "no-osd cycle mute"},
-        {"vol_ctrl", "shift+mbtn_left_down", "script-binding select/select-aid"},
+        {"vol_ctrl", "shift+mbtn_left_down", "script-binding track_selection/select-audio"},
         {"vol_ctrl", "mbtn_right_up", "no-osd set volume 100"},
     }) do
         elements[entry[1]].eventresponder[entry[2]]()
@@ -132,6 +132,11 @@ function configured_hints_and_dispatch()
     end
     for _, name in ipairs({"sub_track", "vol_ctrl", "screenshot", "title", "speed"}) do lacks(hint(name), "左键") end
     state.mute = true; state.volume = 60.5
+    eq(hint("vol_ctrl"), "中键选择音轨 · 右键100%")
+    user_opts.vol_ctrl_mbtn_mid_command = "script-binding select/select-aid"
+    bind_buttons("vol_ctrl")
+    elements.vol_ctrl.eventresponder["shift+mbtn_left_down"]()
+    eq(commands[#commands], "script-binding track_selection/select-audio")
     eq(hint("vol_ctrl"), "中键选择音轨 · 右键100%")
 end
 

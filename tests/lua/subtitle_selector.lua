@@ -130,7 +130,7 @@ function open_close_repeated_and_temporary_ownership()
     for _,area in pairs(areas) do eq(area[1],0);eq(area[3],width);eq(area[4],height) end
     M.close();M.close();idle_resources();eq(close_count,1)
     eq(properties['input-ime'],false);eq(properties['cursor-autohide'],1000);eq(properties['window-dragging'],true)
-    eq(properties['user-data/mpvnet/subtitle-selector/open'],false)
+    eq(properties['user-data/mpvnet/track-selector/open'],false)
     assert(open());M.close();eq(define_count,1);idle_resources()
 end
 function unicode_editing_and_ime_events_are_single_channel()
@@ -160,7 +160,7 @@ function errors_refresh_reentrant_submission_and_stale_callback()
     text('A long');invoke('ENTER')
     assert(M.is_open());assert(data():find('该字幕已移除，请重新选择。',1,true));assert(not data():find('A long subtitle',1,true))
     invoke('Ctrl+u');assert(open({first[3]},5));invoke('ENTER');eq(submitted[2],5);idle_resources()
-    assert(open());local stale;for name,fn in pairs(named) do if name=='subtitle-selector-1' then stale=fn end end
+    assert(open());local stale;for name,fn in pairs(named) do if name=='track-selector-1' then stale=fn end end
     M.close();assert(open());stale({event='press',key_text='DO_NOT_APPEAR'});assert(not data():find('DO_NOT_APPEAR',1,true));M.close()
     assert(open(nil,3,function() M.close();return true end));invoke('ENTER');idle_resources()
 end
@@ -175,7 +175,7 @@ function outside_click_cancels_without_submit_or_drag_through()
     mouse(1,1);invoke('MBTN_LEFT',{event='down'})
     assert(M.is_open(),'keep input captured until release')
     invoke('MBTN_LEFT',{event='up'});idle_resources();eq(#submitted,0)
-    eq(properties['user-data/mpvnet/subtitle-selector/status'].detail,'outside-click')
+    eq(properties['user-data/mpvnet/track-selector/status'].detail,'outside-click')
     eq(properties['input-ime'],false);eq(properties['window-dragging'],true)
 
     assert(open());local x,y=text_point('English',true)
@@ -315,10 +315,51 @@ function metadata_columns_and_id_edges_stay_aligned()
     text('Second');eq(text_point('ASS'),first,'filtering must not shift columns')
     invoke('ESC');idle_resources()
 end
+function audio_layout_details_and_single_input_owner()
+    local list={{id=1,title='普通话',lang='zh',codec='aac',external=false,['demux-channel-count']=2,['demux-samplerate']=48000,['demux-bitrate']=192000,default=true},
+        {id=123,title='English',lang='en',codec='eac3',external=true,['demux-channel-count']=6,['codec-profile']='Atmos',['visual-impaired']=true},
+        {id=9,title='',lang='',codec='',external=false,['demux-channel-count']=0,['demux-samplerate']=0/0}}
+    assert(M.open({kind='audio',tracks=list,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    assert(data():find('选择音轨',1,true));assert(data():find('关闭音轨',1,true))
+    assert(data():find('2 声道',1,true));assert(data():find('6 声道',1,true));assert(data():find('音轨 #9',1,true))
+    assert(not data():find('0 声道',1,true));assert(not data():find('192 kbps',1,true),'extra details should stay hidden initially')
+    local dividers={}
+    for line in data():gmatch('[^\n]+') do
+        if line:find('\\1c&H555555&',1,true) then
+            local x,y=line:match('}m ([%d%.%-]+) ([%d%.%-]+)');dividers[#dividers+1]={tonumber(x),tonumber(y)}
+        end
+    end
+    eq(#dividers,9)
+    local step=dividers[2][1]-dividers[1][1]
+    assert(math.abs(step-(dividers[3][1]-dividers[2][1]))<0.02,'uneven separator pitch')
+    for row=1,2 do for col=1,3 do eq(dividers[row*3+col][1],dividers[col][1],'cross-row separator drift') end end
+    invoke('DOWN');invoke('DOWN');tick(.6)
+    assert(data():find('采样率  48 kHz',1,true));assert(data():find('码率  192 kbps',1,true));assert(data():find('默认',1,true))
+    invoke('Ctrl+f');text('视障');invoke('ENTER');eq(submitted[1],123);idle_resources()
+    assert(open());local stale=named['track-selector-1']
+    assert(M.open({kind='audio',tracks=list,current_id=1,submit=function() return true end}))
+    stale({event='press',key_text='stale query'});assert(not data():find('stale query',1,true))
+    local sections_count=0;for _ in pairs(enabled) do sections_count=sections_count+1 end;eq(sections_count,1)
+    eq(properties['user-data/mpvnet/track-selector/status'].kind,'audio')
+    M.close();idle_resources();eq(properties['input-ime'],false)
+end
+function audio_details_are_canceled_when_keyboard_focus_leaves_row()
+    for _,action in ipairs({'Ctrl+f','Ctrl+a','TAB'}) do
+        for _,shown in ipairs({false,true}) do
+            assert(M.open({kind='audio',tracks={{id=1,title='Audio',codec='aac',['demux-samplerate']=48000}},current_id=1,submit=function() return true end}))
+            invoke('DOWN');invoke('DOWN')
+            if shown then tick(.6);assert(data():find('采样率  48 kHz',1,true)) end
+            invoke(action);tick(.6)
+            assert(not data():find('采样率  48 kHz',1,true),'details outlived focus: '..action)
+            M.close();idle_resources()
+        end
+    end
+end
 function export_ass(output)
     local list=tracks(12)
-    local function save(name,w,h,items,keyboard_focus)
-        width,height=w,h;assert(open(items or list,3))
+    local function save(name,w,h,items,keyboard_focus,kind)
+        width,height=w,h
+        assert(M.open({kind=kind,tracks=items or list,current_id=3,submit=function() return true end}))
         if keyboard_focus then invoke('DOWN');invoke('DOWN') end
         local layer=overlay();local raw=layer.data
         local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
@@ -338,4 +379,9 @@ function export_ass(output)
         {id=12,title='English',lang='en',codec='ASS',external=true},
         {id=123,title='日本語',lang='ja',codec='hdmv_pgs_subtitle',external=false},
         {id=321,title='繁体中文字幕',lang='zh-Hant',codec='subrip',external=false}},true)
+    save('audio',1469,826,{
+        {id=3,title='普通话',lang='zh',codec='aac',external=false,['demux-channel-count']=2},
+        {id=12,title='English',lang='en',codec='eac3',external=false,['demux-channel-count']=6},
+        {id=123,title='导演评论音轨',lang='ja',codec='flac',external=true,['demux-channel-count']=2},
+        {id=321,title='',lang='',codec='',external=false}},false,'audio')
 end

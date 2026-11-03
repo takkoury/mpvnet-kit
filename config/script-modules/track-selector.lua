@@ -1,14 +1,20 @@
--- Ordinary subtitle picker. Rendering and temporary input only; the caller owns
--- sid, media generations and track discovery. Input APIs match mpv's console,
+-- Shared subtitle/audio picker. Rendering and temporary input only; the caller owns
+-- aid/sid, media generations and track discovery. Input APIs match mpv's console,
 -- but this editor uses its own character-array state (no console implementation).
 local mp = require('mp')
 local M = {}
 local active, pending_ime, observing_console, shutting_down
-local section = 'mpvnet-subtitle-selector-' .. mp.get_script_name()
-local published = 'user-data/mpvnet/subtitle-selector/open'
+local section = 'mpvnet-track-selector-' .. mp.get_script_name()
+local published = 'user-data/mpvnet/track-selector/open'
 local defined = false
 local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
+local profiles={
+    subtitle={title='选择普通字幕',search='查找字幕',off='不显示普通字幕',fallback='字幕轨道 #',
+        empty='没有普通字幕轨道',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕',failed='无法应用字幕，请重新选择。'},
+    audio={title='选择音轨',search='查找音轨',off='关闭音轨',fallback='音轨 #',
+        empty='没有可用音轨',hint='此媒体没有可选择的音轨。',nomatch='没有匹配的音轨',failed='无法切换音轨，请重新选择。'},
+}
 
 local function native(name, default)
     local value = mp.get_property_native(name, default)
@@ -41,6 +47,9 @@ local function escape(text)
     return value
 end
 local function ass_color(rgb) return rgb:sub(5,6) .. rgb:sub(3,4) .. rgb:sub(1,2) end
+local function positive(value)
+    return type(value)=='number' and value>0 and value<math.huge and value or nil
+end
 local function normalize(tracks)
     local out, seen = {}, {}
     for _, track in ipairs(type(tracks) == 'table' and tracks or {}) do
@@ -48,7 +57,12 @@ local function normalize(tracks)
         if type(id) == 'number' and id > 0 and id < math.huge and id == math.floor(id) and not seen[id] then
             seen[id] = true
             out[#out + 1] = {id=id, title=type(track.title)=='string' and track.title or '',
-                lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external}
+                lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
+                channels=positive(track['demux-channel-count']),rate=positive(track['demux-samplerate']),
+                bitrate=positive(track['demux-bitrate']) or positive(track['hls-bitrate']),
+                profile=type(track['codec-profile'])=='string' and track['codec-profile'] or '',
+                default=track.default==true,forced=track.forced==true,dependent=track.dependent==true,
+                visual_impaired=track['visual-impaired']==true,hearing_impaired=track['hearing-impaired']==true}
         end
     end
     return out
@@ -56,10 +70,29 @@ end
 local function current_id(id) return id == 'no' and 0 or tonumber(id) or 0 end
 local language_names={zh='中文',chi='中文',zho='中文',['zh-hans']='简体中文',['zh-hant']='繁体中文',ja='日语',jpn='日语',en='英语',eng='英语'}
 local function language(track) return language_names[track.lang:lower():gsub('_','-')] or clean(track.lang) end
-local function label(track)
+local function label(track,kind)
     if track.title~='' then return clean(track.title) end
     if track.lang~='' then return language(track) end
-    return '字幕轨道 #' .. tostring(track.id)
+    return profiles[kind or 'subtitle'].fallback .. tostring(track.id)
+end
+local function source(track)
+    return track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
+end
+local function audio_details(track)
+    local fields={}
+    local function add(name,value) if value and value~='' then fields[#fields+1]=name..'  '..value end end
+    add('语言',language(track));add('格式',track.codec);add('配置',track.profile)
+    add('声道',track.channels and string.format('%g 声道',track.channels))
+    add('采样率',track.rate and string.format('%g kHz',track.rate/1000))
+    add('码率',track.bitrate and string.format('%.0f kbps',track.bitrate/1000))
+    add('来源',source(track))
+    local flags={}
+    for _,item in ipairs({{'default','默认'},{'forced','强制'},{'dependent','依赖轨道'},
+        {'visual_impaired','视障描述'},{'hearing_impaired','听障辅助'}}) do
+        if track[item[1]] then flags[#flags+1]=item[2] end
+    end
+    add('标记',table.concat(flags,' / '))
+    return fields
 end
 local function dimensions()
     local w, h = mp.get_osd_size()
@@ -67,8 +100,9 @@ local function dimensions()
 end
 local function status(phase, detail)
     local w,h=dimensions()
-    pcall(set,'user-data/mpvnet/subtitle-selector/status',{
+    pcall(set,'user-data/mpvnet/track-selector/status',{
         phase=phase,detail=tostring(detail or ''),width=w,height=h,
+        kind=active and active.kind or '',
         dpi=tostring(native('display-hidpi-scale','unavailable')),focused=native('focused'),
     })
 end
@@ -83,8 +117,8 @@ local function query(s) return table.concat(s.chars) end
 local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
-        local source = track.external == true and '外挂' or track.external == false and '内嵌' or '来源未标注'
-        local haystack = table.concat({label(track), language(track), track.lang, track.codec, source, tostring(track.id)}, ' '):lower()
+        local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
+            s.kind=='audio' and table.concat(audio_details(track),' ') or ''}, ' '):lower()
         if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
     end
     return result
@@ -136,10 +170,11 @@ local function stroke(out,x1,y1,x2,y2,width,color)
     local dx,dy=(y1-y2)*width/length/2,(x2-x1)*width/length/2
     out[#out+1]=string.format('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H%s&\\p1}m %.2f %.2f l %.2f %.2f %.2f %.2f %.2f %.2f{\\p0}',ass_color(color),x1+dx,y1+dy,x2+dx,y2+dy,x2-dx,y2-dy,x1-dx,y1-dy)
 end
-local function reset_tip(s) s.tip=nil end
+local function reset_tip(s) s.tip=nil;s.tip_focus=nil end
 local function caret(s) s.caret=true; s.blink=now() end
 local function focus_row(s,id)
     s.focus='row';s.focus_id=id; reset_tip(s)
+    if s.kind=='audio' and id~=0 then s.tip_focus=id end
     if id~=0 then
         for index,track in ipairs(s.matches) do
             if track.id==id then
@@ -172,8 +207,8 @@ local function submit(s,id)
     local ok,applied,err=pcall(s.submit,id)
     if active~=s then return end
     if ok and applied==true then M.close();return end
-    s.error=clean(ok and err or '无法应用字幕，请重新选择。')
-    if s.error=='' then s.error='无法应用字幕，请重新选择。' end
+    s.error=clean(ok and err or s.profile.failed)
+    if s.error=='' then s.error=s.profile.failed end
     s.focus=#s.tracks>0 and 'search' or 'close';s.focus_id=nil;caret(s);render()
 end
 local function move_rows(s,delta)
@@ -244,9 +279,9 @@ mouse_move=function()
     end
     local hit,row=get_hit(s)
     local changed=s.hover~=hit;s.hover=hit
-    if row and row.elided then
+    if row and (row.elided or row.details) then
         if not s.tip or s.tip.id~=hit or math.abs(x-s.tip.x)>4*s.layout.scale or math.abs(y-s.tip.y)>4*s.layout.scale then
-            s.tip={id=hit,title=row.title,x=x,y=y,due=now()+0.55,phase='waiting'};changed=true
+            s.tip={id=hit,title=row.title,details=row.details,x=x,y=y,due=now()+0.55,phase='waiting'};changed=true
         end
     elseif s.tip then reset_tip(s);changed=true end
     if changed then render() end
@@ -302,8 +337,8 @@ key=function(name, info)
     elseif name=='home' or name=='end' then
         if s.focus=='search' then s.cursor=name=='home' and 0 or #s.chars;s.anchor=nil;caret(s);render()
         elseif #s.tracks>0 then focus_row(s,name=='home' and 0 or (#s.matches>0 and s.matches[#s.matches].id or 0));render() end
-    elseif name=='search' and #s.tracks>0 then s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
-    elseif name=='all' and #s.tracks>0 then s.focus='search';s.anchor=0;s.cursor=#s.chars;caret(s);render()
+    elseif name=='search' and #s.tracks>0 then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
+    elseif name=='all' and #s.tracks>0 then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
     elseif name=='backspace' or name=='delete' then
         if #s.tracks==0 then return end
         s.focus='search';local a,b=selection(s)
@@ -315,6 +350,7 @@ key=function(name, info)
     elseif name=='clear' and #s.tracks>0 then s.anchor=0;s.cursor=#s.chars;replace_selection(s,'')
     elseif name=='paste' and #s.tracks>0 then replace_selection(s,mp.get_property('clipboard/text',''))
     elseif name=='tab' then
+        reset_tip(s)
         if s.focus=='search' and #s.tracks>0 then focus_row(s,0)
         elseif s.focus=='row' then s.focus='close';s.focus_id=nil
         else s.focus=#s.tracks>0 and 'search' or 'close' end
@@ -334,7 +370,7 @@ local bindings={
 local function install_bindings(s)
     local entries={}
     for index,binding in ipairs(bindings) do
-        local name='subtitle-selector-'..tostring(index);local action=binding[2]
+        local name='track-selector-'..tostring(index);local action=binding[2]
         s.binding_names[#s.binding_names+1]=name
         mp.add_key_binding(nil,name,function(info)
             if active~=s then return end
@@ -356,11 +392,21 @@ end
 local function draw_tip(s,out,l)
     if not s.tip or s.tip.phase~='shown' then return end
     local size=12*l.scale;local maxwidth=math.min(380*l.scale,l.w-20)
-    local wrapped,line={},''
-    for _,ch in ipairs(chars(s.tip.title)) do
-        if line~='' and measure(s,line..ch,size)>maxwidth-20*l.scale then wrapped[#wrapped+1]=line;line=ch else line=line..ch end
+    local wrapped={}
+    local function wrap(text)
+        local line=''
+        for _,ch in ipairs(chars(text)) do
+            if line~='' and measure(s,line..ch,size)>maxwidth-20*l.scale then wrapped[#wrapped+1]=line;line=ch else line=line..ch end
+        end
+        wrapped[#wrapped+1]=line
     end
-    wrapped[#wrapped+1]=line
+    wrap(s.tip.title)
+    for _,detail in ipairs(s.tip.details or {}) do wrap(detail) end
+    local maxlines=math.max(1,math.floor((l.h-24*l.scale)/(size+5*l.scale)))
+    if #wrapped>maxlines then
+        while #wrapped>maxlines do table.remove(wrapped) end
+        wrapped[maxlines]=fitted(s,wrapped[maxlines]..'…',maxwidth-20*l.scale,size)
+    end
     local width=0;for _,value in ipairs(wrapped) do width=math.max(width,measure(s,value,size)) end
     width=math.min(maxwidth,width+20*l.scale);local height=#wrapped*(size+5*l.scale)+16*l.scale
     local x=clamp(s.tip.x+12*l.scale,4,math.max(4,l.w-width-4));local y=s.tip.y+16*l.scale
@@ -394,7 +440,7 @@ render=function()
     local out={}
     rect(out,x,y,panel_width*scale,height,'393939',8*scale);rect(out,x+1,y+1,panel_width*scale-2,height-2,'151515',7*scale)
     rect(out,x+1,y+1,panel_width*scale-2,33*scale,'1C1C1C',6*scale)
-    add_text(out,'选择普通字幕',x+20*scale,y+17*scale,16*scale,'E5E5E5',nil,false,4)
+    add_text(out,s.profile.title,x+20*scale,y+17*scale,16*scale,'E5E5E5',nil,false,4)
     if s.hover=='close' then rect(out,l.close.x+1,l.close.y+1,l.close.w-2,l.close.h-2,'8F2633') end
     local cx,cy=l.close.x+22*scale,l.close.y+17*scale
     stroke(out,cx-5*scale,cy-5*scale,cx+5*scale,cy+5*scale,1.3*scale,'BBBBBB');stroke(out,cx+5*scale,cy-5*scale,cx-5*scale,cy+5*scale,1.3*scale,'BBBBBB')
@@ -412,7 +458,7 @@ render=function()
     local q=query(s);local prefix=table.concat(s.chars,'',1,s.cursor);local prefixwidth=measure(s,prefix,search_size*scale);local available=l.search.w-48*scale
     s.query_offset=clamp(s.query_offset,math.max(0,prefixwidth-available),prefixwidth)
     local clip={x=l.search.x+34*scale,y=l.search.y+4*scale,w=available+2*scale,h=l.search.h-8*scale}
-    if q=='' and s.focus~='search' then add_text(out,'查找字幕',l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,4)
+    if q=='' and s.focus~='search' then add_text(out,s.profile.search,l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,4)
     else
         local a,b=selection(s)
         if a~=b then
@@ -429,7 +475,7 @@ render=function()
     local lang_width,codec_width,id_width=0,0,0
     local has_language,has_codec=false,false
     local function meta_language(track)
-        return track.lang~='' and label(track)~=language(track) and language(track) or ''
+        return track.lang~='' and label(track,s.kind)~=language(track) and language(track) or ''
     end
     for _,track in ipairs(s.tracks) do
         local lang=meta_language(track)
@@ -441,7 +487,8 @@ render=function()
     codec_width=clamp(codec_width,32*scale,84*scale)
     local function row(track,top,off)
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
-        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or 52)*scale,id=id,title=off and '不显示普通字幕' or label(track)}
+        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or 52)*scale,id=id,title=off and s.profile.off or label(track,s.kind)}
+        if not off and s.kind=='audio' then r.details=audio_details(track) end
         l.rows[#l.rows+1]=r
         local background=current and '152B35' or s.hover==id and '252525' or focused and '222222' or '151515'
         if focused then rect(out,r.x,r.y,r.w,r.h,'777777',4*scale);rect(out,r.x+scale,r.y+scale,r.w-2*scale,r.h-2*scale,background,3*scale)
@@ -457,6 +504,19 @@ render=function()
         end
         if not off then
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
+            if s.kind=='audio' then
+                -- Equal-width cells and one shared gutter on either side of
+                -- every divider; varying codec/name lengths cannot shift bars.
+                local gap,line=8*scale,scale
+                local cell=math.min(72*scale,(r.w-50*scale-3*(2*gap+line))/4)
+                local values={language(track),track.codec,track.channels and string.format('%g 声道',track.channels) or '',source(track)}
+                for i,value in ipairs(values) do
+                    local left=tx+(i-1)*(cell+2*gap+line)
+                    add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),left+cell/2,r.y+36*scale,meta_size*scale,'AAAAAA',
+                        {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,5)
+                    if i<4 then rect(out,left+cell+gap,r.y+31*scale,line,10*scale,'555555') end
+                end
+            else
             local sx=tx
             local function column(text,column_width,centered)
                 local value=fitted(s,text,column_width,meta_size*scale)
@@ -471,15 +531,16 @@ render=function()
             local source_width=math.max(0,tx+width-sx)
             add_text(out,fitted(s,source,source_width,meta_size*scale),sx,r.y+36*scale,meta_size*scale,'AAAAAA',
                 {x=sx,y=r.y+26*scale,w=source_width,h=20*scale},false,4)
+            end
         end
     end
     if #s.tracks==0 then
-        local title,hint='没有普通字幕轨道','加载字幕文件后再选择。'
+        local title,hint=s.profile.empty,s.profile.hint
         add_text(out,title,x+(panel_width*scale-measure(s,title,title_size*scale))/2,listtop+30*scale,title_size*scale,'DDDDDD')
         add_text(out,hint,x+(panel_width*scale-measure(s,hint,meta_size*scale))/2,listtop+60*scale,meta_size*scale,'AAAAAA')
     else
         row(nil,listtop,true)
-        if #s.matches==0 then local message='没有匹配的字幕';add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+64*scale,search_size*scale,'AAAAAA') end
+        if #s.matches==0 then local message=s.profile.nomatch;add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+64*scale,search_size*scale,'AAAAAA') end
         for i=1,rows do row(s.matches[s.scroll+i],listtop+(34+(i-1)*54)*scale,false) end
         if #s.matches>capacity then
             local top=listtop+34*scale;local bh=rows*54*scale
@@ -492,6 +553,15 @@ render=function()
     add_text(out,'↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
     local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..' 条'
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
+    if s.tip_focus then
+        for _,r in ipairs(l.rows) do
+            if r.id==s.tip_focus and r.details then
+                s.tip={id=r.id,title=r.title,details=r.details,x=r.x+32*scale,y=r.y+r.h,due=now()+0.55,phase='waiting'}
+                break
+            end
+        end
+        s.tip_focus=nil
+    end
     draw_tip(s,out,l)
     local data=table.concat(out,'\n')
     if data~=s.last_data or s.overlay.res_x~=w or s.overlay.res_y~=h then
@@ -534,14 +604,17 @@ function M.close(reason)
 end
 function M.open(options)
     if shutting_down then return false,'播放器正在退出。' end
-    if type(options)~='table' or type(options.submit)~='function' then return false,'字幕选择入口无效。' end
+    if type(options)~='table' or type(options.submit)~='function' then return false,'轨道选择入口无效。' end
+    local kind=options.kind or 'subtitle'
+    if not profiles[kind] then return false,'轨道选择类型无效。' end
     if native('user-data/mpv/console/open',false) then status('blocked','console');return false,'控制台正在使用输入。' end
     restore_pending()
+    if active and active.kind~=kind then M.close('switch-kind') end
     if active then
         active.submit=options.submit;active.close=options.close
         M.update(options.tracks,options.current_id);active.focus=#active.tracks>0 and 'search' or 'close';caret(active);render();return true
     end
-    local s={tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
+    local s={kind=kind,profile=profiles[kind],tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
         chars={},cursor=0,query_offset=0,scroll=0,error='',binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=#s.tracks>0 and 'search' or 'close';active=s
     status('opening')
@@ -577,8 +650,8 @@ function M.open(options)
     end)
     if not ok then
         s.close=nil;M.close();status('failed',failure)
-        if mp.msg then mp.msg.error('Subtitle selector startup failed: '..tostring(failure)) end
-        return false,'无法打开字幕选择器，请重试。'
+        if mp.msg then mp.msg.error('Track selector startup failed: '..tostring(failure)) end
+        return false,'无法打开轨道选择器，请重试。'
     end
     return active==s
 end

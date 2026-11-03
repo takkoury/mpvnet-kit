@@ -37,14 +37,10 @@ package.loaded['mp.input']={select=function() error('unexpected subtitle selecti
 local settings_model=(function()
 -- SETTINGS MODEL IS INSERTED HERE
 end)()
-local selector_request, selector_open, selector_updates = nil, false, 0
-local selector = {
-    open=function(request) selector_request=request;selector_open=true;return true end,
-    close=function() selector_open=false;if selector_request then selector_request.close() end end,
-    is_open=function() return selector_open end,
-    update=function(tracks,current) selector_updates=selector_updates+1;selector_request.tracks=tracks;selector_request.current_id=current end,
-}
-local dofile=function(path) if path:find('subtitle-selector.lua',1,true) then return selector end;return settings_model end
+local dofile=function(path)
+    assert(path:find('user-settings.lua',1,true), 'subtitle controls must not own the selector')
+    return settings_model
+end
 
 -- COMPLETE SOURCE IS INSERTED HERE
 
@@ -173,35 +169,16 @@ function single_actions_without_primary_subtitle_are_noops()
     eq(messages[1][1],'SUB ADJUST: NO CHANGES')
 end
 
-function selector_preserves_danmaku_and_toggles_current()
-    bindings.select();eq(#selector_request.tracks,1);eq(selector_request.tracks[1].id,1)
-    assert(selector_request.submit(1));eq(properties.sid,'no');eq(properties['secondary-sid'],2)
-    selector.close();bindings.select();assert(selector_request.submit(1));eq(properties.sid,'1')
-    selector.close();bindings.select();assert(selector_request.submit(0));eq(properties.sid,'no')
+function selection_binding_forwards_without_property_writes()
+    clear_output();bindings.select();eq(#writes,0);eq(#commands,1)
+    eq(#commands[1],2);eq(commands[1][1],'script-binding')
+    eq(commands[1][2],'track_selection/select-subtitle')
+    eq(properties.sid,1);eq(properties['secondary-sid'],2)
 end
-function selector_rejects_removed_and_danmaku_ids()
-    bindings.select();local submit=selector_request.submit
-    clear_output();assert(not submit(2));eq(#writes,0)
-    properties['track-list']={{type='sub',id=2,title='Bilibili Danmaku'}}
-    assert(not submit(1));eq(#writes,0);assert(selector_updates>0)
+function subtitle_cycle_remains_independent_and_preserves_danmaku()
+    bindings['cycle-next']();eq(properties.sid,'no')
+    bindings['cycle-prev']();eq(properties.sid,'1')
     eq(properties['secondary-sid'],2)
-end
-function selector_lifecycle_rejects_stale_requests_and_cancel_writes_nothing()
-    for _,event in ipairs({'start-file','end-file','shutdown'}) do
-        bindings.select();local stale=selector_request.submit
-        events[event]();clear_output();assert(not stale(1));eq(#writes,0);assert(not selector_open)
-    end
-    bindings.select();clear_output();selector.close();eq(#writes,0)
-end
-function selector_refreshes_without_writing_and_opens_empty()
-    bindings.select();clear_output()
-    properties['track-list']={};observers['track-list']();eq(#selector_request.tracks,0);eq(#writes,0)
-    selector.close();bindings.select();assert(selector_open);eq(#selector_request.tracks,0)
-end
-function selector_reopen_retires_old_submit_and_reports_write_failure()
-    bindings.select();local old=selector_request.submit;bindings.select();clear_output()
-    assert(not old(1));eq(#writes,0)
-    local original=mp.set_property;mp.set_property=function() return nil,'rejected' end
-    assert(not selector_request.submit(0));assert(selector_open);eq(#writes,0)
-    mp.set_property=original
+    properties['track-list']={{type='sub',id=2,title='Bilibili Danmaku'}}
+    clear_output();bindings['cycle-next']();eq(#writes,0)
 end

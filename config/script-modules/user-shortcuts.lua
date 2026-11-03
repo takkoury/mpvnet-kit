@@ -102,7 +102,7 @@ local additions = {
     {'subtitle.select-secondary', '字幕与弹幕', '原生次字幕轨选择…', 'script-binding select/select-secondary-sid', true},
     {'danmaku.renderer-overlay', '字幕与弹幕', '弹幕：固定字号与流畅滚动（试用，本实例）', 'script-message-to bilibiliAssert renderer overlay', false, true},
     {'danmaku.renderer-ass', '字幕与弹幕', '弹幕：恢复原 ASS（本实例）', 'script-message-to bilibiliAssert renderer ass', false, true},
-    {'audio.select', '音频', '选择音轨…', 'script-binding select/select-aid', true},
+    {'audio.select', '音频', '选择音轨…', 'script-binding track_selection/select-audio', true},
     {'audio.next', '音频', '下一条音轨', 'script-message-to mpvnet cycle-audio'},
     {'audio.previous', '音频', '上一条音轨', 'cycle audio down'},
     {'audio.device', '音频', '选择音频设备…', 'script-binding select/select-audio-device', true},
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-aid', 'audio.select'},
     {'script-message-to mpvnet show-about', 'help.about'},
     {'script-binding playback_feedback/toggle-pause', 'playback.pause'},
     {'script-message-to mpvnet play-pause', 'playback.pause'}, {'cycle pause', 'playback.pause'},

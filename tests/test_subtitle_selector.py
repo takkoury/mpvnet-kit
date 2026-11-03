@@ -12,10 +12,10 @@ class SubtitleSelector(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'tests/lua/subtitle_selector.lua').read_text(encoding='utf-8').replace(
-            '-- MODULE SOURCE', (ROOT / 'config/script-modules/subtitle-selector.lua').read_text(encoding='utf-8'))
+            '-- MODULE SOURCE', (ROOT / 'config/script-modules/track-selector.lua').read_text(encoding='utf-8'))
 
     def run_case(self, case):
-        self.lua.execute(self.source + '\n' + case + '()', name='subtitle-selector/' + case)
+        self.lua.execute(self.source + '\n' + case + '()', name='track-selector/' + case)
 
     def test_open_close_repeat_and_borrowed_input_properties(self):
         self.run_case('open_close_repeated_and_temporary_ownership')
@@ -40,6 +40,12 @@ class SubtitleSelector(unittest.TestCase):
 
     def test_metadata_columns_and_ids_keep_alignment_across_lengths_and_filter(self):
         self.run_case('metadata_columns_and_id_edges_stay_aligned')
+
+    def test_audio_equal_separator_spacing_details_and_single_input_owner(self):
+        self.run_case('audio_layout_details_and_single_input_owner')
+
+    def test_audio_details_cancel_when_focus_moves_to_search_or_close(self):
+        self.run_case('audio_details_are_canceled_when_keyboard_focus_leaves_row')
 
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')

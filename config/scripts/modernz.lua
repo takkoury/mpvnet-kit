@@ -261,7 +261,7 @@ local user_opts = {
     volumebar_wheel_up_command = "osd-msg add volume 5",
 
     -- audio button mouse actions
-    audio_track_mbtn_left_command = "script-binding select/select-aid",
+    audio_track_mbtn_left_command = "script-binding track_selection/select-audio",
     audio_track_mbtn_mid_command = "cycle audio down",
     audio_track_mbtn_right_command = "cycle audio",
     audio_track_wheel_down_command = "cycle audio",
@@ -3939,19 +3939,25 @@ end
 
 -- use_down: if true, uses _down instead of _up (for softrepeat buttons)
 local function bind_buttons(element_name, use_down)
+    local function current_command(command)
+        if command == "script-binding select/select-aid" then
+            return "script-binding track_selection/select-audio"
+        end
+        return command
+    end
     local ev = use_down and "_down" or "_up"
     for _, button in ipairs({"mbtn_left", "mbtn_right"}) do
-        local command = user_opts[element_name .. "_" .. button .. "_command"]
+        local command = current_command(user_opts[element_name .. "_" .. button .. "_command"])
         if command ~= nil and command ~= "" and command ~= "ignore" then
             elements[element_name].eventresponder[button .. ev] = function() mp.command(command) end
         end
     end
-    local command = user_opts[element_name .. "_mbtn_mid_command"]
+    local command = current_command(user_opts[element_name .. "_mbtn_mid_command"])
     if command ~= nil and command ~= "" and command ~= "ignore" then
         elements[element_name].eventresponder["shift+mbtn_left_down"] = function() mp.command(command) end
     end
     for _, button in ipairs({"wheel_up", "wheel_down"}) do
-        local command = user_opts[element_name .. "_" .. button .. "_command"]
+        local command = current_command(user_opts[element_name .. "_" .. button .. "_command"])
         if command ~= nil and command ~= "" and command ~= "ignore" then
             elements[element_name].eventresponder[button .. "_press"] = function() mp.command(command) end
         end
@@ -3965,6 +3971,7 @@ local function control_tooltip(name, omit_wheel)
     local function matches(action, expected)
         local command = user_opts[name .. "_" .. action .. "_command"] or ""
         command = command:gsub("^no%-osd ", ""):gsub("^osd%-msg ", "")
+        if command == "script-binding select/select-aid" then command = "script-binding track_selection/select-audio" end
         return command == expected
     end
     local function add(action, expected, text)
@@ -3982,7 +3989,7 @@ local function control_tooltip(name, omit_wheel)
         for _, entry in ipairs({{"mbtn_mid", "中键"}, {"mbtn_right", "右键"}}) do
             add(entry[1], "cycle mute", entry[2] .. "静音")
             add(entry[1], "set volume 100", entry[2] .. "100%")
-            add(entry[1], "script-binding select/select-aid", entry[2] .. "选择音轨")
+            add(entry[1], "script-binding track_selection/select-audio", entry[2] .. "选择音轨")
         end
     elseif name == "speed" then
         if matches("mbtn_right", "set speed 1") or matches("mbtn_right", "script-message-to playback_feedback set-speed 1") then
@@ -4796,7 +4803,7 @@ local function has_mid_action(e)
 end
 
 local function refresh_input_area()
-    if state.subtitle_selector_open or state.subtitle_selector_console_wait then return end
+    if state.track_selector_open or state.track_selector_console_wait then return end
     if not state.osc_visible then
         set_virt_mouse_area(0, 0, 0, 0, "input")
         set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
@@ -4877,7 +4884,7 @@ local function refresh_input_area()
 end
 
 local function process_event(source, what)
-    if state.subtitle_selector_open or state.subtitle_selector_console_wait then return end
+    if state.track_selector_open or state.track_selector_console_wait then return end
     local action = string.format("%s%s", source, what and ("_" .. what) or "")
     local popup = state.local_popovers and state.local_popovers[state.popover]
     -- The footer may extend beside the anchor; the explicit More toggle still
@@ -4980,7 +4987,7 @@ local function process_event(source, what)
 end
 
 local function do_enable_keybindings()
-    if state.enabled and not state.subtitle_selector_open and not state.subtitle_selector_console_wait then
+    if state.enabled and not state.track_selector_open and not state.track_selector_console_wait then
         if not state.showhide_enabled then
             mp.enable_key_bindings("showhide", "allow-vo-dragging+allow-hide-cursor")
             mp.enable_key_bindings("showhide_wc", "allow-vo-dragging+allow-hide-cursor")
@@ -5005,7 +5012,7 @@ local function enable_osc(enable)
 end
 
 local function render()
-    if state.subtitle_selector_open or state.subtitle_selector_console_wait then render_wipe(state.osd); return end
+    if state.track_selector_open or state.track_selector_console_wait then render_wipe(state.osd); return end
     msg.trace("rendering")
     local current_screen_sizeX = state.osd_dimensions.w
     local current_screen_sizeY = state.osd_dimensions.h
@@ -5335,10 +5342,10 @@ local function restore_selector_mouse()
     request_tick()
 end
 mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
-    if state.subtitle_selector_console_wait
+    if state.track_selector_console_wait
         and not mp.get_property_native("user-data/mpv/console/open", false)
-        and not mp.get_property_native("user-data/mpvnet/subtitle-selector/open", false) then
-        state.subtitle_selector_console_wait = false
+        and not mp.get_property_native("user-data/mpvnet/track-selector/open", false) then
+        state.track_selector_console_wait = false
         restore_selector_mouse()
     end
     if val and settings_display then settings_display.finish() end
@@ -5353,12 +5360,12 @@ mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
 end)
 -- The selector owns its own input section. Suspend only our sections while it
 -- is open so later OSC mouse/resize events cannot steal its exclusive priority.
-mp.observe_property("user-data/mpvnet/subtitle-selector/open", "bool", function(_, val)
+mp.observe_property("user-data/mpvnet/track-selector/open", "bool", function(_, val)
     local open = val == true
-    if open == (state.subtitle_selector_open == true) then return end
-    state.subtitle_selector_open = open
+    if open == (state.track_selector_open == true) then return end
+    state.track_selector_open = open
     if open then
-        state.subtitle_selector_console_wait = false
+        state.track_selector_console_wait = false
         if settings_display then settings_display.finish() end
         close_popover()
         cancel_seekbar_drag()
@@ -5376,9 +5383,9 @@ mp.observe_property("user-data/mpvnet/subtitle-selector/open", "bool", function(
         -- These three base sections are normally enabled throughout OSC life;
         -- input areas and conditional sections are rebuilt by the next render.
         if mp.get_property_native("user-data/mpv/console/open", false) then
-            state.subtitle_selector_console_wait = true
+            state.track_selector_console_wait = true
         else
-            state.subtitle_selector_console_wait = false
+            state.track_selector_console_wait = false
             restore_selector_mouse()
         end
     end
