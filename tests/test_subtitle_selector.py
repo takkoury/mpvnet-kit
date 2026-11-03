@@ -50,6 +50,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_subtitle_audio_geometry_matches_at_equal_counts_and_dpi(self):
         self.run_case('subtitle_and_audio_share_layout_geometry')
 
+    def test_chapter_single_rows_original_ids_navigation_search_and_empty(self):
+        self.run_case('chapter_single_rows_search_navigation_and_no_off_action')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 

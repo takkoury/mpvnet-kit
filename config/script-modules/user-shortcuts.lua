@@ -60,7 +60,7 @@ local additions = {
     {'playlist.last', '播放与定位', '跳到列表末项', 'script-message-to mpvnet playlist-last'},
     {'chapter.previous', '播放与定位', '上一章节', 'add chapter -1'},
     {'chapter.next', '播放与定位', '下一章节', 'add chapter 1'},
-    {'chapter.select', '播放与定位', '选择章节…', 'script-binding select/select-chapter', true},
+    {'chapter.select', '播放与定位', '选择章节…', 'script-binding track_selection/select-chapter', true},
     {'edition.select', '播放与定位', '选择媒体版本（Edition）…', 'script-binding select/select-edition', true},
     {'playback.seek-back-5', '播放与定位', '后退 5 秒', 'script-message-to playback_feedback seek -5'},
     {'playback.seek-forward-5', '播放与定位', '前进 5 秒', 'script-message-to playback_feedback seek 5'},
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-chapter', 'chapter.select'},
     {'script-binding select/select-aid', 'audio.select'},
     {'script-message-to mpvnet show-about', 'help.about'},
     {'script-binding playback_feedback/toggle-pause', 'playback.pause'},

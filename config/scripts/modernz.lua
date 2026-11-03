@@ -240,7 +240,7 @@ local user_opts = {
     title_mbtn_right_command = "script-binding select/select-watch-history",
 
     -- chapter title mouse actions
-    chapter_title_mbtn_left_command = "script-binding select/select-chapter",
+    chapter_title_mbtn_left_command = "script-binding track_selection/select-chapter",
     chapter_title_mbtn_right_command = "show-text ${chapter-list} 3000",
 
     -- seekbar wheel actions
@@ -282,11 +282,11 @@ local user_opts = {
     -- chapter skip buttons mouse actions
     chapter_prev_mbtn_left_command = "add chapter -1",
     chapter_prev_mbtn_mid_command = "show-text ${chapter-list} 3000",
-    chapter_prev_mbtn_right_command = "script-binding select/select-chapter",
+    chapter_prev_mbtn_right_command = "script-binding track_selection/select-chapter",
 
     chapter_next_mbtn_left_command = "add chapter 1",
     chapter_next_mbtn_mid_command = "show-text ${chapter-list} 3000",
-    chapter_next_mbtn_right_command = "script-binding select/select-chapter",
+    chapter_next_mbtn_right_command = "script-binding track_selection/select-chapter",
 
     -- playlist skip buttons mouse actions
     playlist_prev_mbtn_left_command = "playlist-prev",
@@ -3940,6 +3940,7 @@ end
 -- use_down: if true, uses _down instead of _up (for softrepeat buttons)
 local function bind_buttons(element_name, use_down)
     local function current_command(command)
+        if command == "script-binding select/select-chapter" then return "script-binding track_selection/select-chapter" end
         if command == "script-binding select/select-aid" then
             return "script-binding track_selection/select-audio"
         end

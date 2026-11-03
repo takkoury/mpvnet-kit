@@ -138,6 +138,11 @@ function configured_hints_and_dispatch()
     elements.vol_ctrl.eventresponder["shift+mbtn_left_down"]()
     eq(commands[#commands], "script-binding track_selection/select-audio")
     eq(hint("vol_ctrl"), "中键选择音轨 · 右键100%")
+    user_opts.chapter_prev_mbtn_right_command = "script-binding select/select-chapter"
+    elements.chapter_prev = {eventresponder={}}
+    bind_buttons("chapter_prev")
+    elements.chapter_prev.eventresponder.mbtn_right_up()
+    eq(commands[#commands], "script-binding track_selection/select-chapter")
 end
 
 function title_and_custom_bindings()

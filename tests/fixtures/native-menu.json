@@ -134,6 +134,7 @@
     "stop"
   ],
   "replacements": {
+    "script-binding select/select-chapter": "script-binding track_selection/select-chapter",
     "script-binding select/select-aid": "script-binding track_selection/select-audio",
     "script-message-to mpvnet show-about": "script-binding about_window/open",
     "script-message-to mpvnet play-pause": "script-binding playback_feedback/toggle-pause",

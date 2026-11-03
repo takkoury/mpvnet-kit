@@ -382,6 +382,22 @@ function subtitle_and_audio_share_layout_geometry()
         end
     end
 end
+function chapter_single_rows_search_navigation_and_no_off_action()
+    local list={{id=2,title='Intro',time_text='00:01:30'},
+        {id=3,title='山路与回声',time_text='00:20:40'},{id=12,title='',time_text='01:12:00'}}
+    local function chapter_open()
+        return M.open({kind='chapter',tracks=list,current_id=3,submit=function(id) submitted[#submitted+1]=id;return true end})
+    end
+    assert(chapter_open());assert(data():find('选择章节',1,true));assert(data():find('章节 12',1,true))
+    assert(not data():find('关闭音轨',1,true) and not data():find('不显示普通字幕',1,true))
+    invoke('DOWN');invoke('ENTER');eq(submitted[1],2);idle_resources()
+    assert(chapter_open());invoke('UP');invoke('HOME');invoke('END');invoke('ENTER');eq(submitted[2],12)
+    assert(chapter_open());text('20:40');invoke('ENTER');eq(submitted[3],3)
+    assert(chapter_open());text('unmatched');invoke('DOWN');invoke('ENTER');eq(#submitted,3);assert(M.is_open())
+    invoke('TAB');invoke('ENTER');idle_resources()
+    assert(M.open({kind='chapter',tracks={},current_id=0,submit=function() error('empty cannot submit') end}))
+    assert(data():find('没有可用章节',1,true));invoke('ENTER');idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus,kind)

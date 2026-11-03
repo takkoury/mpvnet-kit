@@ -48,6 +48,16 @@ for _name in (
     'missing_module_reports_failure_and_can_retry',
     'invalid_module_contract_is_rejected',
     'open_failure_retires_request_and_cleans_partial_panel',
+    'chapter_ids_keep_original_index_and_missing_title',
+    'chapter_time_format_uses_duration_or_largest_timestamp',
+    'current_chapter_reselection_writes_zero_based_chapter',
+    'no_chapters_and_before_first_chapter_do_not_invent_selection',
+    'chapter_reorder_observer_cannot_accept_pending_old_index',
+    'chapter_deletion_and_in_place_changes_require_new_choice',
+    'chapter_same_time_different_titles_cannot_silently_swap',
+    'chapter_observers_do_not_interfere_with_audio_or_subtitle',
+    'chapter_stale_callbacks_cancel_and_write_failures_are_safe',
+    'chapter_cross_kind_retirement_rejects_old_submissions',
 ):
     setattr(TrackSelection, 'test_' + _name, _case(_name))
 

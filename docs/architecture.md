@@ -21,9 +21,11 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
-### 音轨与普通字幕选择器
+### 轨道与章节选择器
 
 [track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。音轨只读audio轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。
+
+`track_selection/select-chapter`复用同一面板实例和输入，章节采用38高单行与右对齐起始时间，不显示关闭轨道项。UI条目id为原chapter-list索引+1，提交写0基chapter，重复选择当前章仍写入以回到章首。控制层保留章节time/title顺序快照，列表通知不自动把新条目映射给旧输入；提交发现任何变化时先刷新快照和面板、返回重选提示，下一次明确选择才可提交。chapter观察更新当前标记，duration只改变时间格式，媒体切换使旧回调失效；不改变原上一／下一章或时间轴预览行为。
 
 `track_selection/select-audio`与`select-subtitle`共用一个按需加载的面板实例；打开新类型或重复打开先使旧回调失效再关闭，防止同步close回调退休新会话。`subtitle_controls/select`保留为转发入口，原循环／显隐／调整逻辑不变。start-file／end-file／shutdown关闭面板，track-list及当前类型对应的aid／sid变化刷新。音轨仅增加数据展示，不复制输入编辑器；四列元信息整组靠左，首尾列左对齐、位于两条竖线之间的格式／声道列居中，与字幕格式列对齐规则一致。按完整轨道集合确定有上限的紧凑列宽，搜索／滚动不改变列位置，竖线两侧使用统一留白，不均分或撑满整行。完整标题／采样率／码率／标记可停留或键盘聚焦查看。
 

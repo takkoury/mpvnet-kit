@@ -9,7 +9,8 @@ local properties = {['track-list']={subtitle,
     {type='sub', id=2, title='Bilibili Danmaku'}, audio,
     {type='video', id=4}, {type='audio',id=5,title='Bilibili Danmaku'}},
     sid=1, aid=3, ['secondary-sid']=2, mute=false, volume=83,
-    ['audio-device']='auto', ['sub-visibility']=true}
+    ['audio-device']='auto', ['sub-visibility']=true,
+    ['chapter-list']={{time=0,title='Opening'},{time=83,title='Middle'},{time=142.9}},chapter=-1,duration=200}
 local function get(name, default)
     if properties[name] ~= nil then return properties[name] end
     return default
@@ -200,4 +201,103 @@ function open_failure_retires_request_and_cleans_partial_panel()
     eq(failed.submit(0),false);eq(#writes,0)
     open_failure=false;bindings['select-subtitle']();failed.close()
     assert(request.submit(0));eq(properties.sid,'no');preserve_unrelated()
+end
+
+local function chapter_writes_only()
+    eq(properties.aid,3);eq(properties.sid,1)
+    eq(properties['secondary-sid'],2);eq(properties.mute,false);eq(properties.volume,83)
+    eq(properties['audio-device'],'auto');eq(properties['sub-visibility'],true)
+    for _,write in ipairs(writes) do eq(write[1],'chapter') end
+end
+function chapter_ids_keep_original_index_and_missing_title()
+    properties['chapter-list']={{time=0,title='Opening'},{title='Unknown time'},
+        {time=-1},{time=0/0},{time=math.huge},{time='83'},
+        {time=83.99},{time=142,title=123}}
+    bindings['select-chapter']();eq(request.kind,'chapter');eq(request.current_id,0)
+    eq(#request.tracks,3);eq(request.tracks[1].id,1);eq(request.tracks[2].id,7);eq(request.tracks[3].id,8)
+    eq(request.tracks[2].title,'');eq(request.tracks[2].time_text,'01:23');eq(request.tracks[3].title,'')
+    for _,id in ipairs({0,-1,2,3,4,5,6,99,1.5,math.huge,0/0,'invalid'}) do
+        eq(request.submit(id),false);eq(#writes,0)
+    end
+    assert(request.submit(7));eq(properties.chapter,'6');chapter_writes_only()
+end
+function chapter_time_format_uses_duration_or_largest_timestamp()
+    bindings['select-chapter']();eq(request.tracks[2].time_text,'01:23')
+    properties.duration=3600;observers.duration();eq(request.tracks[2].time_text,'00:01:23')
+    properties.duration=nil;observers.duration();eq(request.tracks[2].time_text,'01:23')
+    renderer.close();properties['chapter-list']={{time=1.9},{time=3661.5}}
+    bindings['select-chapter']();eq(request.tracks[1].time_text,'00:00:01');eq(request.tracks[2].time_text,'01:01:01')
+    eq(#writes,0);chapter_writes_only()
+end
+function current_chapter_reselection_writes_zero_based_chapter()
+    properties.chapter=1;bindings['select-chapter']();eq(request.current_id,2)
+    assert(request.submit(2));eq(properties.chapter,'1');eq(writes[1][2],'1')
+    -- Re-selecting the same chapter remains a seek-to-start request.
+    assert(request.submit('2'));eq(#writes,2);eq(writes[2][2],'1')
+    properties.chapter=0;observers.chapter();eq(request.current_id,1)
+    assert(request.submit(1));eq(properties.chapter,'0');chapter_writes_only()
+end
+function no_chapters_and_before_first_chapter_do_not_invent_selection()
+    bindings['select-chapter']();eq(request.current_id,0);eq(#writes,0)
+    properties.chapter=-1;observers.chapter();eq(request.current_id,0)
+    renderer.close();properties['chapter-list']={};bindings['select-chapter']()
+    assert(opened);eq(#request.tracks,0);eq(request.current_id,0)
+    eq(request.submit(0),false);eq(request.submit(1),false);eq(#writes,0)
+end
+function chapter_reorder_observer_cannot_accept_pending_old_index()
+    bindings['select-chapter']();local submit=request.submit
+    properties['chapter-list']={{time=83,title='Middle'},{time=0,title='Opening'},{time=142.9}}
+    observers['chapter-list']();eq(request.tracks[1].title,'Opening');eq(request.tracks[1].time_text,'00:00')
+    properties.chapter=1;observers.chapter();eq(request.current_id,2)
+    eq(request.tracks[1].title,'Opening')
+    local ok,error=submit(1);eq(ok,false);assert(error:find('列表已变化'));eq(#writes,0)
+    eq(request.tracks[1].title,'Middle');eq(request.tracks[1].time_text,'01:23')
+    assert(request.submit(1));eq(properties.chapter,'0');chapter_writes_only()
+end
+function chapter_deletion_and_in_place_changes_require_new_choice()
+    bindings['select-chapter']();properties['chapter-list'][2]=nil
+    properties['chapter-list']={{time=0,title='Opening'},{time=142.9}}
+    eq(request.submit(2),false);eq(#writes,0);eq(request.tracks[2].title,'')
+    assert(request.submit(2));eq(properties.chapter,'1')
+    clear();properties['chapter-list'][2].title='Renamed same timestamp'
+    eq(request.submit(2),false);eq(#writes,0)
+    assert(request.submit(2));eq(properties.chapter,'1')
+    clear();properties['chapter-list'][2].time=143
+    eq(request.submit(2),false);eq(#writes,0);eq(request.tracks[2].time_text,'02:23')
+    assert(request.submit(2));chapter_writes_only()
+end
+function chapter_same_time_different_titles_cannot_silently_swap()
+    properties['chapter-list']={{time=0,title='A'},{time=0,title='B'}}
+    bindings['select-chapter']();properties['chapter-list']={{time=0,title='B'},{time=0,title='A'}}
+    eq(request.submit(1),false);eq(#writes,0);eq(request.tracks[1].title,'B')
+    assert(request.submit(2));eq(properties.chapter,'1');chapter_writes_only()
+end
+function chapter_observers_do_not_interfere_with_audio_or_subtitle()
+    for _,kind in ipairs({'audio','subtitle'}) do
+        bindings['select-'..kind]();clear()
+        observers.chapter();observers['chapter-list']();observers.duration();eq(#calls,0);eq(#writes,0)
+        assert(request.submit(kind=='audio' and 3 or 1))
+    end
+    bindings['select-chapter']();clear()
+    observers.aid();observers.sid();observers['track-list']();eq(#calls,0);eq(#writes,0)
+    observers.chapter();eq(calls[1],'update')
+end
+function chapter_stale_callbacks_cancel_and_write_failures_are_safe()
+    for _,event in ipairs({'start-file','end-file','shutdown'}) do
+        bindings['select-chapter']();local old=request;events[event]();clear()
+        eq(old.submit(1),false);eq(#writes,0)
+        bindings['select-chapter']();old.close();assert(request.submit(1));chapter_writes_only()
+    end
+    bindings['select-chapter']();local old=request;clear();renderer.close()
+    eq(old.submit(1),false);eq(#writes,0)
+    bindings['select-chapter']();set_failure=true
+    local ok,error=request.submit(1);eq(ok,false);assert(error:find('未能切换章节'));eq(#writes,0);assert(opened)
+    set_failure=false;assert(request.submit(1));chapter_writes_only()
+end
+function chapter_cross_kind_retirement_rejects_old_submissions()
+    bindings['select-chapter']();local old=request
+    bindings['select-audio']();clear();eq(old.submit(1),false);old.close()
+    assert(request.submit(5));eq(properties.aid,'5')
+    old=request;bindings['select-chapter']();clear();eq(old.submit(0),false);old.close()
+    assert(request.submit(2));eq(properties.chapter,'1');eq(properties.sid,1)
 end
