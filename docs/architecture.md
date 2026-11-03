@@ -25,7 +25,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 [track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。音轨只读audio轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。
 
-`track_selection/select-audio`与`select-subtitle`共用一个按需加载的面板实例；打开新类型或重复打开先使旧回调失效再关闭，防止同步close回调退休新会话。`subtitle_controls/select`保留为转发入口，原循环／显隐／调整逻辑不变。start-file／end-file／shutdown关闭面板，track-list及当前类型对应的aid／sid变化刷新。音轨仅增加数据展示，不复制输入编辑器；四列元信息采用等宽单元和统一竖线留白，完整标题／采样率／码率／标记可停留或键盘聚焦查看。
+`track_selection/select-audio`与`select-subtitle`共用一个按需加载的面板实例；打开新类型或重复打开先使旧回调失效再关闭，防止同步close回调退休新会话。`subtitle_controls/select`保留为转发入口，原循环／显隐／调整逻辑不变。start-file／end-file／shutdown关闭面板，track-list及当前类型对应的aid／sid变化刷新。音轨仅增加数据展示，不复制输入编辑器；四列元信息左对齐，按完整轨道集合确定有上限的紧凑列宽，搜索／滚动不改变列位置，竖线两侧使用统一留白，不均分或撑满整行。完整标题／采样率／码率／标记可停留或键盘聚焦查看。
 
 现有mp.input.select由console固定渲染并强制单行，不能承接已确认双行条目；经能力检查和用户明确同意后采用独立渲染。面板只在打开期间启用自己的exclusive输入section，临时借用input-ime、cursor-autohide与window-dragging，关闭时仅在属性仍为自己的值时恢复。控制台打开时立即释放面板输入与绘制，IME旧值延后到控制台关闭再按所有权条件恢复，避免跨脚本观察次序覆盖控制台输入。
 

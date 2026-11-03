@@ -41,7 +41,7 @@ class SubtitleSelector(unittest.TestCase):
     def test_metadata_columns_and_ids_keep_alignment_across_lengths_and_filter(self):
         self.run_case('metadata_columns_and_id_edges_stay_aligned')
 
-    def test_audio_equal_separator_spacing_details_and_single_input_owner(self):
+    def test_audio_compact_columns_consistent_gutters_details_and_single_input_owner(self):
         self.run_case('audio_layout_details_and_single_input_owner')
 
     def test_audio_details_cancel_when_focus_moves_to_search_or_close(self):

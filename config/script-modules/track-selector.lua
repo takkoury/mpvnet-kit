@@ -472,16 +472,19 @@ render=function()
     if extra>0 then local message=fitted(s,s.error,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
     -- Shared columns use the whole track set, so scrolling/filtering cannot
     -- shift separators. Missing fields leave their column empty.
-    local lang_width,codec_width,id_width=0,0,0
+    local lang_width,codec_width,id_width,channel_width=0,0,0,36*scale
     local has_language,has_codec=false,false
     local function meta_language(track)
         return track.lang~='' and label(track,s.kind)~=language(track) and language(track) or ''
     end
     for _,track in ipairs(s.tracks) do
-        local lang=meta_language(track)
+        local lang=s.kind=='audio' and language(track) or meta_language(track)
         if lang~='' then has_language=true;lang_width=math.max(lang_width,measure(s,lang,meta_size*scale)) end
         if track.codec~='' then has_codec=true;codec_width=math.max(codec_width,measure(s,track.codec,meta_size*scale)) end
         id_width=math.max(id_width,measure(s,'#'..track.id,meta_size*scale))
+        if s.kind=='audio' and track.channels then
+            channel_width=math.max(channel_width,measure(s,string.format('%g 声道',track.channels),meta_size*scale))
+        end
     end
     lang_width=clamp(lang_width,24*scale,80*scale)
     codec_width=clamp(codec_width,32*scale,84*scale)
@@ -505,16 +508,19 @@ render=function()
         if not off then
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if s.kind=='audio' then
-                -- Equal-width cells and one shared gutter on either side of
-                -- every divider; varying codec/name lengths cannot shift bars.
+                -- Compact, bounded columns shared across the complete track
+                -- set. Keep text left-aligned; never distribute it across the row.
                 local gap,line=8*scale,scale
-                local cell=math.min(72*scale,(r.w-50*scale-3*(2*gap+line))/4)
+                local cells={math.min(lang_width,56*scale),math.min(codec_width,64*scale),
+                    math.min(channel_width,48*scale),72*scale}
                 local values={language(track),track.codec,track.channels and string.format('%g 声道',track.channels) or '',source(track)}
+                local left=tx
                 for i,value in ipairs(values) do
-                    local left=tx+(i-1)*(cell+2*gap+line)
-                    add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),left+cell/2,r.y+36*scale,meta_size*scale,'AAAAAA',
-                        {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,5)
+                    local cell=cells[i]
+                    add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),left,r.y+36*scale,meta_size*scale,'AAAAAA',
+                        {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,4)
                     if i<4 then rect(out,left+cell+gap,r.y+31*scale,line,10*scale,'555555') end
+                    left=left+cell+2*gap+line
                 end
             else
             local sx=tx

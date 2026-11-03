@@ -79,7 +79,7 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 媒体信息由`MediaInfoController`（lua）、`MediaInfoDataTests`和`MediaInfoViewTests`（helpers）分别验证会话及地址隔离、原始报告与概览数据、完整行保留及搜索／复制。可选`MPVNET_TEST_MEDIAINFO`指向已有MediaInfo.dll，使用临时父进程与合成音频对照默认Inform原报告；不读取个人配置，不安装DLL。无此依赖时仅允许对应真实DLL用例跳过，隐藏WPF不替代用户键鼠与owner验收。
 
-`SubtitleSelector`归入lua，验证共用ASS轨道面板的Unicode编辑、选中／取消、音轨等距分隔／按需详情、跨类型单一输入所有者、临时输入属性和控制台交接；`TrackSelection`验证媒体／会话代次、aid／sid独立提交、失效／失败与弹幕隔离，`SubtitleControls`保留旧选择入口转发及字幕调整回归，`SettingsDisplay`检查ModernZ临时让出鼠标section且不改变visibility。真实输入法候选、鼠标焦点、宿主拖窗与跨DPI需实际播放器试用；ASS离屏图和headless核心输入检查不替代这些验收。
+`SubtitleSelector`归入lua，验证共用ASS轨道面板的Unicode编辑、选中／取消、音轨紧凑列与竖线留白／按需详情、跨类型单一输入所有者、临时输入属性和控制台交接；`TrackSelection`验证媒体／会话代次、aid／sid独立提交、失效／失败与弹幕隔离，`SubtitleControls`保留旧选择入口转发及字幕调整回归，`SettingsDisplay`检查ModernZ临时让出鼠标section且不改变visibility。真实输入法候选、鼠标焦点、宿主拖窗与跨DPI需实际播放器试用；ASS离屏图和headless核心输入检查不替代这些验收。
 
 需要运行四组时，在依赖和各目录均准备好后执行：
 

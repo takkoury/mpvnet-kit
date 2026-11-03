@@ -330,9 +330,12 @@ function audio_layout_details_and_single_input_owner()
         end
     end
     eq(#dividers,9)
-    local step=dividers[2][1]-dividers[1][1]
-    assert(math.abs(step-(dividers[3][1]-dividers[2][1]))<0.02,'uneven separator pitch')
     for row=1,2 do for col=1,3 do eq(dividers[row*3+col][1],dividers[col][1],'cross-row separator drift') end end
+    eq(text_point('中文'),text_point('普通话',true),'metadata must start at title edge')
+    eq(text_point('aac')-dividers[1][1],9,'codec left gutter')
+    eq(text_point('2 声道')-dividers[2][1],9,'channel left gutter')
+    eq(text_point('内嵌')-dividers[3][1],9,'source left gutter')
+    assert(dividers[3][1]-text_point('中文')<150,'columns spread across the panel')
     invoke('DOWN');invoke('DOWN');tick(.6)
     assert(data():find('采样率  48 kHz',1,true));assert(data():find('码率  192 kbps',1,true));assert(data():find('默认',1,true))
     invoke('Ctrl+f');text('视障');invoke('ENTER');eq(submitted[1],123);idle_resources()
