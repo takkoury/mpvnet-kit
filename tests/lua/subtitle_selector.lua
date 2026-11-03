@@ -332,8 +332,8 @@ function audio_layout_details_and_single_input_owner()
     eq(#dividers,9)
     for row=1,2 do for col=1,3 do eq(dividers[row*3+col][1],dividers[col][1],'cross-row separator drift') end end
     eq(text_point('中文'),text_point('普通话',true),'metadata must start at title edge')
-    eq(text_point('aac')-dividers[1][1],9,'codec left gutter')
-    eq(text_point('2 声道')-dividers[2][1],9,'channel left gutter')
+    eq(text_point('aac'),(dividers[1][1]+1+dividers[2][1])/2,'codec center between dividers')
+    eq(text_point('2 声道'),(dividers[2][1]+1+dividers[3][1])/2,'channel center between dividers')
     eq(text_point('内嵌')-dividers[3][1],9,'source left gutter')
     assert(dividers[3][1]-text_point('中文')<150,'columns spread across the panel')
     invoke('DOWN');invoke('DOWN');tick(.6)
@@ -355,6 +355,30 @@ function audio_details_are_canceled_when_keyboard_focus_leaves_row()
             invoke(action);tick(.6)
             assert(not data():find('采样率  48 kHz',1,true),'details outlived focus: '..action)
             M.close();idle_resources()
+        end
+    end
+end
+function subtitle_and_audio_share_layout_geometry()
+    local function signature()
+        local s
+        for i=1,10 do local name,value=debug.getupvalue(M.is_open,i);if name=='active' then s=value;break end end
+        assert(s and s.layout)
+        local l=s.layout;local values={s.capacity}
+        local function append(r) for _,k in ipairs({'x','y','w','h'}) do values[#values+1]=r[k] end end
+        append(l.panel);append(l.close);append(l.search)
+        for _,r in ipairs(l.rows) do append(r) end
+        local nx,ny=text_point('简体中文');values[#values+1]=nx;values[#values+1]=ny
+        local ix,iy=text_point('#3');values[#values+1]=ix;values[#values+1]=iy
+        local fx,fy=text_point('↑ ↓ 移动　Enter 选择　Esc 取消');values[#values+1]=fx;values[#values+1]=fy
+        return table.concat(values,',')
+    end
+    for _,dpi in ipairs({1,1.5,2}) do
+        for _,size in ipairs({{1469,826},{480,320}}) do
+            width,height=size[1],size[2];properties['display-hidpi-scale']=dpi
+            local list=tracks()
+            assert(open(list,3));local before=signature();M.close()
+            assert(M.open({kind='audio',tracks=list,current_id=3,submit=function() return true end}))
+            eq(signature(),before,'subtitle/audio geometry drift');M.close();idle_resources()
         end
     end
 end
@@ -387,4 +411,11 @@ function export_ass(output)
         {id=12,title='English',lang='en',codec='eac3',external=false,['demux-channel-count']=6},
         {id=123,title='导演评论音轨',lang='ja',codec='flac',external=true,['demux-channel-count']=2},
         {id=321,title='',lang='',codec='',external=false}},false,'audio')
+    local comparison={
+        {id=3,title='中文轨道',lang='zh',codec='aac',external=false,['demux-channel-count']=2},
+        {id=12,title='English',lang='en',codec='flac',external=false,['demux-channel-count']=6},
+        {id=123,title='日本語',lang='ja',codec='eac3',external=true,['demux-channel-count']=1}}
+    save('compare-audio',1469,826,comparison,false,'audio')
+    comparison[1].codec='subrip';comparison[2].codec='ass';comparison[3].codec='subrip'
+    save('compare-subtitle',1469,826,comparison,false,'subtitle')
 end

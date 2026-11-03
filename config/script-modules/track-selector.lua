@@ -509,7 +509,8 @@ render=function()
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if s.kind=='audio' then
                 -- Compact, bounded columns shared across the complete track
-                -- set. Keep text left-aligned; never distribute it across the row.
+                -- set. Center only interior cells between dividers, matching
+                -- the subtitle codec column; keep the whole group left-anchored.
                 local gap,line=8*scale,scale
                 local cells={math.min(lang_width,56*scale),math.min(codec_width,64*scale),
                     math.min(channel_width,48*scale),72*scale}
@@ -517,8 +518,9 @@ render=function()
                 local left=tx
                 for i,value in ipairs(values) do
                     local cell=cells[i]
-                    add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),left,r.y+36*scale,meta_size*scale,'AAAAAA',
-                        {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,4)
+                    local centered=i>1 and i<#values
+                    add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),centered and left+cell/2 or left,r.y+36*scale,meta_size*scale,'AAAAAA',
+                        {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,centered and 5 or 4)
                     if i<4 then rect(out,left+cell+gap,r.y+31*scale,line,10*scale,'555555') end
                     left=left+cell+2*gap+line
                 end
