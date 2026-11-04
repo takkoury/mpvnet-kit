@@ -11,6 +11,8 @@ local kinds = {
     audio = {property='aid', type='audio', label='音轨'},
     video = {property='vid', type='video', label='视频轨'},
     subtitle = {property='sid', type='sub', label='字幕'},
+    primary = {property='sid', type='sub', label='主字幕', other='secondary-sid', other_label='次字幕'},
+    secondary = {property='secondary-sid', type='sub', label='次字幕', other='sid', other_label='主字幕'},
     chapter = {property='chapter', label='章节'},
     edition = {property='edition', label='媒体版本'},
     device = {property='audio-device', label='音频设备'},
@@ -156,7 +158,16 @@ local function edition_tracks()
     end
     return out
 end
+local function subtitle_slot_id(property)
+    local current=mp.get_property_native(property)
+    if current=='auto' then
+        current=mp.get_property_native(property=='sid' and 'current-tracks/sub/id' or 'current-tracks/sub2/id')
+    end
+    local id=tonumber(current)
+    return id and id>0 and id<math.huge and id==math.floor(id) and id or 0
+end
 local function current_id(kind)
+    if kinds[kind].other then return subtitle_slot_id(kinds[kind].property) end
     if kind=='edition' then
         local current=mp.get_property_native('current-edition')
         return type(current)=='number' and current>=0 and current==math.floor(current) and
@@ -182,10 +193,33 @@ local function tracks_for(kind)
         if track.type == kinds[kind].type and
             (kind ~= 'subtitle' or track.title ~= 'Bilibili Danmaku') then
             -- Preserve native metadata for the renderer; never rewrite the track.
-            tracks[#tracks + 1] = track
+            if kinds[kind].other then
+                local row={};for key,value in pairs(track) do row[key]=value end
+                if tonumber(track.id)==subtitle_slot_id(kinds[kind].other) then
+                    row.blocked_reason='该轨道已用于'..kinds[kind].other_label..'，不能同时用于'..kinds[kind].label..'。'
+                    row.slot_label='已用于'..kinds[kind].other_label
+                end
+                tracks[#tracks+1]=row
+            else tracks[#tracks + 1] = track end
         end
     end
     return tracks
+end
+
+local function selection_notice(kind,tracks,selected)
+    if kind=='device' and #tracks>0 and selected==0 then return '已选设备不在列表中，可重新选择。' end
+    if kind=='secondary' then
+        for _,track in ipairs(tracks) do
+            if tonumber(track.id)==selected and track.title=='Bilibili Danmaku' then
+                return '次字幕槽正用于弹幕，改选可能影响弹幕。'
+            end
+        end
+    end
+    if kinds[kind].other and #tracks>0 then
+        local property=kind=='primary' and 'sub-visibility' or 'secondary-sub-visibility'
+        if mp.get_property_native(property)==false then return kinds[kind].label..'当前隐藏，选择轨道不会开启显示。' end
+    end
+    return ''
 end
 
 local function close_selector()
@@ -202,8 +236,7 @@ local function refresh_selector()
     if active_kind and selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
-        local notice = active_kind == 'device' and #tracks > 0 and selected == 0 and
-            '已选设备不在列表中，可重新选择。' or ''
+        local notice = selection_notice(active_kind,tracks,selected)
         selector.update(tracks, selected, notice)
     end
 end
@@ -233,14 +266,39 @@ local function select_tracks(kind)
     local definition = kinds[kind]
     local tracks = tracks_for(kind)
     local selected = current_id(kind)
-    local notice = kind == 'device' and #tracks > 0 and selected == 0 and
-        '已选设备不在列表中，可重新选择。' or ''
+    local notice = selection_notice(kind,tracks,selected)
     local opened, error = selector.open({kind=kind, tracks=tracks,
         current_id=selected, notice=notice,
         submit=function(id)
             if session ~= session_generation or media ~= media_generation or
                 active_kind ~= kind or not selector.is_open() then
                 return false, '选择已失效，请重新打开选择器。'
+            end
+            if kind=='subtitle' and tonumber(id) and tonumber(id)>0 and tonumber(id)==subtitle_slot_id('secondary-sid') then
+                return false,'该轨道已用于次字幕，不能同时用于主字幕。'
+            end
+            if definition.other then
+                local id=tonumber(id)
+                if id and id>0 and id==subtitle_slot_id(definition.other) then
+                    refresh_selector()
+                    return false,'该轨道已用于'..definition.other_label..'，不能同时用于'..definition.label..'。'
+                end
+                local target
+                if id==0 then target='no'
+                else
+                    for _,track in ipairs(tracks_for(kind)) do
+                        if tonumber(track.id)==id then
+                            target=id==subtitle_slot_id(definition.property) and 'no' or tostring(track.id)
+                            break
+                        end
+                    end
+                end
+                if not target then refresh_selector();return false,'该字幕轨已移除，请重新选择。' end
+                local ok=mp.set_property(definition.property,target)
+                if not ok or subtitle_slot_id(definition.property)~=(target=='no' and 0 or tonumber(target)) then
+                    refresh_selector();return false,'未能应用'..definition.label..'，请重试。'
+                end
+                return true
             end
             if kind=='edition' then
                 local latest=edition_list()
@@ -338,16 +396,21 @@ local function select_tracks(kind)
 end
 
 mp.add_key_binding(nil, 'select-subtitle', function() select_tracks('subtitle') end)
+mp.add_key_binding(nil, 'select-primary', function() select_tracks('primary') end)
+mp.add_key_binding(nil, 'select-secondary', function() select_tracks('secondary') end)
 mp.add_key_binding(nil, 'select-audio', function() select_tracks('audio') end)
 mp.add_key_binding(nil, 'select-video', function() select_tracks('video') end)
 mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') end)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.observe_property('track-list', 'native', function()
-    if active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' then refresh_selector() end
+    if active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
 end)
 mp.observe_property('aid', 'native', function() if active_kind == 'audio' then refresh_selector() end end)
-mp.observe_property('sid', 'native', function() if active_kind == 'subtitle' then refresh_selector() end end)
+mp.observe_property('sid', 'native', function() if active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
+for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub/id','current-tracks/sub2/id'}) do
+    mp.observe_property(property,'native',function() if active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
+end
 mp.observe_property('vid', 'native', function() if active_kind == 'video' then refresh_selector() end end)
 -- Refresh presentation/current markers without accepting a new index mapping.
 -- A changed chapter list is acknowledged only by the rejected submit above.

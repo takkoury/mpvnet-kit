@@ -467,3 +467,51 @@ function editions_set_can_synchronously_reload_without_reviving_old_session()
     bindings['select-edition']();local current=request;old.close();eq(old.submit(1),false);assert(opened)
     mp.set_property=setter;assert(current.submit(1));eq(properties.edition,'0')
 end
+
+local function advanced_fixture()
+    properties['track-list']={subtitle,{type='sub',id=2,title='Bilibili Danmaku'},
+        {type='sub',id=3,title='English',lang='eng'},audio}
+    properties.sid=1;properties['secondary-sid']=2
+    properties['secondary-sub-visibility']=false;properties['secondary-sub-ass-override']=false
+end
+function advanced_slots_include_all_tracks_and_do_not_mutate_source()
+    advanced_fixture();bindings['select-primary']();eq(#request.tracks,3);eq(request.current_id,1)
+    eq(request.tracks[2].slot_label,'已用于次字幕');assert(request.tracks[2].blocked_reason~='')
+    eq(properties['track-list'][2].slot_label,nil);eq(request.notice,'')
+    clear();assert(request.submit(3));eq(properties.sid,'3');eq(properties['secondary-sid'],2);eq(#writes,1);eq(writes[1][1],'sid')
+    assert(request.submit(3));eq(properties.sid,'no');assert(request.submit(0));eq(properties.sid,'no')
+    bindings['select-subtitle']();eq(#request.tracks,2)
+    for _,row in ipairs(request.tracks) do assert(row.title~='Bilibili Danmaku') end
+end
+function advanced_secondary_preserves_other_slot_visibility_and_danmaku_options()
+    advanced_fixture();bindings['select-secondary']();eq(#request.tracks,3);eq(request.current_id,2)
+    eq(request.tracks[1].slot_label,'已用于主字幕');assert(request.notice:find('弹幕',1,true))
+    clear();assert(request.submit(3));eq(properties['secondary-sid'],'3');eq(properties.sid,1)
+    eq(properties['secondary-sub-visibility'],false);eq(properties['secondary-sub-ass-override'],false)
+    eq(properties['sub-visibility'],true);eq(properties.aid,3);eq(properties.volume,83)
+    for _,write in ipairs(writes) do eq(write[1],'secondary-sid') end
+    observers['secondary-sid']();assert(request.notice:find('当前隐藏',1,true))
+    assert(request.submit(3));eq(properties['secondary-sid'],'no');eq(properties.sid,1)
+end
+function advanced_occupancy_is_checked_again_at_submit_and_observed()
+    advanced_fixture();bindings['select-secondary']();clear();eq(request.submit(1),false);eq(#writes,0)
+    properties.sid=3 -- no notification: the displayed English row was previously free
+    eq(request.submit(3),false);eq(#writes,0);eq(properties['secondary-sid'],2)
+    observers.sid();eq(request.tracks[3].slot_label,'已用于主字幕')
+    properties.sid='no';observers.sid();eq(request.tracks[3].slot_label,nil)
+    assert(request.submit(3));eq(properties['secondary-sid'],'3')
+    properties.sid=1;bindings['select-subtitle']();clear();eq(request.submit(3),false);eq(#writes,0)
+end
+function advanced_auto_slots_failures_and_stale_sessions_are_safe()
+    advanced_fixture();properties.sid='auto';properties['current-tracks/sub/id']=1
+    properties['secondary-sid']='auto';properties['current-tracks/sub2/id']=2
+    bindings['select-primary']();eq(request.current_id,1);eq(request.submit(2),false)
+    clear();set_failure=true;eq(request.submit(3),false);eq(#writes,0)
+    set_failure=false;readback_override='auto';eq(request.submit(3),false);assert(opened)
+    readback_override=nil;assert(request.submit(3));eq(properties.sid,'3')
+    local old=request;bindings['select-secondary']();clear();old.close();eq(old.submit(0),false);eq(#writes,0)
+    assert(request.submit(0));eq(properties['secondary-sid'],'no');eq(properties.sid,'3')
+    old=request;events['start-file']();clear();eq(old.submit(0),false);eq(#writes,0)
+    bindings['select-primary']();properties['track-list']={};observers['track-list']();eq(#request.tracks,0)
+    eq(request.submit(3),false);eq(#writes,0)
+end

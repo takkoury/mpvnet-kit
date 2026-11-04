@@ -98,8 +98,8 @@ local additions = {
     {'subtitle.size-up-large', '字幕与弹幕', '增大字幕字号（原生大步 0.1 倍）', 'add sub-scale 0.1'},
     {'subtitle.size-down-large', '字幕与弹幕', '减小字幕字号（原生大步 0.1 倍）', 'add sub-scale -0.1'},
     {'subtitle.ass-override', '字幕与弹幕', '开关 SSA／ASS 样式覆盖', 'cycle-values sub-ass-override force no'},
-    {'subtitle.select-native', '字幕与弹幕', '原生主字幕轨选择…', 'script-binding select/select-sid', true},
-    {'subtitle.select-secondary', '字幕与弹幕', '原生次字幕轨选择…', 'script-binding select/select-secondary-sid', true},
+    {'subtitle.select-native', '字幕与弹幕', '主字幕轨选择…', 'script-binding track_selection/select-primary', true},
+    {'subtitle.select-secondary', '字幕与弹幕', '次字幕轨选择…', 'script-binding track_selection/select-secondary', true},
     {'danmaku.renderer-overlay', '字幕与弹幕', '弹幕：固定字号与流畅滚动（试用，本实例）', 'script-message-to bilibiliAssert renderer overlay', false, true},
     {'danmaku.renderer-ass', '字幕与弹幕', '弹幕：恢复原 ASS（本实例）', 'script-message-to bilibiliAssert renderer ass', false, true},
     {'audio.select', '音频', '选择音轨…', 'script-binding track_selection/select-audio', true},
@@ -208,6 +208,8 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-sid', 'subtitle.select-native'},
+    {'script-binding select/select-secondary-sid', 'subtitle.select-secondary'},
     {'script-binding select/select-edition', 'edition.select'},
     {'script-binding select/select-vid', 'video.select'},
     {'script-binding select/select-audio-device', 'audio.device'},

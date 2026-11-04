@@ -87,6 +87,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 媒体版本同样由`SubtitleSelector`／`TrackSelection`覆盖：原索引提交、current-edition实际标记、无标题回落、单一／空版本不可提交、列表变化／失败／媒体代次和提交时同步重新加载关闭。真实多Edition文件的切换与章节变化必须另用实际核心验证，不能用页面模拟或edition请求值代替成功证据。
 
+高级主／次字幕复用两组检查：全量sub列表不污染原始轨道、另一槽占用行及提示、点击／键盘／搜索不提交占用项、提交时重查另一槽、auto当前轨解析、只写目标槽、显隐与ASS覆盖保持、普通字幕过滤和占用反馈、回读失败及旧会话隔离。合成Bilibili Danmaku命名轨的核心检查仅验证槽与属性，不等于真实插件ASS／overlay渲染或网络加载验证。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell

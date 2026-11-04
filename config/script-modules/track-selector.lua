@@ -12,6 +12,10 @@ local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local profiles={
     subtitle={title='选择普通字幕',search='查找字幕',off='不显示普通字幕',fallback='字幕轨道 #',
         empty='没有普通字幕轨道',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕',failed='无法应用字幕，请重新选择。'},
+    primary={title='选择主字幕轨',search='查找字幕轨',off='不使用主字幕',fallback='字幕轨道 #',
+        empty='没有可用字幕轨',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕轨',failed='未能切换主字幕，请重试。'},
+    secondary={title='选择次字幕轨',search='查找字幕轨',off='不使用次字幕',fallback='字幕轨道 #',
+        empty='没有可用字幕轨',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕轨',failed='未能切换次字幕，请重试。'},
     audio={title='选择音轨',search='查找音轨',off='关闭音轨',fallback='音轨 #',
         empty='没有可用音轨',hint='此媒体没有可选择的音轨。',nomatch='没有匹配的音轨',failed='无法切换音轨，请重新选择。'},
     video={title='选择视频轨',search='查找视频轨',off='关闭视频画面',fallback='视频轨道 #',
@@ -72,6 +76,8 @@ local function normalize(tracks)
                 number_text=type(track.number_text)=='string' and track.number_text or tostring(id),
                 device_name=type(track.device_name)=='string' and track.device_name or '',
                 detail_title=type(track.detail_title)=='string' and track.detail_title or '',
+                blocked_reason=type(track.blocked_reason)=='string' and clean(track.blocked_reason) or '',
+                slot_label=type(track.slot_label)=='string' and clean(track.slot_label) or '',
                 lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
                 channels=positive(track['demux-channel-count']),rate=positive(track['demux-samplerate']),
                 width=positive(track['demux-w']),height=positive(track['demux-h']),fps=positive(track['demux-fps']),
@@ -160,7 +166,7 @@ local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
         local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
-            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title}, ' '):lower()
+            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label}, ' '):lower()
         if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
     end
     return result
@@ -217,7 +223,7 @@ local function caret(s) s.caret=true; s.blink=now() end
 local function focus_row(s,id)
     if id==nil then return end
     s.focus='row';s.focus_id=id; reset_tip(s)
-    if (s.kind=='audio' or s.kind=='video' or not s.profile.off) and id~=0 then s.tip_focus=id end
+    if (s.kind=='audio' or s.kind=='video' or s.kind=='primary' or s.kind=='secondary' or not s.profile.off) and id~=0 then s.tip_focus=id end
     if id~=0 then
         for index,track in ipairs(s.matches) do
             if track.id==id then
@@ -247,6 +253,9 @@ local function move_cursor(s, delta, select_text)
 end
 local function submit(s,id)
     reset_tip(s)
+    for _,track in ipairs(s.tracks) do
+        if track.id==id and track.blocked_reason~='' then s.error=track.blocked_reason;render();return end
+    end
     local ok,applied,err=pcall(s.submit,id)
     if active~=s then return end
     if ok and applied==true then M.close();return end
@@ -370,7 +379,9 @@ key=function(name, info)
     elseif name=='enter' then
         if s.focus=='close' then M.close()
         elseif s.focus=='row' then submit(s,s.focus_id)
-        elseif #s.matches>0 then submit(s,s.matches[1].id) end
+        elseif #s.matches>0 then
+            for _,track in ipairs(s.matches) do if track.blocked_reason=='' then submit(s,track.id);break end end
+        end
     elseif name=='up' then move_rows(s,-1)
     elseif name=='down' then move_rows(s,1)
     elseif name=='pageup' then move_rows(s,-math.max(1,s.capacity))
@@ -547,6 +558,7 @@ render=function()
         local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or single and 38 or 52)*scale,id=id,title=off and s.profile.off or label(track,s.kind)}
         if not off and s.kind=='audio' then r.details=audio_details(track) end
         if not off and s.kind=='video' then r.details=video_details(track) end
+        if not off and track.blocked_reason~='' then r.details={track.blocked_reason} end
         if s.kind=='device' then
             r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
             r.tip_title=track.detail_title~='' and clean(track.detail_title) or r.title
@@ -558,7 +570,7 @@ render=function()
         local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or id_width)
         if s.kind=='device' then width=r.w-50*scale end
         local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
-        add_text(out,title,tx,(off or single) and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or 'E5E5E5',
+        add_text(out,title,tx,(off or single) and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or (not off and track.blocked_reason~='' and '999999' or 'E5E5E5'),
             {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or single and 34 or 25)*scale},current,(off or single) and 4 or 7)
         if current then
             local cx,cy=r.x+19*scale,r.y+r.h/2
@@ -605,9 +617,15 @@ render=function()
             if has_language then column(meta_language(track),lang_width,false) end
             if has_codec then column(track.codec,codec_width,true) end
             local source=track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
-            local source_width=math.max(0,tx+width-sx)
+            local reason_width=track.slot_label~='' and measure(s,track.slot_label,meta_size*scale)+12*scale or 0
+            local source_width=math.max(0,tx+width-sx-reason_width)
             add_text(out,fitted(s,source,source_width,meta_size*scale),sx,r.y+36*scale,meta_size*scale,'AAAAAA',
                 {x=sx,y=r.y+26*scale,w=source_width,h=20*scale},false,4)
+            if reason_width>0 then
+                local reason_x=sx+math.min(source_width,measure(s,source,meta_size*scale))+12*scale
+                add_text(out,track.slot_label,reason_x,r.y+36*scale,meta_size*scale,'B3A587',
+                    {x=tx,y=r.y+26*scale,w=width,h=20*scale},false,4)
+            end
             end
             end
         end
@@ -655,6 +673,7 @@ function M.is_open() return active~=nil end
 function M.update(tracks,id,notice)
     local s=active;if not s then return false end
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
+    if s.kind=='primary' or s.kind=='secondary' then s.error='' end
     if not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end

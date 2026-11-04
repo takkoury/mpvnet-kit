@@ -39,6 +39,10 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 媒体版本由`track_selection/select-edition`复用单行面板，展示edition-list标题／编号，以current-edition标记实际当前版本，不以edition请求值代替。控制层持有原列表id/title顺序快照，提交前重读验证，变化时刷新并拒绝旧索引；提交写0基edition，同项重选不写no。少于两个版本不提供可提交行。设置edition可能触发start-file／end-file等重新加载事件，旧会话先失效；渲染层允许提交回调重入关闭，不重新激活旧面板。不承诺切换后播放位置不变。
 
+高级字幕由`track_selection/select-primary`／`select-secondary`复用双行面板，包含全部sub轨；普通subtitle继续过滤Bilibili Danmaku。主／次字幕当前值由sid／secondary-sid决定，auto时回落current-tracks/sub或sub2的id，不使用跨槽track.selected判断目标槽。高级列表复制轨道展示数据并附另一槽占用原因，不修改原始track-list；占用项可聚焦但不提交，控制层在提交时再次读取另一槽并防竞态误选，成功后校验目标槽回读。当前目标轨重选或0关闭仅作用于目标槽。
+
+两个槽及显隐变化刷新高级列表，普通列表保持原布局，仅增加被次槽占用时的明确失败反馈。次槽指向Bilibili Danmaku时提示可能影响弹幕；原生字幕隐藏时说明选轨不自动开启显示。选择器不写sub-visibility、secondary-sub-visibility、secondary-sub-ass-override或弹幕renderer，不把选轨配置接受当作已可见。此为用户确认的占用保护，替代原生select_track对另一槽selected项关闭目标槽的行为。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。

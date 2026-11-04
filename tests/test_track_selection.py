@@ -31,6 +31,10 @@ def _case(name):
 
 
 for _name in (
+    'advanced_slots_include_all_tracks_and_do_not_mutate_source',
+    'advanced_secondary_preserves_other_slot_visibility_and_danmaku_options',
+    'advanced_occupancy_is_checked_again_at_submit_and_observed',
+    'advanced_auto_slots_failures_and_stale_sessions_are_safe',
     'editions_use_actual_current_and_submit_original_index',
     'editions_reorder_or_title_change_rejects_old_selection',
     'editions_missing_single_failure_and_media_invalidation',

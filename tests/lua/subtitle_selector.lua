@@ -470,6 +470,22 @@ function edition_selection_has_numbers_but_no_off_or_single_choice()
     invoke('DOWN');text('ignored');assert(not data():find('ignored',1,true));invoke('ENTER');eq(#submitted,2);idle_resources()
     assert(open_editions({}));assert(data():find('没有可用的媒体版本',1,true));invoke('ESC');idle_resources()
 end
+function advanced_subtitle_blocked_rows_and_target_slot_layout()
+    local list={{id=1,title='简体中文',lang='zh',codec='subrip',external=false,slot_label='已用于主字幕',blocked_reason='该轨道已用于主字幕，不能同时用于次字幕。'},
+        {id=2,title='English',lang='en',codec='ass',external=false},{id=9,title='Bilibili Danmaku',codec='ass',external=true}}
+    local function show()
+        return M.open({kind='secondary',tracks=list,current_id=2,notice='次字幕槽正用于弹幕，改选可能影响弹幕。',submit=function(id) submitted[#submitted+1]=id;return true end})
+    end
+    assert(show());assert(data():find('选择次字幕轨',1,true));assert(data():find('已用于主字幕',1,true));assert(data():find('Bilibili Danmaku',1,true))
+    invoke('DOWN');invoke('DOWN');invoke('ENTER');eq(#submitted,0);assert(M.is_open());assert(data():find('不能同时用于次字幕',1,true))
+    invoke('Ctrl+f');text('简体');invoke('ENTER');eq(#submitted,0);assert(M.is_open(),'search must not submit only blocked match')
+    invoke('Ctrl+u');invoke('ENTER');eq(submitted[1],2);idle_resources()
+    assert(show());invoke('DOWN');invoke('ENTER');eq(submitted[2],0);idle_resources()
+    assert(show());local unblocked={{id=1,title='简体中文',lang='zh',codec='subrip',external=false}}
+    M.update(unblocked,0,'');invoke('ENTER');eq(submitted[3],1);idle_resources()
+    assert(M.open({kind='primary',tracks=unblocked,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    assert(data():find('选择主字幕轨',1,true));assert(data():find('不使用主字幕',1,true));invoke('ESC');idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus,kind)
@@ -516,4 +532,8 @@ function export_ass(output)
         {id=12,title='备用机位',codec='h264',external=false,['demux-w']=1920,['demux-h']=1080,['demux-fps']=25},
         {id=123,title='解说画面',codec='h264',external=true,['demux-w']=1280,['demux-h']=720,['demux-fps']=29.97}},false,'video')
     save('edition',1469,826,{{id=3,title='影院版',number_text='1'},{id=4,title='加长版',number_text='2'}},false,'edition')
+    save('secondary',1469,826,{
+        {id=1,title='简体中文',lang='zh',codec='subrip',external=false,slot_label='已用于主字幕',blocked_reason='该轨道已用于主字幕，不能同时用于次字幕。'},
+        {id=3,title='English',lang='en',codec='ass',external=false},
+        {id=9,title='Bilibili Danmaku',codec='ass',external=true}},false,'secondary')
 end

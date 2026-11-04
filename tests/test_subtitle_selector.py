@@ -62,6 +62,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_edition_numbers_and_nonselectable_zero_or_single_version(self):
         self.run_case('edition_selection_has_numbers_but_no_off_or_single_choice')
 
+    def test_advanced_subtitle_occupied_rows_do_not_submit_and_can_refresh(self):
+        self.run_case('advanced_subtitle_blocked_rows_and_target_slot_layout')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 
