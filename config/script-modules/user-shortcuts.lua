@@ -61,7 +61,7 @@ local additions = {
     {'chapter.previous', '播放与定位', '上一章节', 'add chapter -1'},
     {'chapter.next', '播放与定位', '下一章节', 'add chapter 1'},
     {'chapter.select', '播放与定位', '选择章节…', 'script-binding track_selection/select-chapter', true},
-    {'edition.select', '播放与定位', '选择媒体版本（Edition）…', 'script-binding select/select-edition', true},
+    {'edition.select', '播放与定位', '选择媒体版本（Edition）…', 'script-binding track_selection/select-edition', true},
     {'playback.seek-back-5', '播放与定位', '后退 5 秒', 'script-message-to playback_feedback seek -5'},
     {'playback.seek-forward-5', '播放与定位', '前进 5 秒', 'script-message-to playback_feedback seek 5'},
     {'playback.seek-back-30', '播放与定位', '后退 30 秒', 'script-message-to playback_feedback seek -30'},
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-edition', 'edition.select'},
     {'script-binding select/select-vid', 'video.select'},
     {'script-binding select/select-audio-device', 'audio.device'},
     {'script-binding select/select-chapter', 'chapter.select'},

@@ -422,3 +422,48 @@ function video_observers_only_refresh_active_video()
     properties['track-list']={};observers['track-list']();eq(#request.tracks,0)
     clear();bindings['select-subtitle']();clear();observers.vid();eq(#calls,0);eq(#writes,0)
 end
+
+local function edition_fixture()
+    properties['edition-list']={{id=0,title='影院版'},{id=7,title=''}}
+    properties['current-edition']=0;properties.edition='auto'
+    bindings['select-edition']()
+end
+function editions_use_actual_current_and_submit_original_index()
+    edition_fixture();eq(request.kind,'edition');eq(request.current_id,1);eq(request.tracks[2].id,2)
+    eq(request.tracks[2].title,'版本 8');eq(request.tracks[2].number_text,'8')
+    clear();assert(request.submit(2));eq(properties.edition,'1');eq(properties['current-edition'],0)
+    assert(request.submit(1));eq(properties.edition,'0')
+    assert(request.submit(1));eq(properties.edition,'0')
+    eq(properties.aid,3);eq(properties.sid,1);eq(properties.volume,83);eq(properties.mute,false)
+    for _,write in ipairs(writes) do eq(write[1],'edition') end
+end
+function editions_reorder_or_title_change_rejects_old_selection()
+    edition_fixture();clear();local first=properties['edition-list'][1];local second=properties['edition-list'][2]
+    properties['edition-list']={second,first};observers['edition-list']()
+    eq(request.tracks[1].title,'影院版')
+    eq(request.submit(1),false);eq(#writes,0);eq(request.tracks[1].title,'版本 8')
+    assert(request.submit(1));eq(properties.edition,'0');clear()
+    properties['edition-list'][1].title='Changed';eq(request.submit(1),false);eq(#writes,0)
+    assert(request.submit(1));eq(properties.edition,'0')
+end
+function editions_missing_single_failure_and_media_invalidation()
+    edition_fixture();clear();eq(request.submit(0),false);eq(#writes,0)
+    set_failure=true;eq(request.submit(2),false);assert(opened);set_failure=false
+    local old=request;events['start-file']();eq(old.submit(2),false);eq(#writes,0)
+    properties['edition-list']={{id=0}};bindings['select-edition']();eq(#request.tracks,1);eq(request.submit(1),false)
+    properties['edition-list']={};eq(request.submit(1),false);eq(#request.tracks,0)
+    properties['edition-list']={{id=0},{id=1}};bindings['select-edition']()
+    properties['current-edition']=1;observers['current-edition']();eq(request.current_id,2)
+    properties['current-edition']=-1;observers['current-edition']();eq(request.current_id,0)
+    old=request;bindings['select-audio']();clear();eq(old.submit(1),false);old.close();assert(opened)
+    observers['current-edition']();eq(#calls,0);assert(request.submit(5));eq(properties.aid,'5')
+end
+function editions_set_can_synchronously_reload_without_reviving_old_session()
+    edition_fixture();local old=request;local setter=mp.set_property
+    mp.set_property=function(name,value)
+        assert(name=='edition');events['start-file']();return setter(name,value)
+    end
+    assert(old.submit(2));eq(properties.edition,'1');assert(not opened)
+    bindings['select-edition']();local current=request;old.close();eq(old.submit(1),false);assert(opened)
+    mp.set_property=setter;assert(current.submit(1));eq(properties.edition,'0')
+end

@@ -59,6 +59,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_video_metadata_image_fallback_search_and_common_panel_geometry(self):
         self.run_case('video_metadata_image_fallback_search_and_shared_geometry')
 
+    def test_edition_numbers_and_nonselectable_zero_or_single_version(self):
+        self.run_case('edition_selection_has_numbers_but_no_off_or_single_choice')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 

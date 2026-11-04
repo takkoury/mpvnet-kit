@@ -31,6 +31,10 @@ def _case(name):
 
 
 for _name in (
+    'editions_use_actual_current_and_submit_original_index',
+    'editions_reorder_or_title_change_rejects_old_selection',
+    'editions_missing_single_failure_and_media_invalidation',
+    'editions_set_can_synchronously_reload_without_reviving_old_session',
     'video_selection_filters_and_retires_restore_revision',
     'video_failure_and_stale_callbacks_do_not_invalidate_restore',
     'video_observers_only_refresh_active_video',

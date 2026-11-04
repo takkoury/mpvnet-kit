@@ -85,6 +85,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 视频轨复用上述两组，覆盖尺寸／帧率搜索、图像与封面不伪造fps、无标题回落、与音轨共用外框、类型过滤、vid提交／关闭及失败／旧回调不递增恢复代次。`VideoRestore`执行实际audio-only回调，覆盖明确选轨后旧恢复记录失效、当前可见视频优先和纯音频空操作。
 
+媒体版本同样由`SubtitleSelector`／`TrackSelection`覆盖：原索引提交、current-edition实际标记、无标题回落、单一／空版本不可提交、列表变化／失败／媒体代次和提交时同步重新加载关闭。真实多Edition文件的切换与章节变化必须另用实际核心验证，不能用页面模拟或edition请求值代替成功证据。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell

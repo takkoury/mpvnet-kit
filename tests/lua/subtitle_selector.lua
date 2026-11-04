@@ -453,6 +453,23 @@ function video_metadata_image_fallback_search_and_shared_geometry()
     eq(data():match('([^\n]+)'),first_geometry,'video and audio panel extents must match')
     M.close();idle_resources()
 end
+function edition_selection_has_numbers_but_no_off_or_single_choice()
+    local list={{id=1,title='影院版',number_text='1'},{id=2,title='版本 8',number_text='8'}}
+    local function open_editions(items)
+        return M.open({kind='edition',tracks=items,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end})
+    end
+    assert(open_editions(list));assert(data():find('选择媒体版本',1,true));assert(data():find('2 个版本',1,true))
+    assert(not data():find('关闭视频画面',1,true));local positions={}
+    for line in data():gmatch('[^\n]+') do
+        if line:find('\\an6',1,true) then positions[#positions+1]=line:match('\\pos%(([%d%.%-]+),') end
+    end
+    eq(#positions,2);eq(positions[1],positions[2])
+    invoke('DOWN');invoke('ENTER');eq(submitted[1],1);idle_resources()
+    assert(open_editions(list));text('8');invoke('ENTER');eq(submitted[2],2)
+    assert(open_editions({list[1]}));assert(data():find('当前媒体只有一个版本',1,true))
+    invoke('DOWN');text('ignored');assert(not data():find('ignored',1,true));invoke('ENTER');eq(#submitted,2);idle_resources()
+    assert(open_editions({}));assert(data():find('没有可用的媒体版本',1,true));invoke('ESC');idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus,kind)
@@ -498,4 +515,5 @@ function export_ass(output)
         {id=3,title='主画面',codec='hevc',external=false,['demux-w']=3840,['demux-h']=2160,['demux-fps']=23.976},
         {id=12,title='备用机位',codec='h264',external=false,['demux-w']=1920,['demux-h']=1080,['demux-fps']=25},
         {id=123,title='解说画面',codec='h264',external=true,['demux-w']=1280,['demux-h']=720,['demux-fps']=29.97}},false,'video')
+    save('edition',1469,826,{{id=3,title='影院版',number_text='1'},{id=4,title='加长版',number_text='2'}},false,'edition')
 end

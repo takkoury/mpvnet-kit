@@ -3940,6 +3940,7 @@ end
 -- use_down: if true, uses _down instead of _up (for softrepeat buttons)
 local function bind_buttons(element_name, use_down)
     local function current_command(command)
+        if command == "script-binding select/select-edition" then return "script-binding track_selection/select-edition" end
         if command == "script-binding select/select-vid" then return "script-binding track_selection/select-video" end
         if command == "script-binding select/select-audio-device" then return "script-binding track_selection/select-device" end
         if command == "script-binding select/select-chapter" then return "script-binding track_selection/select-chapter" end

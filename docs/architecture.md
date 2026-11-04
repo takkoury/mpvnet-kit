@@ -37,6 +37,8 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 视频轨选择同样由`track_selection/select-video`复用面板：过滤video轨，保留真实ID、图像／封面与已知尺寸／帧率；选择当前轨或关闭项写vid=no，其他写目标vid。双行布局沿用音轨，元信息为分辨率／格式／帧率或图像类型／来源，未知值不补造，细节按需显示。成功提交后递增`user-data/mpvnet/video-selection-revision`；playback-feedback的audio-only恢复记录绑定这一代次，明确新选轨使旧记录失效，避免异步清理消息误删较新的恢复记录。audio-only以当前可见视频为优先，关闭后恢复其自身记录；显式选择器关闭后无有效记录时仍按既有auto恢复。此修正不改aid、音量、设备或长期配置。
 
+媒体版本由`track_selection/select-edition`复用单行面板，展示edition-list标题／编号，以current-edition标记实际当前版本，不以edition请求值代替。控制层持有原列表id/title顺序快照，提交前重读验证，变化时刷新并拒绝旧索引；提交写0基edition，同项重选不写no。少于两个版本不提供可提交行。设置edition可能触发start-file／end-file等重新加载事件，旧会话先失效；渲染层允许提交回调重入关闭，不重新激活旧面板。不承诺切换后播放位置不变。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。

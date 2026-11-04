@@ -5,12 +5,14 @@ local selector
 local media_generation, session_generation = 0, 0
 local active_kind
 local chapter_snapshot
+local edition_snapshot
 local device_ids, device_names, device_rows, next_device_id
 local kinds = {
     audio = {property='aid', type='audio', label='音轨'},
     video = {property='vid', type='video', label='视频轨'},
     subtitle = {property='sid', type='sub', label='字幕'},
     chapter = {property='chapter', label='章节'},
+    edition = {property='edition', label='媒体版本'},
     device = {property='audio-device', label='音频设备'},
 }
 
@@ -129,7 +131,37 @@ local function chapter_tracks()
     return tracks
 end
 
+local function edition_list()
+    local list=mp.get_property_native('edition-list',{})
+    local out={}
+    for index,item in ipairs(type(list)=='table' and list or {}) do
+        out[index]={edition_id=type(item)=='table' and item.id or nil,
+            title=type(item)=='table' and type(item.title)=='string' and item.title or ''}
+    end
+    return out
+end
+local function same_editions(left,right)
+    if not left or #left~=#right then return false end
+    for index,item in ipairs(left) do
+        if item.edition_id~=right[index].edition_id or item.title~=right[index].title then return false end
+    end
+    return true
+end
+local function edition_tracks()
+    local out={}
+    for index,item in ipairs(edition_snapshot or {}) do
+        local number=type(item.edition_id)=='number' and item.edition_id>=0 and item.edition_id<math.huge and
+            item.edition_id==math.floor(item.edition_id) and item.edition_id+1 or index
+        out[#out+1]={id=index,title=item.title:match('%S') and item.title or '版本 '..number,number_text=tostring(number)}
+    end
+    return out
+end
 local function current_id(kind)
+    if kind=='edition' then
+        local current=mp.get_property_native('current-edition')
+        return type(current)=='number' and current>=0 and current==math.floor(current) and
+            current<#(edition_snapshot or {}) and current+1 or 0
+    end
     local current = mp.get_property_native(kinds[kind].property)
     if kind == 'device' then
         for _, row in ipairs(device_rows or {}) do if row.device_name == current then return row.id end end
@@ -143,6 +175,7 @@ end
 local function tracks_for(kind)
     if kind == 'chapter' then return chapter_tracks() end
     if kind == 'device' then return output_devices() end
+    if kind == 'edition' then return edition_tracks() end
     local tracks = {}
     local source = mp.get_property_native('track-list', {})
     for _, track in ipairs(type(source) == 'table' and source or {}) do
@@ -160,6 +193,7 @@ local function close_selector()
     session_generation = session_generation + 1
     active_kind = nil
     chapter_snapshot = nil
+    edition_snapshot = nil
     device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
     if selector then selector.close() end
 end
@@ -193,6 +227,7 @@ local function select_tracks(kind)
     close_selector()
     active_kind = kind
     if kind == 'chapter' then chapter_snapshot = chapter_list() end
+    if kind == 'edition' then edition_snapshot = edition_list() end
     if kind == 'device' then device_ids, device_names, device_rows, next_device_id = {}, {}, {}, 0 end
     local session, media = session_generation, media_generation
     local definition = kinds[kind]
@@ -206,6 +241,20 @@ local function select_tracks(kind)
             if session ~= session_generation or media ~= media_generation or
                 active_kind ~= kind or not selector.is_open() then
                 return false, '选择已失效，请重新打开选择器。'
+            end
+            if kind=='edition' then
+                local latest=edition_list()
+                if not same_editions(edition_snapshot,latest) then
+                    edition_snapshot=latest;refresh_selector()
+                    return false,'版本列表已变化，请重新选择。'
+                end
+                local index=tonumber(id)
+                if #latest<2 or not index or index~=math.floor(index) or index<1 or not latest[index] then
+                    return false,'没有可切换的媒体版本。'
+                end
+                local ok=mp.set_property('edition',tostring(index-1))
+                if not ok then return false,'未能切换媒体版本，请重试。' end
+                return true
             end
             if kind == 'device' then
                 local target = device_names[tonumber(id)]
@@ -277,6 +326,7 @@ local function select_tracks(kind)
                 session_generation = session_generation + 1
                 active_kind = nil
                 chapter_snapshot = nil
+                edition_snapshot = nil
                 device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
             end
         end,
@@ -292,6 +342,7 @@ mp.add_key_binding(nil, 'select-audio', function() select_tracks('audio') end)
 mp.add_key_binding(nil, 'select-video', function() select_tracks('video') end)
 mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') end)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
+mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.observe_property('track-list', 'native', function()
     if active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' then refresh_selector() end
 end)
@@ -305,6 +356,11 @@ for _, property in ipairs({'chapter', 'chapter-list', 'duration'}) do
 end
 for _, property in ipairs({'audio-device', 'audio-device-list'}) do
     mp.observe_property(property, 'native', function() if active_kind == 'device' then refresh_selector() end end)
+end
+-- The displayed edition mapping stays a snapshot until a rejected submission
+-- explicitly refreshes it, just like chapter indices during a pending click.
+for _,property in ipairs({'current-edition','edition-list'}) do
+    mp.observe_property(property,'native',function() if active_kind=='edition' then refresh_selector() end end)
 end
 local function reset_for_media()
     media_generation = media_generation + 1

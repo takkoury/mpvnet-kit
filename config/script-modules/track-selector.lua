@@ -20,7 +20,12 @@ local profiles={
         empty='没有可用章节',hint='此媒体没有章节信息。',nomatch='没有匹配的章节',failed='未能跳转到该章节，请重试。'},
     device={title='选择音频设备',search='查找设备',fallback='音频设备 #',
         empty='没有可用音频设备',hint='设备列表为空，请稍后重试。',nomatch='没有匹配的设备',failed='未能切换设备，请重新选择。'},
+    edition={title='选择媒体版本',search='查找版本',fallback='版本 ',
+        empty='没有可用的媒体版本',hint='此媒体没有可切换的版本信息。',nomatch='没有匹配的版本',failed='未能切换媒体版本，请重试。'},
 }
+local function selectable(s)
+    return #s.tracks>0 and (s.kind~='edition' or #s.tracks>1)
+end
 
 local function native(name, default)
     local value = mp.get_property_native(name, default)
@@ -64,6 +69,7 @@ local function normalize(tracks)
             seen[id] = true
             out[#out + 1] = {id=id, title=type(track.title)=='string' and track.title or '',
                 time_text=type(track.time_text)=='string' and track.time_text or '',
+                number_text=type(track.number_text)=='string' and track.number_text or tostring(id),
                 device_name=type(track.device_name)=='string' and track.device_name or '',
                 detail_title=type(track.detail_title)=='string' and track.detail_title or '',
                 lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
@@ -154,7 +160,7 @@ local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
         local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
-            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.device_name,track.detail_title}, ' '):lower()
+            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title}, ' '):lower()
         if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
     end
     return result
@@ -246,10 +252,10 @@ local function submit(s,id)
     if ok and applied==true then M.close();return end
     s.error=clean(ok and err or s.profile.failed)
     if s.error=='' then s.error=s.profile.failed end
-    s.focus=#s.tracks>0 and 'search' or 'close';s.focus_id=nil;caret(s);render()
+    s.focus=selectable(s) and 'search' or 'close';s.focus_id=nil;caret(s);render()
 end
 local function move_rows(s,delta)
-    if #s.tracks==0 then return end
+    if not selectable(s) then return end
     if not s.profile.off and #s.matches==0 then return end
     local first=s.profile.off and 0 or 1
     local index
@@ -293,7 +299,7 @@ local function get_hit(s)
     if not hover or not s.layout then return nil end
     if not contains(s.layout.panel,x,y) then return 'outside' end
     if contains(s.layout.close,x,y) then return 'close' end
-    if contains(s.layout.search,x,y) and #s.tracks>0 then return 'search' end
+    if contains(s.layout.search,x,y) and selectable(s) then return 'search' end
     if contains(s.layout.thumb,x,y) then return 'thumb' end
     if contains(s.layout.scrollbar,x,y) then return 'scrollbar' end
     for _,row in ipairs(s.layout.rows) do if contains(row,x,y) then return row.id,row end end
@@ -359,7 +365,7 @@ end
 key=function(name, info)
     local s=active;if not s or info.canceled or not ({press=true,down=true,['repeat']=true})[info.event] then return end
     if name=='unicode' then
-        if #s.tracks>0 and type(info.key_text)=='string' then replace_selection(s,info.key_text) end
+        if selectable(s) and type(info.key_text)=='string' then replace_selection(s,info.key_text) end
     elseif name=='escape' then M.close()
     elseif name=='enter' then
         if s.focus=='close' then M.close()
@@ -375,30 +381,30 @@ key=function(name, info)
     elseif name=='selectright' then move_cursor(s,1,true)
     elseif name=='home' or name=='end' then
         if s.focus=='search' then s.cursor=name=='home' and 0 or #s.chars;s.anchor=nil;caret(s);render()
-        elseif #s.tracks>0 then
+        elseif selectable(s) then
             local first=s.profile.off and 0 or (s.matches[1] and s.matches[1].id)
             focus_row(s,name=='home' and first or (#s.matches>0 and s.matches[#s.matches].id or first));render()
         end
-    elseif name=='search' and #s.tracks>0 then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
-    elseif name=='all' and #s.tracks>0 then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
+    elseif name=='search' and selectable(s) then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
+    elseif name=='all' and selectable(s) then reset_tip(s);s.focus='search';s.focus_id=nil;s.anchor=0;s.cursor=#s.chars;caret(s);render()
     elseif name=='backspace' or name=='delete' then
-        if #s.tracks==0 then return end
+        if not selectable(s) then return end
         s.focus='search';local a,b=selection(s)
         if a==b then
             if name=='backspace' and s.cursor>0 then s.anchor=s.cursor-1
             elseif name=='delete' and s.cursor<#s.chars then s.anchor=s.cursor+1 end
         end
         replace_selection(s,'')
-    elseif name=='clear' and #s.tracks>0 then s.anchor=0;s.cursor=#s.chars;replace_selection(s,'')
-    elseif name=='paste' and #s.tracks>0 then replace_selection(s,mp.get_property('clipboard/text',''))
+    elseif name=='clear' and selectable(s) then s.anchor=0;s.cursor=#s.chars;replace_selection(s,'')
+    elseif name=='paste' and selectable(s) then replace_selection(s,mp.get_property('clipboard/text',''))
     elseif name=='tab' then
         reset_tip(s)
-        if s.focus=='search' and #s.tracks>0 then
+        if s.focus=='search' and selectable(s) then
             if not s.profile.off then
                 if s.matches[1] then focus_row(s,s.matches[1].id) else s.focus='close' end
             else focus_row(s,0) end
         elseif s.focus=='row' then s.focus='close';s.focus_id=nil
-        else s.focus=#s.tracks>0 and 'search' or 'close' end
+        else s.focus=selectable(s) and 'search' or 'close' end
         render()
     end
 end
@@ -469,14 +475,14 @@ render=function()
     local extra=notice~='' and 28 or 0
     local single=not s.profile.off
     local off_step,row_step=single and 0 or 34,single and 40 or 54
-    local minimum_height=122+(#s.tracks==0 and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
+    local minimum_height=122+(not selectable(s) and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
     if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
     local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/panel_width,math.max(1,h-12)/(minimum_height+extra)))
     local capacity=clamp(math.floor((h/scale-28-122-off_step-8-extra)/row_step),1,single and 8 or 5)
     s.capacity=capacity;s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity))
     local rows=math.min(capacity,#s.matches)
-    local listheight=#s.tracks==0 and 116 or off_step+(rows>0 and rows*row_step or 76)+8
+    local listheight=not selectable(s) and 116 or off_step+(rows>0 and rows*row_step or 76)+8
     local height=(34+54+extra+listheight+34)*scale
     local x,y=(w-panel_width*scale)/2,(h-height)/2
     local l={x=x,y=y,w=w,h=h,scale=scale,rows={}}
@@ -497,7 +503,7 @@ render=function()
         stroke(out,left,top,right,top,scale,'777777');stroke(out,right,top,right,bottom,scale,'777777')
         stroke(out,right,bottom,left,bottom,scale,'777777');stroke(out,left,bottom,left,top,scale,'777777')
     end
-    rect(out,l.search.x,l.search.y,l.search.w,l.search.h,s.focus=='search' and #s.tracks>0 and '1287BB' or '444444',4*scale)
+    rect(out,l.search.x,l.search.y,l.search.w,l.search.h,s.focus=='search' and selectable(s) and '1287BB' or '444444',4*scale)
     rect(out,l.search.x+scale,l.search.y+scale,l.search.w-2*scale,l.search.h-2*scale,'202020',3*scale)
     local mx,my=l.search.x+18*scale,l.search.y+l.search.h/2-1.75*scale
     local previous
@@ -506,7 +512,7 @@ render=function()
     local q=query(s);local prefix=table.concat(s.chars,'',1,s.cursor);local prefixwidth=measure(s,prefix,search_size*scale);local available=l.search.w-48*scale
     s.query_offset=clamp(s.query_offset,math.max(0,prefixwidth-available),prefixwidth)
     local clip={x=l.search.x+34*scale,y=l.search.y+4*scale,w=available+2*scale,h=l.search.h-8*scale}
-    if q=='' and s.focus~='search' then add_text(out,s.profile.search,l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,#s.tracks>0 and '999999' or '777777',clip,false,4)
+    if q=='' and s.focus~='search' then add_text(out,s.profile.search,l.search.x+36*scale,l.search.y+l.search.h/2,search_size*scale,selectable(s) and '999999' or '777777',clip,false,4)
     else
         local a,b=selection(s)
         if a~=b then
@@ -516,7 +522,7 @@ render=function()
         end
         add_text(out,q,l.search.x+36*scale-s.query_offset,l.search.y+l.search.h/2,search_size*scale,'E5E5E5',clip,false,4)
     end
-    if s.focus=='search' and #s.tracks>0 and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
+    if s.focus=='search' and selectable(s) and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
     if extra>0 then local message=fitted(s,notice,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
     -- Shared columns use the whole track set, so scrolling/filtering cannot
     -- shift separators. Missing fields leave their column empty.
@@ -529,7 +535,7 @@ render=function()
         local lang=s.kind=='audio' and language(track) or meta_language(track)
         if lang~='' then has_language=true;lang_width=math.max(lang_width,measure(s,lang,meta_size*scale)) end
         if track.codec~='' then has_codec=true;codec_width=math.max(codec_width,measure(s,track.codec,meta_size*scale)) end
-        id_width=math.max(id_width,measure(s,single and track.time_text or '#'..track.id,meta_size*scale))
+        id_width=math.max(id_width,measure(s,s.kind=='edition' and track.number_text or single and track.time_text or '#'..track.id,meta_size*scale))
         if s.kind=='audio' and track.channels then
             channel_width=math.max(channel_width,measure(s,string.format('%g 声道',track.channels),meta_size*scale))
         end
@@ -561,7 +567,7 @@ render=function()
         end
         if not off then
             if single then
-                if s.kind=='chapter' then add_text(out,track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
+                if s.kind=='chapter' or s.kind=='edition' then add_text(out,s.kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if s.kind=='audio' or s.kind=='video' then
@@ -606,8 +612,9 @@ render=function()
             end
         end
     end
-    if #s.tracks==0 then
+    if not selectable(s) then
         local title,hint=s.profile.empty,s.profile.hint
+        if s.kind=='edition' and #s.tracks==1 then title='当前媒体只有一个版本';hint=fitted(s,label(s.tracks[1],s.kind),(panel_width-40)*scale,meta_size*scale) end
         add_text(out,title,x+(panel_width*scale-measure(s,title,title_size*scale))/2,listtop+30*scale,title_size*scale,'DDDDDD')
         add_text(out,hint,x+(panel_width*scale-measure(s,hint,meta_size*scale))/2,listtop+60*scale,meta_size*scale,'AAAAAA')
     else
@@ -622,8 +629,8 @@ render=function()
         end
     end
     local footer=y+height-34*scale;rect(out,x+1,footer,panel_width*scale-2,scale,'2C2C2C')
-    add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or ' 条')
+    add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     if s.tip_focus then
         for _,r in ipairs(l.rows) do
@@ -648,7 +655,7 @@ function M.is_open() return active~=nil end
 function M.update(tracks,id,notice)
     local s=active;if not s then return false end
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
-    if #s.tracks==0 then s.focus='close';s.focus_id=nil
+    if not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
         if not valid then s.focus='search';s.focus_id=nil end
@@ -684,11 +691,11 @@ function M.open(options)
     if active and active.kind~=kind then M.close('switch-kind') end
     if active then
         active.submit=options.submit;active.close=options.close
-        M.update(options.tracks,options.current_id,options.notice);active.focus=#active.tracks>0 and 'search' or 'close';caret(active);render();return true
+        M.update(options.tracks,options.current_id,options.notice);active.focus=selectable(active) and 'search' or 'close';caret(active);render();return true
     end
     local s={kind=kind,profile=profiles[kind],tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
         chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
-    s.focus=#s.tracks>0 and 'search' or 'close';active=s
+    s.focus=selectable(s) and 'search' or 'close';active=s
     status('opening')
     local ok,failure=pcall(function()
         for _,item in ipairs({{'input-ime',true},{'cursor-autohide','no'},{'window-dragging',false}}) do

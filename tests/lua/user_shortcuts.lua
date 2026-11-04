@@ -224,6 +224,7 @@ function native_catalog_coverage()
         end
     end
     local aliases={
+        ['script-binding select/select-edition']='edition.select',
         ['script-binding select/select-vid']='video.select',
         ['script-binding select/select-audio-device']='audio.device',
         ['script-binding select/select-chapter']='chapter.select',
@@ -241,6 +242,7 @@ function native_catalog_coverage()
     eq(catalog.by_command['script-binding select/select-chapter'].command,'script-binding track_selection/select-chapter')
     eq(catalog.by_command['script-binding select/select-audio-device'].command,'script-binding track_selection/select-device')
     eq(catalog.by_command['script-binding select/select-vid'].command,'script-binding track_selection/select-video')
+    eq(catalog.by_command['script-binding select/select-edition'].command,'script-binding track_selection/select-edition')
     assert(catalog.by_command['multiply speed 2.0'].id~='playback.speed-up')
     assert(catalog.by_command['async screenshot'].id~='capture.screenshot')
     assert(catalog.by_command['script-message-to mpvnet open-clipboard'].id~='tools.clipboard-url')
