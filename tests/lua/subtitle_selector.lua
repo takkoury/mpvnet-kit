@@ -427,6 +427,20 @@ function video_metadata_image_fallback_search_and_shared_geometry()
     assert(data():find('3840×2160',1,true));assert(data():find('23.976 fps',1,true))
     assert(data():find('视频轨道 #12',1,true));assert(data():find('封面图',1,true))
     assert(not data():find('1000 fps',1,true) and not data():find('0×0',1,true))
+    local separators={}
+    for line in data():gmatch('[^\n]+') do
+        if line:find('\\1c&H555555&',1,true) then
+            local x=line:match('}m ([%d%.%-]+) ');separators[#separators+1]=tonumber(x)
+        end
+    end
+    eq(#separators,12)
+    for row=0,3 do
+        local offset=row*3
+        eq(separators[offset+2]-separators[offset+1],separators[offset+3]-separators[offset+2],'video interior columns differ')
+        for col=1,3 do eq(separators[offset+col],separators[col],'video divider row alignment') end
+    end
+    eq(text_point('hevc'),(separators[1]+1+separators[2])/2)
+    eq(text_point('23.976 fps'),(separators[2]+1+separators[3])/2)
     local snapshot=data();local first_geometry=snapshot:match('([^\n]+)')
     invoke('DOWN');invoke('DOWN');tick(.6);assert(data():find('码率  18000 kbps',1,true))
     invoke('Ctrl+f');text('1080');invoke('ENTER');eq(submitted[1],12);idle_resources()

@@ -573,7 +573,9 @@ render=function()
                     math.min(channel_width,48*scale),72*scale}
                 local values={language(track),track.codec,track.channels and string.format('%g 声道',track.channels) or '',source(track)}
                 if s.kind=='video' then
-                    cells={80*scale,48*scale,68*scale,52*scale}
+                    -- Interior columns share a width so the two spaces bounded
+                    -- by dividers match, without stretching the entire group.
+                    cells={80*scale,68*scale,68*scale,52*scale}
                     values={resolution(track),track.codec,framerate(track),source(track)}
                 end
                 local left=tx
