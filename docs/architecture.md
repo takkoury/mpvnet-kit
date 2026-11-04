@@ -35,6 +35,8 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 面板发布`user-data/mpvnet/track-selector/open`及无搜索内容的status诊断（类型／阶段／尺寸）。ModernZ只在此期间暂停自己的鼠标section与绘制，后续mouse／resize事件不能重新抢输入；关闭后重建原显示与输入区域，不改visibility偏好。`audio.select`稳定ID及旧原生音轨命令的快捷键目录映射保留；ModernZ识别旧精确音轨命令并转到新入口，不改任意用户命令。控制台直接调用原生select或屏幕内原生总菜单仍属M2-F入口收口，不全局劫持console。真实输入法组合、宿主拖窗、鼠标焦点及跨DPI仍需用户试用，mock与headless输入检查分别留证。
 
+视频轨选择同样由`track_selection/select-video`复用面板：过滤video轨，保留真实ID、图像／封面与已知尺寸／帧率；选择当前轨或关闭项写vid=no，其他写目标vid。双行布局沿用音轨，元信息为分辨率／格式／帧率或图像类型／来源，未知值不补造，细节按需显示。成功提交后递增`user-data/mpvnet/video-selection-revision`；playback-feedback的audio-only恢复记录绑定这一代次，明确新选轨使旧记录失效，避免异步清理消息误删较新的恢复记录。audio-only以当前可见视频为优先，关闭后恢复其自身记录；显式选择器关闭后无有效记录时仍按既有auto恢复。此修正不改aid、音量、设备或长期配置。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。

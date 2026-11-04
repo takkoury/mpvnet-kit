@@ -121,7 +121,7 @@ local additions = {
     {'video.enhancement-deband', '画面', '画面增强：去色带（Deband）', 'script-message-to enhancement_controls set-preset SMOOTH'},
     {'video.enhancement-anime-light', '画面', '画面增强：动画增强·轻（Anime4K-L）', 'script-message-to enhancement_controls set-preset ANIME_LIGHT'},
     {'video.enhancement-anime-strong', '画面', '画面增强：动画增强·强（Anime4K-S）', 'script-message-to enhancement_controls set-preset ANIME_STRONG'},
-    {'video.select', '画面', '选择视频轨…', 'script-binding select/select-vid', true},
+    {'video.select', '画面', '选择视频轨…', 'script-binding track_selection/select-video', true},
     {'video.aspect', '画面', '切换宽高比', 'cycle-values video-aspect-override 16:9 4:3 2.35:1 0 -1'},
     {'video.rotate', '画面', '旋转画面', 'cycle-values video-rotate 90 180 270 0'},
     {'video.deinterlace', '画面', '开关去隔行', 'cycle deinterlace'},
@@ -208,6 +208,7 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-binding select/select-vid', 'video.select'},
     {'script-binding select/select-audio-device', 'audio.device'},
     {'script-binding select/select-chapter', 'chapter.select'},
     {'script-binding select/select-aid', 'audio.select'},

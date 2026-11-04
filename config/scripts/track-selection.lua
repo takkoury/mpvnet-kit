@@ -8,6 +8,7 @@ local chapter_snapshot
 local device_ids, device_names, device_rows, next_device_id
 local kinds = {
     audio = {property='aid', type='audio', label='音轨'},
+    video = {property='vid', type='video', label='视频轨'},
     subtitle = {property='sid', type='sub', label='字幕'},
     chapter = {property='chapter', label='章节'},
     device = {property='audio-device', label='音频设备'},
@@ -261,6 +262,14 @@ local function select_tracks(kind)
             end
             local ok = mp.set_property(definition.property, target)
             if not ok then return false, '未能切换' .. definition.label .. '，请重试。' end
+            if kind == 'video' then
+                -- Explicit selection retires audio-only's earlier restore record.
+                -- A shared revision avoids a delayed message clearing a newer save.
+                local property='user-data/mpvnet/video-selection-revision'
+                local revision=mp.get_property_native(property,0)
+                if type(revision)~='number' or revision~=revision or revision<0 or revision>=math.huge then revision=0 end
+                mp.set_property_native(property,revision+1)
+            end
             return true
         end,
         close=function()
@@ -280,13 +289,15 @@ end
 
 mp.add_key_binding(nil, 'select-subtitle', function() select_tracks('subtitle') end)
 mp.add_key_binding(nil, 'select-audio', function() select_tracks('audio') end)
+mp.add_key_binding(nil, 'select-video', function() select_tracks('video') end)
 mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') end)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.observe_property('track-list', 'native', function()
-    if active_kind == 'audio' or active_kind == 'subtitle' then refresh_selector() end
+    if active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' then refresh_selector() end
 end)
 mp.observe_property('aid', 'native', function() if active_kind == 'audio' then refresh_selector() end end)
 mp.observe_property('sid', 'native', function() if active_kind == 'subtitle' then refresh_selector() end end)
+mp.observe_property('vid', 'native', function() if active_kind == 'video' then refresh_selector() end end)
 -- Refresh presentation/current markers without accepting a new index mapping.
 -- A changed chapter list is acknowledged only by the rejected submit above.
 for _, property in ipairs({'chapter', 'chapter-list', 'duration'}) do

@@ -56,6 +56,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_device_single_rows_missing_notice_identifier_search_and_details(self):
         self.run_case('device_rows_notice_identifier_search_and_tooltip')
 
+    def test_video_metadata_image_fallback_search_and_common_panel_geometry(self):
+        self.run_case('video_metadata_image_fallback_search_and_shared_geometry')
+
     def test_small_osd_empty_error_no_match_and_language_fallback_names(self):
         self.run_case('fitting_empty_no_match_error_and_language_names')
 

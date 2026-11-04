@@ -19,6 +19,9 @@ local set_failure, load_failure, open_failure, readback_override, notify_device_
 local loads = 0
 local mp = {
     get_property_native=get,
+    set_property_native=function(name,value)
+        assert(name=='user-data/mpvnet/video-selection-revision');properties[name]=value;return true
+    end,
     set_property=function(name, value)
         if set_failure then return nil,'rejected' end
         writes[#writes+1]={name,value};properties[name]=readback_override or value
@@ -390,4 +393,32 @@ function device_observers_media_and_cross_kind_retire_callbacks()
     observers['audio-device-list']();observers['audio-device']();eq(#calls,0)
     eq(old.submit(1),false);old.close();assert(opened);eq(request.kind,'audio');eq(#writes,0)
     assert(request.submit(5));eq(properties.aid,'5')
+end
+
+function video_selection_filters_and_retires_restore_revision()
+    properties.vid=4
+    properties['track-list'][#properties['track-list']+1]={type='video',id=8,title='Camera B',image=false,['demux-w']=1280}
+    properties['track-list'][#properties['track-list']+1]={type='video',id=9,title='Cover',image=true,albumart=true}
+    bindings['select-video']();eq(request.kind,'video');eq(#request.tracks,3)
+    eq(request.current_id,4);eq(request.tracks[2]['demux-w'],1280)
+    clear();assert(request.submit(8));eq(properties.vid,'8');eq(properties['user-data/mpvnet/video-selection-revision'],1)
+    assert(request.submit(8));eq(properties.vid,'no');eq(properties['user-data/mpvnet/video-selection-revision'],2)
+    assert(request.submit(0));eq(properties.vid,'no');eq(properties['user-data/mpvnet/video-selection-revision'],3)
+    eq(properties.aid,3);eq(properties.sid,1);eq(properties['audio-device'],'auto');eq(properties.volume,83);eq(properties.mute,false)
+    for _,write in ipairs(writes) do eq(write[1],'vid') end
+end
+function video_failure_and_stale_callbacks_do_not_invalidate_restore()
+    properties.vid=4;bindings['select-video']();clear()
+    eq(request.submit(3),false);eq(#writes,0);eq(properties['user-data/mpvnet/video-selection-revision'],nil)
+    set_failure=true;eq(request.submit(4),false);eq(properties['user-data/mpvnet/video-selection-revision'],nil)
+    set_failure=false;local old=request;bindings['select-audio']();clear();eq(old.submit(4),false);eq(#writes,0)
+    old.close();assert(opened);assert(request.submit(5));eq(properties.aid,'5');eq(properties.vid,4)
+    bindings['select-video']();old=request;events['start-file']();eq(old.submit(0),false)
+end
+function video_observers_only_refresh_active_video()
+    properties.vid=4;bindings['select-video']();clear()
+    observers.aid();observers.sid();eq(#calls,0)
+    properties.vid='no';observers.vid();eq(#calls,1);eq(request.current_id,'no')
+    properties['track-list']={};observers['track-list']();eq(#request.tracks,0)
+    clear();bindings['select-subtitle']();clear();observers.vid();eq(#calls,0);eq(#writes,0)
 end

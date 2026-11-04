@@ -14,6 +14,8 @@ local profiles={
         empty='没有普通字幕轨道',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕',failed='无法应用字幕，请重新选择。'},
     audio={title='选择音轨',search='查找音轨',off='关闭音轨',fallback='音轨 #',
         empty='没有可用音轨',hint='此媒体没有可选择的音轨。',nomatch='没有匹配的音轨',failed='无法切换音轨，请重新选择。'},
+    video={title='选择视频轨',search='查找视频轨',off='关闭视频画面',fallback='视频轨道 #',
+        empty='没有可用视频轨',hint='此媒体没有可选择的视频轨。',nomatch='没有匹配的视频轨',failed='未能切换视频轨，请重试。'},
     chapter={title='选择章节',search='查找章节',fallback='章节 ',
         empty='没有可用章节',hint='此媒体没有章节信息。',nomatch='没有匹配的章节',failed='未能跳转到该章节，请重试。'},
     device={title='选择音频设备',search='查找设备',fallback='音频设备 #',
@@ -66,6 +68,8 @@ local function normalize(tracks)
                 detail_title=type(track.detail_title)=='string' and track.detail_title or '',
                 lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
                 channels=positive(track['demux-channel-count']),rate=positive(track['demux-samplerate']),
+                width=positive(track['demux-w']),height=positive(track['demux-h']),fps=positive(track['demux-fps']),
+                image=track.image==true,albumart=track.albumart==true,
                 bitrate=positive(track['demux-bitrate']) or positive(track['hls-bitrate']),
                 profile=type(track['codec-profile'])=='string' and track['codec-profile'] or '',
                 default=track.default==true,forced=track.forced==true,dependent=track.dependent==true,
@@ -79,7 +83,7 @@ local language_names={zh='中文',chi='中文',zho='中文',['zh-hans']='简体�
 local function language(track) return language_names[track.lang:lower():gsub('_','-')] or clean(track.lang) end
 local function label(track,kind)
     if track.title~='' then return clean(track.title) end
-    if track.lang~='' then return language(track) end
+    if track.lang~='' and kind~='video' then return language(track) end
     return profiles[kind or 'subtitle'].fallback .. tostring(track.id)
 end
 local function source(track)
@@ -100,6 +104,31 @@ local function audio_details(track)
     end
     add('标记',table.concat(flags,' / '))
     return fields
+end
+local function resolution(track)
+    if track.width and track.height then return string.format('%g×%g',track.width,track.height) end
+    return '—'
+end
+local function framerate(track)
+    if track.image or track.albumart then return track.albumart and '封面图' or '静态图像' end
+    if track.fps then
+        local value=string.format('%.4f',track.fps):gsub('0+$',''):gsub('%.$','')
+        return value..' fps'
+    end
+    return '—'
+end
+local function video_details(track)
+    local fields={}
+    local function add(name,value) if value and value~='' and value~='—' then fields[#fields+1]=name..'  '..value end end
+    add('分辨率',resolution(track));add('格式',track.codec)
+    add((track.image or track.albumart) and '类型' or '帧率',framerate(track))
+    add('来源',source(track));add('码率',track.bitrate and string.format('%.0f kbps',track.bitrate/1000));add('语言',language(track))
+    local flags={}
+    for _,item in ipairs({{'default','默认'},{'forced','强制'},{'dependent','依赖轨道'},
+        {'visual_impaired','视障描述'},{'hearing_impaired','听障辅助'}}) do
+        if track[item[1]] then flags[#flags+1]=item[2] end
+    end
+    add('标记',table.concat(flags,' / '));return fields
 end
 local function dimensions()
     local w, h = mp.get_osd_size()
@@ -125,7 +154,7 @@ local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
         local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
-            s.kind=='audio' and table.concat(audio_details(track),' ') or '',track.time_text,track.device_name,track.detail_title}, ' '):lower()
+            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.device_name,track.detail_title}, ' '):lower()
         if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
     end
     return result
@@ -182,7 +211,7 @@ local function caret(s) s.caret=true; s.blink=now() end
 local function focus_row(s,id)
     if id==nil then return end
     s.focus='row';s.focus_id=id; reset_tip(s)
-    if (s.kind=='audio' or not s.profile.off) and id~=0 then s.tip_focus=id end
+    if (s.kind=='audio' or s.kind=='video' or not s.profile.off) and id~=0 then s.tip_focus=id end
     if id~=0 then
         for index,track in ipairs(s.matches) do
             if track.id==id then
@@ -511,6 +540,7 @@ render=function()
         local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
         local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or single and 38 or 52)*scale,id=id,title=off and s.profile.off or label(track,s.kind)}
         if not off and s.kind=='audio' then r.details=audio_details(track) end
+        if not off and s.kind=='video' then r.details=video_details(track) end
         if s.kind=='device' then
             r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
             r.tip_title=track.detail_title~='' and clean(track.detail_title) or r.title
@@ -534,7 +564,7 @@ render=function()
                 if s.kind=='chapter' then add_text(out,track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
-            if s.kind=='audio' then
+            if s.kind=='audio' or s.kind=='video' then
                 -- Compact, bounded columns shared across the complete track
                 -- set. Center only interior cells between dividers, matching
                 -- the subtitle codec column; keep the whole group left-anchored.
@@ -542,6 +572,10 @@ render=function()
                 local cells={math.min(lang_width,56*scale),math.min(codec_width,64*scale),
                     math.min(channel_width,48*scale),72*scale}
                 local values={language(track),track.codec,track.channels and string.format('%g 声道',track.channels) or '',source(track)}
+                if s.kind=='video' then
+                    cells={80*scale,48*scale,68*scale,52*scale}
+                    values={resolution(track),track.codec,framerate(track),source(track)}
+                end
                 local left=tx
                 for i,value in ipairs(values) do
                     local cell=cells[i]

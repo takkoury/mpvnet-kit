@@ -31,6 +31,9 @@ def _case(name):
 
 
 for _name in (
+    'video_selection_filters_and_retires_restore_revision',
+    'video_failure_and_stale_callbacks_do_not_invalidate_restore',
+    'video_observers_only_refresh_active_video',
     'device_auto_repeat_and_identity_submission',
     'device_reorder_remove_reinsert_never_reuses_identity',
     'device_empty_invalid_names_and_missing_selected_notice',

@@ -415,6 +415,27 @@ function device_rows_notice_identifier_search_and_tooltip()
     assert(M.open({kind='device',tracks={},current_id=0,submit=function() error('no device cannot submit') end}))
     assert(data():find('没有可用音频设备',1,true));invoke('ENTER');idle_resources()
 end
+function video_metadata_image_fallback_search_and_shared_geometry()
+    local list={{id=1,title='主画面',codec='hevc',external=false,['demux-w']=3840,['demux-h']=2160,['demux-fps']=23.976,['demux-bitrate']=18000000},
+        {id=12,title='',codec='h264',lang='en',external=true,['demux-w']=1920,['demux-h']=1080,['demux-fps']=25},
+        {id=123,title='封面',codec='mjpeg',image=true,albumart=true,['demux-w']=1200,['demux-h']=1200,['demux-fps']=1000},
+        {id=321,title='Missing',codec='',external=false,['demux-w']=0,['demux-h']=0,['demux-fps']=0/0}}
+    local function video_open()
+        return M.open({kind='video',tracks=list,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end})
+    end
+    assert(video_open());assert(data():find('选择视频轨',1,true));assert(data():find('关闭视频画面',1,true))
+    assert(data():find('3840×2160',1,true));assert(data():find('23.976 fps',1,true))
+    assert(data():find('视频轨道 #12',1,true));assert(data():find('封面图',1,true))
+    assert(not data():find('1000 fps',1,true) and not data():find('0×0',1,true))
+    local snapshot=data();local first_geometry=snapshot:match('([^\n]+)')
+    invoke('DOWN');invoke('DOWN');tick(.6);assert(data():find('码率  18000 kbps',1,true))
+    invoke('Ctrl+f');text('1080');invoke('ENTER');eq(submitted[1],12);idle_resources()
+    assert(video_open());invoke('DOWN');invoke('ENTER');eq(submitted[2],0)
+    assert(video_open());invoke('ENTER');eq(submitted[3],1)
+    assert(M.open({kind='audio',tracks=list,current_id=1,submit=function() return true end}))
+    eq(data():match('([^\n]+)'),first_geometry,'video and audio panel extents must match')
+    M.close();idle_resources()
+end
 function export_ass(output)
     local list=tracks(12)
     local function save(name,w,h,items,keyboard_focus,kind)
@@ -456,4 +477,8 @@ function export_ass(output)
         {id=4,title='扬声器（Realtek(R) Audio）',device_name='wasapi/{demo-speakers}'},
         {id=5,title='耳机（USB Audio Device）',device_name='wasapi/{demo-headset}'},
         {id=6,title='显示器音频（NVIDIA High Definition Audio）',device_name='wasapi/{demo-display}'}},false,'device')
+    save('video',1469,826,{
+        {id=3,title='主画面',codec='hevc',external=false,['demux-w']=3840,['demux-h']=2160,['demux-fps']=23.976},
+        {id=12,title='备用机位',codec='h264',external=false,['demux-w']=1920,['demux-h']=1080,['demux-fps']=25},
+        {id=123,title='解说画面',codec='h264',external=true,['demux-w']=1280,['demux-h']=720,['demux-fps']=29.97}},false,'video')
 end

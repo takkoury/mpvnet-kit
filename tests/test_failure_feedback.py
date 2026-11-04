@@ -62,6 +62,50 @@ local mp = {
                 self.check_event("{reason='%s'}" % reason, None)
 
 
+class VideoRestore(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = load_lua51()
+        cls.source = fragment(PLAYBACK.read_text(encoding='utf-8'),
+                              'mp.add_key_binding(nil, "audio-only", function()',
+                              'mp.register_script_message("seek",')
+
+    def test_restore_tracks_follow_explicit_selection_and_current_visible_video(self):
+        prelude = '''
+local saved_video, saved_video_revision, callback
+local props={vid=1,revision=0,tracks={{type='video',id=1},{type='video',id=2}}}
+local commands={}
+local mp={
+ add_key_binding=function(_,name,fn) assert(name=='audio-only');callback=fn end,
+ get_property_native=function(name,default)
+  if name=='vid' then return props.vid end
+  if name=='user-data/mpvnet/video-selection-revision' then return props.revision end
+  if name=='current-tracks/video' then return props.vid~='no' and props.vid~=false and {id=props.vid} or nil end
+  if name=='track-list' then return props.tracks end
+  return default
+ end,
+ commandv=function(prefix,verb,key,value)
+  assert(prefix=='no-osd' and verb=='set' and key=='vid')
+  commands[#commands+1]=value;props.vid=value
+ end,
+}
+'''
+        cases = '''
+callback();assert(props.vid=='no');callback();assert(props.vid==1)
+callback();assert(props.vid=='no')
+props.vid=2;props.revision=1 -- explicit picker selection invalidates old restore
+callback();assert(props.vid=='no');callback();assert(props.vid==2)
+callback();assert(props.vid=='no')
+props.revision=2 -- explicit picker closes video, not audio-only's saved request
+callback();assert(props.vid=='auto')
+props.vid=1;callback();props.vid=2 -- external native selection also takes priority
+callback();assert(props.vid=='no');callback();assert(props.vid==2)
+props.vid='no';saved_video=nil;props.tracks={};local count=#commands
+callback();assert(#commands==count)
+'''
+        self.lua.execute(prelude + self.source + cases, 'playback/video-restore')
+
+
 class FailureFeedback(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -134,6 +134,7 @@
     "stop"
   ],
   "replacements": {
+    "script-binding select/select-vid": "script-binding track_selection/select-video",
     "script-binding select/select-audio-device": "script-binding track_selection/select-device",
     "script-binding select/select-chapter": "script-binding track_selection/select-chapter",
     "script-binding select/select-aid": "script-binding track_selection/select-audio",

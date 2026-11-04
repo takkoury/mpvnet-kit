@@ -13,6 +13,7 @@ local seek_pending = false
 local frame_pending = false
 local reload_pending = false
 local saved_video
+local saved_video_revision
 local mark
 local reload_marks
 local window_scale_timer
@@ -349,7 +350,14 @@ mp.add_key_binding(nil, "revert-seek", function()
     mp.commandv("no-osd", "revert-seek")
 end)
 mp.add_key_binding(nil, "audio-only", function()
-    if saved_video ~= nil then
+    local revision=mp.get_property_native('user-data/mpvnet/video-selection-revision',0)
+    if saved_video_revision ~= revision then saved_video=nil end
+    local vid = mp.get_property_native("vid")
+    local has_video = vid ~= nil and vid ~= "no" and vid ~= false and mp.get_property_native("current-tracks/video")
+    if has_video then
+        saved_video, saved_video_revision = vid, revision
+        mp.commandv("no-osd", "set", "vid", "no")
+    elseif saved_video ~= nil then
         local restore = saved_video
         saved_video = nil
         for _, track in ipairs(mp.get_property_native("track-list", {})) do
@@ -359,11 +367,7 @@ mp.add_key_binding(nil, "audio-only", function()
             end
         end
     else
-        local vid = mp.get_property_native("vid")
-        if vid ~= nil and vid ~= "no" and vid ~= false and mp.get_property_native("current-tracks/video") then
-            saved_video = vid
-            mp.commandv("no-osd", "set", "vid", "no")
-        elseif vid == "no" or vid == false then
+        if vid == "no" or vid == false then
             -- A new file has no saved selection; an explicit Restore uses auto.
             for _, track in ipairs(mp.get_property_native("track-list", {})) do
                 if track.type == "video" then

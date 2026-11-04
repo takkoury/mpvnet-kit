@@ -83,6 +83,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 设备选择也由`SubtitleSelector`／`TrackSelection`覆盖：单行／无关闭项、完整标识搜索与详情、缺失已选提示、会话内稳定name映射、重排／热移除／重插、同名与后缀碰撞、setter及回读失败、旧回调隔离和无关属性保持。真实核心的无声auto提交检查只验证配置接口，不代表物理输出设备、热插拔或实际发声验收。
 
+视频轨复用上述两组，覆盖尺寸／帧率搜索、图像与封面不伪造fps、无标题回落、与音轨共用外框、类型过滤、vid提交／关闭及失败／旧回调不递增恢复代次。`VideoRestore`执行实际audio-only回调，覆盖明确选轨后旧恢复记录失效、当前可见视频优先和纯音频空操作。
+
 需要运行四组时，在依赖和各目录均准备好后执行：
 
 ```powershell
