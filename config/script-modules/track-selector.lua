@@ -566,8 +566,8 @@ render=function()
             local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if s.kind=='audio' or s.kind=='video' then
                 -- Compact, bounded columns shared across the complete track
-                -- set. Center only interior cells between dividers, matching
-                -- the subtitle codec column; keep the whole group left-anchored.
+                -- set. Audio centers interior cells; video centers each compact
+                -- cell. Neither layout distributes the group across the row.
                 local gap,line=8*scale,scale
                 local cells={math.min(lang_width,56*scale),math.min(codec_width,64*scale),
                     math.min(channel_width,48*scale),72*scale}
@@ -575,13 +575,13 @@ render=function()
                 if s.kind=='video' then
                     -- Interior columns share a width so the two spaces bounded
                     -- by dividers match, without stretching the entire group.
-                    cells={80*scale,68*scale,68*scale,52*scale}
+                    cells={80*scale,56*scale,56*scale,52*scale}
                     values={resolution(track),track.codec,framerate(track),source(track)}
                 end
                 local left=tx
                 for i,value in ipairs(values) do
                     local cell=cells[i]
-                    local centered=i>1 and i<#values
+                    local centered=s.kind=='video' or (i>1 and i<#values)
                     add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),centered and left+cell/2 or left,r.y+36*scale,meta_size*scale,'AAAAAA',
                         {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,centered and 5 or 4)
                     if i<4 then rect(out,left+cell+gap,r.y+31*scale,line,10*scale,'555555') end

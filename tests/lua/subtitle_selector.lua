@@ -424,7 +424,7 @@ function video_metadata_image_fallback_search_and_shared_geometry()
         return M.open({kind='video',tracks=list,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end})
     end
     assert(video_open());assert(data():find('选择视频轨',1,true));assert(data():find('关闭视频画面',1,true))
-    assert(data():find('3840×2160',1,true));assert(data():find('23.976 fps',1,true))
+    assert(data():find('3840×2160',1,true));assert(data():find('25 fps',1,true))
     assert(data():find('视频轨道 #12',1,true));assert(data():find('封面图',1,true))
     assert(not data():find('1000 fps',1,true) and not data():find('0×0',1,true))
     local separators={}
@@ -440,7 +440,10 @@ function video_metadata_image_fallback_search_and_shared_geometry()
         for col=1,3 do eq(separators[offset+col],separators[col],'video divider row alignment') end
     end
     eq(text_point('hevc'),(separators[1]+1+separators[2])/2)
-    eq(text_point('23.976 fps'),(separators[2]+1+separators[3])/2)
+    eq(text_point('25 fps'),(separators[2]+1+separators[3])/2)
+    eq(text_point('3840×2160'),separators[1]-8-40,'resolution must be centered in its column')
+    eq(text_point('内嵌'),separators[3]+9+26,'source must be centered in its column')
+    eq(separators[2]-separators[1],73,'interior column spacing must remain compact')
     local snapshot=data();local first_geometry=snapshot:match('([^\n]+)')
     invoke('DOWN');invoke('DOWN');tick(.6);assert(data():find('码率  18000 kbps',1,true))
     invoke('Ctrl+f');text('1080');invoke('ENTER');eq(submitted[1],12);idle_resources()
