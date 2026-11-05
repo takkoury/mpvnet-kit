@@ -28,6 +28,8 @@
 - `README.md`
 - `assets/screenshots/settings.png`
 - `assets/screenshots/settings-shortcuts.png`
+- `config/script-modules/history-data.lua`
+- `config/helpers/history-store.ps1`
 - `config/helpers/capture-media.ps1`
 - `config/helpers/media-info-window.ps1`
 - `config/helpers/media-info-data.cs`

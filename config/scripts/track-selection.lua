@@ -1,4 +1,4 @@
--- One selector session owns track, chapter and output-device submissions.
+-- One selector session owns track, chapter, device and history submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -6,6 +6,7 @@ local media_generation, session_generation = 0, 0
 local active_kind
 local chapter_snapshot
 local edition_snapshot
+local history_data, history_snapshot
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -18,6 +19,7 @@ local kinds = {
     chapter = {property='chapter', label='章节'},
     edition = {property='edition', label='媒体版本'},
     device = {property='audio-device', label='音频设备'},
+    history = {label='播放历史'},
 }
 
 local function valid_device_name(name)
@@ -277,24 +279,41 @@ local function selection_notice(kind,tracks,selected)
     return ''
 end
 
-local function close_selector()
+local function retire_session()
     -- Retire callbacks before close(), which may invoke the old callback inline.
     session_generation = session_generation + 1
     active_kind = nil
     chapter_snapshot = nil
     edition_snapshot = nil
+    history_snapshot = nil
     device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
     track_ids, track_targets, next_track_id = nil, nil, nil
+end
+
+local function close_selector()
+    retire_session()
     if selector then selector.close() end
 end
 
 local function refresh_selector()
-    if active_kind and selector and selector.is_open() then
+    if active_kind and active_kind ~= 'history' and selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
         local notice = selection_notice(active_kind,tracks,selected)
         selector.update(tracks, selected, notice)
     end
+end
+
+local function load_history_data()
+    if history_data then return true end
+    local ok, module = pcall(dofile,
+        mp.command_native({'expand-path', '~~/script-modules/history-data.lua'}))
+    if not ok or type(module) ~= 'table' then return false end
+    for _, method in ipairs({'options', 'parse', 'source', 'same_source', 'matches', 'run'}) do
+        if type(module[method]) ~= 'function' then return false end
+    end
+    history_data = module
+    return true
 end
 
 local function load_selector(kind)
@@ -309,6 +328,141 @@ local function load_selector(kind)
     end
     mp.osd_message('无法打开' .. kinds[kind].label .. '选择器，请检查配置包文件。', 3)
     return false
+end
+
+local history_loading = {empty_title='正在读取播放历史…', empty_hint=''}
+local history_changed = '播放历史已变化，请重新选择。'
+
+local function select_history()
+    if not load_selector('history') then return end
+    close_selector()
+    active_kind = 'history'
+    local session, media = session_generation, media_generation
+    local phase, opts, next_id = nil, nil, 0
+    local function live()
+        return session == session_generation and media == media_generation and
+            active_kind == 'history' and selector.is_open()
+    end
+    local function no_rows(title, hint, can_retry, notice)
+        history_snapshot = nil
+        selector.update({}, 0, notice or '', {empty_title=title, empty_hint=hint, can_retry=can_retry})
+    end
+    local function read(notice, first)
+        if not live() or phase == 'reading' or phase == 'clearing' then return end
+        phase = 'reading'
+        if not first then selector.update({}, 0, '', history_loading) end
+        local source
+        if load_history_data() then
+            if not opts then
+                local ok, values = pcall(history_data.options)
+                if ok and type(values) == 'table' then opts = values end
+            end
+            if opts then source = history_data.source() end
+        end
+        if not source then
+            phase = 'ready'
+            no_rows('未能读取播放历史', '请检查历史文件设置后重试。', true, notice)
+            return
+        end
+        history_data.run('Read', source, nil, function(reply)
+            if not live() then return end
+            phase = 'ready'
+            if not history_data.same_source(source, history_data.source()) then
+                no_rows('播放历史文件位置已变化', '请重试读取。', true, notice)
+            elseif reply.ok ~= true then
+                local hint = reply.code == 'too_large' and '历史文件超过 2 MiB，未能载入。' or
+                    reply.code == 'encoding' and '历史文件不是可读取的 UTF-8 文本。' or
+                    '请检查历史文件是否可访问，然后重试。'
+                no_rows('未能读取播放历史', hint, true, notice)
+            elseif reply.missing == true and mp.get_property_native('save-watch-history') == false then
+                no_rows('尚未启用播放历史', '启用播放历史记录后，新播放的媒体会出现在这里。', true, notice)
+            elseif reply.missing == true or reply.content == '' then
+                no_rows('没有播放历史', '播放过的媒体会出现在这里。', false, notice)
+            else
+                local previous = history_snapshot
+                if not previous or not history_data.same_source(source, previous.source) or
+                    previous.content ~= reply.content then
+                    local rows, warning = history_data.parse(reply.content, opts)
+                    local targets = {}
+                    for _, row in ipairs(rows) do
+                        next_id = next_id + 1
+                        row.id = next_id
+                        targets[next_id] = row.history_path
+                    end
+                    history_snapshot = {source=source, content=reply.content, hash=reply.hash,
+                        rows=rows, targets=targets, warning=warning}
+                end
+                local snapshot = history_snapshot
+                local warning = snapshot.warning
+                if notice then warning = notice .. (warning == '' and '' or ' ' .. warning) end
+                if #snapshot.rows == 0 then
+                    no_rows('没有有效的播放历史', '历史文件没有可播放的记录。', true, warning)
+                else
+                    selector.update(snapshot.rows, 0, warning, {can_clear=true})
+                end
+            end
+        end)
+    end
+    local opened, error = selector.open({kind='history', tracks={}, current_id=0, notice='', state=history_loading,
+        submit=function(id)
+            if not live() then return false, '选择已失效，请重新打开选择器。' end
+            local snapshot = phase == 'ready' and history_snapshot
+            local path = snapshot and snapshot.targets[tonumber(id)]
+            if not path then return false, '这条记录已失效，请重新选择。' end
+            local source = history_data.source()
+            local matches = history_data.same_source(snapshot.source, source) and history_data.matches(source, snapshot.content)
+            if not matches then
+                local notice = matches == nil and '未能核对播放历史，请重试。' or history_changed
+                read(notice)
+                return false, notice
+            end
+            -- Match the built-in history's plain loadfile (replace) behavior.
+            -- A media-open error after acceptance is still reported by mpv.
+            local _, err = mp.command_native({'loadfile', path})
+            if err then return false, '未能打开该记录，请重试。' end
+            return true
+        end,
+        clear=function(done)
+            if not live() then done(false, '操作已失效，请重新打开播放历史。'); return end
+            local snapshot = phase == 'ready' and history_snapshot
+            if not snapshot then done(false, '播放历史正在更新或没有可清空的记录。'); return end
+            local source = history_data.source()
+            if not history_data.same_source(snapshot.source, source) then
+                local notice = '历史文件位置已变化，本次未清空。请核对后重试。'
+                read(notice)
+                done(false, notice)
+                return
+            end
+            phase = 'clearing'
+            history_data.run('Clear', source, snapshot.hash, function(reply)
+                if not live() then return end
+                phase = 'ready'
+                if reply.ok == true then
+                    history_snapshot = nil
+                    read('播放历史已清空。')
+                    done(true)
+                elseif reply.code == 'conflict' or reply.code == 'too_large' then
+                    local notice = '播放历史已变化，本次未清空。请核对后重试。'
+                    read(notice)
+                    done(false, notice)
+                elseif reply.code == 'io' then
+                    done(false, '未能清空播放历史，记录已保留。请检查文件是否被占用。')
+                else
+                    local notice = '未能确认清空结果，请查看重新读取的记录。'
+                    read(notice)
+                    done(false, notice)
+                end
+            end)
+        end,
+        retry=function() read() end,
+        close=function() if session == session_generation then retire_session() end end,
+    })
+    if not opened then
+        close_selector()
+        mp.osd_message(error or '无法打开播放历史选择器，请重试。', 3)
+    else
+        read(nil, true)
+    end
 end
 
 local function select_tracks(kind)
@@ -455,14 +609,7 @@ local function select_tracks(kind)
             return true
         end,
         close=function()
-            if session == session_generation then
-                session_generation = session_generation + 1
-                active_kind = nil
-                chapter_snapshot = nil
-                edition_snapshot = nil
-                device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
-                track_ids, track_targets, next_track_id = nil, nil, nil
-            end
+            if session == session_generation then retire_session() end
         end,
     })
     if not opened then
@@ -480,6 +627,7 @@ mp.add_key_binding(nil, 'select-video', function() select_tracks('video') end)
 mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') end)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
+mp.add_key_binding(nil, 'select-history', select_history)
 mp.observe_property('track-list', 'native', function()
     if active_kind == 'all' or active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
 end)

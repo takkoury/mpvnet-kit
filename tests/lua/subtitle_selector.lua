@@ -613,3 +613,76 @@ function export_all_ass(output)
     invoke('TAB');invoke('RIGHT');invoke('RIGHT');save('all-audio')
     M.close()
 end
+
+local function history_rows()
+    return {{id=11,title='第 01 集.mkv',history_path='D:/演示/海岸日记/第 01 集.mkv',date_text='2026-11-05 12:06:18',parent_text='海岸日记'},
+        {id=22,title='第 01 集.mkv',history_path='D:/演示/城市漫步/第 01 集.mkv',date_text='2026-11-04 21:45:10',parent_text='城市漫步'}}
+end
+function history_display_search_and_clear_modal()
+    local calls=0;local done
+    assert(M.open({kind='history',tracks=history_rows(),state={can_clear=true},
+        submit=function(id) submitted[#submitted+1]=id;return true end,
+        clear=function(callback) calls=calls+1;done=callback end}))
+    assert(not data():find('#11',1,true),'no synthetic number in history')
+    assert(not data():find('D:/演示',1,true),'paths are on demand')
+    assert(data():find('2026-11-05 12:06:18',1,true));assert(data():find('城市漫步',1,true))
+    text('城市漫步');local s=active_state();eq(#s.matches,1);eq(s.matches[1].id,22)
+    invoke('TAB');tick(.6);assert(data():find('D:/演示/城市漫步/第 01 集.mkv',1,true))
+    invoke('TAB');eq(s.focus,'clear');invoke('ENTER');assert(s.confirming);eq(s.focus,'confirm-cancel')
+    assert(s.layout.panel.h>=290*s.layout.scale)
+    invoke('any_unicode',{event='press',key_text='ignore'});eq(table.concat(s.chars),'城市漫步')
+    invoke('DOWN');invoke('WHEEL_DOWN');eq(#submitted,0);eq(calls,0)
+    invoke('ENTER');assert(not s.confirming);eq(calls,0);eq(s.focus,'clear')
+    invoke('ENTER',{event='repeat'});invoke('ESC',{event='repeat'});assert(M.is_open() and not s.confirming)
+    invoke('ENTER');invoke('TAB');invoke('ENTER');eq(calls,1);assert(s.clearing)
+    invoke('ENTER');invoke('ESC');eq(calls,1);assert(M.is_open() and s.confirming)
+    M.update({},0,'历史已清空',{can_clear=false,empty_title='没有播放历史',empty_hint='新的播放记录会显示在这里。'})
+    done(true);assert(not s.confirming);eq(s.focus,'close');eq(#s.tracks,0);assert(data():find('历史已清空',1,true))
+    invoke('ENTER',{event='repeat'});assert(M.is_open(),'held confirmation key must not close completed view')
+    invoke('ESC');idle_resources()
+end
+function history_retry_clear_failure_and_late_callback()
+    local retry=0;local callback
+    assert(M.open({kind='history',tracks={},state={can_retry=true,empty_title='未能读取播放历史',empty_hint='请稍后重试。'},
+        retry=function() retry=retry+1;M.update(history_rows(),0,'',{can_clear=true}) end,
+        clear=function(done) callback=done end,submit=function() return true end}))
+    local s=active_state();invoke('TAB');eq(s.focus,'retry');invoke('ENTER');eq(retry,1);eq(#s.tracks,2)
+    local r=s.layout.clear;mouse(r.x+r.w/2,r.y+r.h/2);invoke('MBTN_LEFT');assert(s.confirming)
+    local cancel=s.layout.confirm_cancel;mouse(cancel.x+5,cancel.y+5);invoke('MBTN_LEFT');assert(not s.confirming)
+    mouse(r.x+r.w/2,r.y+r.h/2);invoke('MBTN_LEFT');invoke('TAB');invoke('ENTER');callback(false,'记录已变化，请重新选择。')
+    assert(not s.confirming and not s.clearing);eq(#s.tracks,2);assert(data():find('记录已变化，请重新选择。',1,true))
+    invoke('ENTER');invoke('TAB');invoke('ENTER');local stale=callback;M.close()
+    assert(open());local before=data();stale(true);eq(data(),before,'late clear must not touch another panel');M.close();idle_resources()
+end
+function history_modal_fits_small_dimensions_and_outside_cancel()
+    for _,size in ipairs({{1469,826},{480,320},{320,200}}) do
+        width,height=size[1],size[2];properties['display-hidpi-scale']=1.5
+        assert(M.open({kind='history',tracks=history_rows(),state={can_clear=true},clear=function() error('must not clear') end,submit=function() error('must not play') end}))
+        local s=active_state();local r=s.layout.clear;mouse(r.x+4,r.y+4);invoke('MBTN_LEFT')
+        assert(s.confirming);local l=s.layout
+        assert(l.panel.y>=0 and l.panel.y+l.panel.h<=height)
+        assert(l.dialog.y>=l.panel.y and l.dialog.y+l.dialog.h<=l.panel.y+l.panel.h)
+        mouse(1,1);invoke('MBTN_LEFT');assert(not s.confirming and M.is_open())
+        M.close();idle_resources()
+    end
+end
+
+function export_history_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows=history_rows()
+    rows[#rows+1]={id=33,title='山间的一天 — 从晨雾到日落的旅途记录（含幕后镜头完整版）.mkv',history_path='D:/演示/纪录片/山间的一天.mkv',date_text='2026-11-03 20:12:01'}
+    assert(M.open({kind='history',tracks=rows,state={can_clear=true},clear=function() end,submit=function() return true end}))
+    save('history-normal')
+    local s=active_state();local r=s.layout.clear;mouse(r.x+4,r.y+4);invoke('MBTN_LEFT');save('history-confirm')
+    M.close()
+    assert(M.open({kind='history',tracks={},state={can_retry=true,empty_title='未能读取播放历史',empty_hint='请稍后重试。'},retry=function() end,submit=function() return false end}))
+    save('history-read-error');M.close()
+end

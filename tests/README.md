@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+播放历史的`HistoryData`归入lua，检查JSON行解析、去重和路径／日期边界；`TrackSelection`与`SubtitleSelector`分别验证会话、异步回调、快照重查和清空确认输入。`HistoryStore`归入helpers，使用仓外合成文件验证真实PowerShell文件锁、摘要冲突、清空和失败保留，不接触个人历史。
+
 常用设置基础的 `UserSettings` 归入 lua，覆盖原文补丁、两实例生效、异步通知顺序、媒体代次、手动覆盖及失败恢复；`SettingsStorage`、`SettingsWindow` 归入 helpers，分别验证真实文件保存与 WPF 控件／草稿状态。窗口检查默认不显示，不等同于真实键鼠、观感或跨 DPI 验收。
 
 `SettingsDisplay` 同属 lua，执行实际 ModernZ 的显隐、暂停及临时显示代码，覆盖续期、超时、手动显隐和媒体切换。`SettingsWindow` 另检查预览与保存区在宽窄窗口中不重叠。DWM 实际画面是否包含字幕与控制栏仍须用隔离播放器观察，不能由这些替身测试代替。

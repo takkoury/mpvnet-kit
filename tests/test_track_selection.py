@@ -13,11 +13,13 @@ class TrackSelection(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
+        cls.history_data = (ROOT / 'config/script-modules/history-data.lua').read_text(encoding='utf-8')
         cls.fixture = (ROOT / 'tests/lua/track_selection.lua').read_text(encoding='utf-8')
 
     def run_case(self, name):
         prelude, cases = self.fixture.split('-- COMPLETE SOURCE IS INSERTED HERE\n', 1)
-        self.lua.execute(prelude + '\n' + self.script + '\n' + cases + '\n' + name + '()',
+        self.lua.execute('local function make_history_data()\n' + self.history_data + '\nend\n' +
+                         prelude + '\n' + self.script + '\n' + cases + '\n' + name + '()',
                          name='track-selection/' + name)
 
     def test_complete_script_syntax(self):
@@ -80,6 +82,10 @@ for _name in (
     'chapter_observers_do_not_interfere_with_audio_or_subtitle',
     'chapter_stale_callbacks_cancel_and_write_failures_are_safe',
     'chapter_cross_kind_retirement_rejects_old_submissions',
+    'history_submit_revalidates_source_and_bytes',
+    'history_read_errors_retry_and_disabled_states_are_distinct',
+    'history_clear_uses_the_snapshot_and_requires_another_confirmation_after_conflict',
+    'history_late_replies_do_not_revive_closed_or_replaced_panel',
 ):
     setattr(TrackSelection, 'test_' + _name, _case(_name))
 

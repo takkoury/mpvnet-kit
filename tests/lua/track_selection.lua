@@ -17,8 +17,10 @@ local function get(name, default)
 end
 local set_failure, load_failure, open_failure, readback_override, notify_device_write
 local loads = 0
+local history_commands, history_loads, history_json = {}, {}, {}
 local mp = {
     get_property_native=get,
+    get_property=get,
     set_property_native=function(name,value)
         assert(name=='user-data/mpvnet/video-selection-revision');properties[name]=value;return true
     end,
@@ -29,8 +31,19 @@ local mp = {
         return true
     end,
     command_native=function(args)
-        assert(args[1]=='expand-path' and args[2]=='~~/script-modules/track-selector.lua')
-        return 'expanded/track-selector.lua'
+        if args[1]=='loadfile' then
+            assert(#args==2);history_loads[#history_loads+1]=args[2];return {}
+        end
+        assert(args[1]=='expand-path')
+        if args[2]=='~~/script-modules/track-selector.lua' then return 'expanded/track-selector.lua' end
+        if args[2]=='~~/script-modules/history-data.lua' then return 'expanded/history-data.lua' end
+        if args[2]=='~~/helpers/history-store.ps1' then return 'expanded/history-store.ps1' end
+        assert(args[2]==properties['watch-history-path']);return 'expanded/'..args[2]
+    end,
+    command_native_async=function(spec,done)
+        assert(spec.name=='subprocess' and spec.playback_only==false and spec.capture_stdout and spec.capture_stderr)
+        history_commands[#history_commands+1]={spec=spec,done=done}
+        return {}
     end,
     add_key_binding=function(key,name,fn) assert(key==nil);bindings[name]=fn end,
     observe_property=function(name,kind,fn) assert(kind=='native');observers[name]=fn end,
@@ -38,6 +51,10 @@ local mp = {
     osd_message=function(text,duration) messages[#messages+1]={text,duration} end,
 }
 package.loaded['mp']=mp
+package.loaded['mp.utils']={parse_json=function(raw) return history_json[raw] end}
+package.loaded['mp.options']={read_options=function(options,name)
+    assert(name=='select');options.history_date_format='!%Y/%m/%d'
+end}
 local request, opened, requests = nil, false, {}
 local renderer = {
     open=function(value)
@@ -52,11 +69,13 @@ local renderer = {
         if request then request.close() end
     end,
     is_open=function() return opened end,
-    update=function(tracks,current,notice)
+    update=function(tracks,current,notice,state)
         calls[#calls+1]='update';request.tracks=tracks;request.current_id=current;request.notice=notice
+        request.state=state
     end,
 }
 local dofile=function(path)
+    if path=='expanded/history-data.lua' then return make_history_data() end
     loads=loads+1;assert(path=='expanded/track-selector.lua')
     if load_failure then error('missing module') end
     return renderer
@@ -75,6 +94,115 @@ local function preserve_unrelated()
         assert(write[1]=='aid' or write[1]=='sid','unrelated property write '..write[1])
     end
 end
+
+local function history_setup()
+    properties['watch-history-path']='watch history.jsonl'
+    properties['save-watch-history']=true
+    local raw='first\n'
+    local first_path='D:/One/合成 "quoted".mkv'
+    local second_path='D:/Two/合成 "quoted".mkv'
+    history_json.first={path=first_path,time=1735689600}
+    history_json.second={path=second_path,time=1767225600}
+    io.open=function(path,mode)
+        eq(path,'expanded/'..properties['watch-history-path']);eq(mode,'rb')
+        return {read=function(_,size) return raw:sub(1,size) end,close=function() end}
+    end
+    return function(value) raw=value end,first_path,second_path
+end
+
+local hash1, hash2 = string.rep('a',64), string.rep('B',64)
+local function finish_history(index, op, reply, hash, path)
+    local command=assert(history_commands[index])
+    local args=command.spec.args
+    eq(args[1],'powershell.exe');eq(args[6],'-File');eq(args[7],'expanded/history-store.ps1')
+    eq(args[8],'-Operation');eq(args[9],op);eq(args[10],'-Path')
+    eq(args[11],'expanded/'..(path or properties['watch-history-path']))
+    if hash then eq(args[12],'-ExpectedHash');eq(args[13],hash);eq(#args,13) else eq(#args,11) end
+    history_json['helper reply']=reply
+    command.done(true,{status=0,stdout='helper reply'})
+end
+
+function history_submit_revalidates_source_and_bytes()
+    local set_raw, first, second=history_setup()
+    bindings['select-history']();eq(request.kind,'history');eq(request.current_id,0)
+    assert(request.state.empty_title:find('正在读取'));eq(#request.tracks,0)
+    finish_history(1,'Read',{ok=true,content='first\n',hash=hash1})
+    local original_id=request.tracks[1].id
+    assert(request.state.can_clear);eq(request.tracks[1].history_path,first)
+    set_raw('first\nsecond\n')
+    local ok, reason=request.submit(original_id)
+    eq(ok,false);assert(reason:find('已变化'));eq(#history_loads,0);eq(request.notice,'')
+    finish_history(2,'Read',{ok=true,content='first\nsecond\n',hash=hash2})
+    assert(request.notice:find('已变化'));eq(request.tracks[1].parent_text,'Two')
+    eq(request.submit(original_id),false);eq(#history_loads,0)
+    assert(request.submit(request.tracks[1].id));eq(history_loads[1],second)
+    properties['watch-history-path']='另一份记录.jsonl'
+    eq(request.submit(request.tracks[2].id),false);eq(#history_loads,1)
+    finish_history(3,'Read',{ok=true,content='first\nsecond\n',hash=hash2})
+    assert(request.submit(request.tracks[2].id));eq(history_loads[2],first)
+end
+
+function history_read_errors_retry_and_disabled_states_are_distinct()
+    history_setup();properties['save-watch-history']=false
+    bindings['select-history']()
+    finish_history(1,'Read',{ok=false,code='io'})
+    eq(request.state.empty_title,'未能读取播放历史');assert(request.state.can_retry)
+    request.retry();request.retry();eq(#history_commands,2);eq(request.notice,'')
+    finish_history(2,'Read',{ok=true,missing=true})
+    eq(request.state.empty_title,'尚未启用播放历史');assert(request.state.can_retry)
+    request.retry();properties['save-watch-history']=true
+    finish_history(3,'Read',{ok=true,missing=true})
+    eq(request.state.empty_title,'没有播放历史');eq(request.state.can_retry,false)
+    bindings['select-history']();properties['save-watch-history']=false
+    finish_history(4,'Read',{ok=true,content='first\n',hash=hash1})
+    eq(#request.tracks,1);assert(request.state.can_clear)
+    bindings['select-history']();local previous=properties['watch-history-path']
+    properties['watch-history-path']='new location.jsonl'
+    finish_history(5,'Read',{ok=true,content='first\n',hash=hash1},nil,previous)
+    eq(#request.tracks,0);assert(request.state.empty_title:find('位置已变化'));assert(request.state.can_retry)
+end
+
+function history_clear_uses_the_snapshot_and_requires_another_confirmation_after_conflict()
+    history_setup();bindings['select-history']()
+    finish_history(1,'Read',{ok=true,content='first\n',hash=hash1})
+    local original_id=request.tracks[1].id
+    local completed={}
+    local function done(ok, reason) completed[#completed+1]={ok,reason} end
+    request.clear(done);request.clear(done);request.retry();eq(#history_commands,2)
+    eq(request.submit(original_id),false)
+    eq(completed[1][1],false)
+    finish_history(2,'Clear',{ok=false,code='conflict'},hash1)
+    eq(completed[2][1],false);assert(completed[2][2]:find('本次未清空'))
+    finish_history(3,'Read',{ok=true,content='first\nsecond\n',hash=hash2})
+    eq(#request.tracks,2);assert(request.tracks[1].id>original_id)
+    request.clear(done)
+    finish_history(4,'Clear',{ok=false,code='uncertain'},hash2)
+    assert(completed[3][2]:find('未能确认'));assert(not completed[3][2]:find('已保留'))
+    finish_history(5,'Read',{ok=true,content='first\nsecond\n',hash=hash2})
+    request.clear(done)
+    finish_history(6,'Clear',{ok=true},hash2)
+    eq(completed[4][1],true);assert(opened)
+    finish_history(7,'Read',{ok=true,content='',hash=hash1})
+    eq(request.state.empty_title,'没有播放历史');assert(request.notice:find('已清空'))
+    eq(#request.tracks,0);assert(not request.state.can_clear);eq(#history_loads,0)
+end
+
+function history_late_replies_do_not_revive_closed_or_replaced_panel()
+    history_setup();bindings['select-history']();local old=request
+    bindings['select-audio']();clear()
+    finish_history(1,'Read',{ok=true,content='first\n',hash=hash1})
+    eq(#calls,0);eq(request.kind,'audio');eq(old.submit(1),false)
+    old.retry();eq(#history_commands,1);old.close();assert(opened)
+    bindings['select-history']();finish_history(2,'Read',{ok=true,content='first\n',hash=hash1})
+    local old_clear=request;local completed=false
+    request.clear(function() completed=true end)
+    events['start-file']();assert(not opened)
+    bindings['select-audio']();clear()
+    finish_history(3,'Clear',{ok=true},hash1)
+    eq(#history_commands,3);eq(#calls,0);eq(completed,false);eq(request.kind,'audio')
+    eq(old_clear.submit(1),false);eq(#history_loads,0)
+end
+
 function lazy_load_and_named_bindings()
     eq(loads,0);assert(bindings['select-subtitle']);assert(bindings['select-audio'])
     eq(observers['track-list']~=nil,true);eq(observers.aid~=nil,true);eq(observers.sid~=nil,true)

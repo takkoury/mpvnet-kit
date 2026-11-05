@@ -92,6 +92,15 @@ class SubtitleSelector(unittest.TestCase):
     def test_all_tracks_markers_occupancy_thumb_and_small_viewports(self):
         self.run_case('all_tracks_markers_occupancy_thumb_and_small_viewports')
 
+    def test_history_display_search_and_clear_modal(self):
+        self.run_case('history_display_search_and_clear_modal')
+
+    def test_history_retry_clear_failure_and_late_callback(self):
+        self.run_case('history_retry_clear_failure_and_late_callback')
+
+    def test_history_modal_fits_small_dimensions_and_outside_cancel(self):
+        self.run_case('history_modal_fits_small_dimensions_and_outside_cancel')
+
 
 if __name__ == '__main__':
     unittest.main()
