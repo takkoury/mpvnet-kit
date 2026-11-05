@@ -28,6 +28,7 @@
 - `README.md`
 - `assets/screenshots/settings.png`
 - `assets/screenshots/settings-shortcuts.png`
+- `config/script-opts/stats.conf`
 - `config/script-modules/playlist-selector-data.lua`
 - `config/script-modules/selector-menu.lua`
 - `config/script-modules/properties-data.lua`
