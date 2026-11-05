@@ -33,7 +33,10 @@ class ContextMenu(unittest.TestCase):
 
     def test_physical_keys_unchanged(self):
         keys = {key: command for key, command, _ in entries() if key != '_'}
-        expected = BASELINE['baseline_keys'] | {'MBTN_RIGHT': 'script-message-to mpvnet show-menu'}
+        # Retain physical keys while honoring the same audited backend replacements as menu actions.
+        expected = {key: BASELINE['replacements'].get(command, command)
+                    for key, command in BASELINE['baseline_keys'].items()}
+        expected['MBTN_RIGHT'] = 'script-message-to mpvnet show-menu'
         self.assertEqual(expected, keys)
         self.assertTrue(all(key == '_' for key, _, path in entries() if path))
         self.assertEqual([command for key, command, _ in entries() if key == '_'][-1], 'ignore')

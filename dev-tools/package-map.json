@@ -3,6 +3,12 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/script-modules/subtitle-lines.lua",
+      "destination": "config/script-modules/subtitle-lines.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/watch-later-data.lua",
       "destination": "config/script-modules/watch-later-data.lua",
       "component": "author",

@@ -3943,6 +3943,7 @@ local function bind_buttons(element_name, use_down)
         if command == "script-binding select/select-sid" then return "script-binding track_selection/select-primary" end
         if command == "script-binding select/select-secondary-sid" then return "script-binding track_selection/select-secondary" end
         if command == "script-binding select/select-edition" then return "script-binding track_selection/select-edition" end
+        if command == "script-binding select/select-subtitle-line" then return "script-binding track_selection/select-subtitle-line" end
         if command == "script-binding select/select-watch-later" then return "script-binding track_selection/select-watch-later" end
         if command == "script-binding select/select-watch-history" then return "script-binding track_selection/select-history" end
         if command == "script-binding select/select-track" then return "script-binding track_selection/select-tracks" end

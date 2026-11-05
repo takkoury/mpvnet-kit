@@ -57,6 +57,12 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 [watch-later-store.ps1](../config/helpers/watch-later-store.ps1)以异步只读子进程扫描一层目录，不落盘副本；单文件读锁取得UTF-8字节与mtime，结果经stdout传回。目录缺失、空目录、没有媒体路径、读取失败分别展示；部分文件失败保留可读项并提示。限制2048文件、单文件64KiB与总读取2MiB，超限明确拒绝或部分提示，不截断成可提交内容；跳过文件重解析点。目录改变、工作目录改变和会话退休防止旧读取结果覆盖当前面板；无法确定的跨盘相对目录拒绝读取。选择器不直接删改保存文件，恢复后由核心正常消费不属于选择器的清理动作。
 
+`track_selection/select-subtitle-line`承接Alt+S、菜单与稳定动作subtitle.select-line，复用章节式单行布局。新增[subtitle-lines.lua](../config/script-modules/subtitle-lines.lua)读取当前主字幕来源，以本机已配置FFmpeg或PATH中的ffmpeg异步导出LRC；内嵌/外挂优先使用真实ff-index，缺失时按内嵌字幕顺序或外挂首字幕流回落，不假设sid-1就是流序号。来源签名包含媒体/轨道/格式/映射/外挂路径及可取得的本地文件元数据；不写字幕文件，不把FFmpeg诊断中的地址或字幕内容写入日志。
+
+LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间排序，同秒不同文本保留出现顺序、相同文本去重，逐行绑定时间防错配。列表当前标记是time-pos减当前sub-delay之前的参考行，不承诺字幕此刻可见；首批定位到参考附近，后续标记更新保留搜索/滚动/提示。提交重查来源，使用最新延迟；纯音频或静态画面沿原生加0.1秒，负目标夹到0以避免mpv从片尾倒算。取消不seek，不改字幕轨或显隐。
+
+提取最多30秒、8MiB输出和10000行，超限拒绝不把截断内容作为完整列表。无主字幕、图形字幕、空文本、缺FFmpeg、读取失败分别反馈；不增加OCR。关闭、切主字幕/媒体或新面板取消自有任务和计时器，代次与任务身份同时屏蔽过期回调；time-pos/sub-delay观察只在面板期存在。可观察的本地文件元数据变化会刷新，远端同地址内容变化及同元数据本地替换无法可靠识别；网络认证与可读取性受既有FFmpeg能力限制，不追加转发凭据。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。

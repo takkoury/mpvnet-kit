@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+`SubtitleLines`归入lua，同时执行字幕行数据模块和控制器源码，覆盖FFmpeg流映射、同秒文本/时间对应、延迟、异步取消/超时与旧回调；`SubtitleSelector`验证章节式布局、首次定位及参考标记更新不打断查找。真实FFmpeg提取和mpv跳转仍以隔离合成素材核心检查补充，mock不代表网络或所有字幕格式可读。
+
 `WatchLaterData`归入lua，覆盖保存文件首行解析、mtime排序、目录及快照边界；`WatchLaterStore`归入helpers，使用合成目录验证只读扫描、部分失败、非法文本与数量／大小限制。控制层的目录变化、恢复关闭和旧回调由`TrackSelection`覆盖，真实进度恢复另用播放器核心及合成媒体验证。
 
 播放历史的`HistoryData`归入lua，检查JSON行解析、去重和路径／日期边界；`TrackSelection`与`SubtitleSelector`分别验证会话、异步回调、快照重查和清空确认输入。`HistoryStore`归入helpers，使用仓外合成文件验证真实PowerShell文件锁、摘要冲突、清空和失败保留，不接触个人历史。

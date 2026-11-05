@@ -727,3 +727,39 @@ function export_watch_later_ass(output)
     assert(M.open({kind='watchlater',tracks=rows,submit=function() return true end}));save('watch-later-normal');M.close()
     assert(M.open({kind='watchlater',tracks=rows,notice='已关闭进度恢复，将按播放器当前设置打开。',submit=function() return true end}));save('watch-later-resume-off');M.close()
 end
+
+function subtitle_lines_share_chapter_rows_and_reveal_without_stealing_search()
+    local rows={};for i=1,30 do rows[i]={id=i,title='合成字幕 '..i,time_text='00:'..string.format('%02d',i)} end
+    assert(M.open({kind='chapter',tracks=rows,current_id=1,submit=function() return true end}))
+    local s=active_state();local l=s.layout;local geometry={l.panel.w,l.panel.h,l.rows[1].h};M.close()
+    assert(M.open({kind='lines',tracks={},state={empty_title='正在读取字幕…',empty_hint=''},submit=function(id) submitted[#submitted+1]=id;return true end}))
+    M.update(rows,20,'',{reveal_id=20})
+    s=active_state();l=s.layout
+    eq(table.concat({l.panel.w,l.panel.h,l.rows[1].h},','),table.concat(geometry,','))
+    eq(s.focus,'search');assert(s.scroll>0);assert(data():find('合成字幕 20',1,true));assert(data():find('00:20',1,true));assert(not data():find('清空',1,true))
+    invoke('WHEEL_UP');local scroll=s.scroll;M.update(rows,21,'');eq(s.scroll,scroll,'time updates must not move scroll')
+    invoke('DOWN');local tip=s.tip;M.update(rows,22,'');eq(s.tip,tip,'reference updates must retain tooltip dwell')
+    invoke('Ctrl+f')
+    text('合成字幕 30');eq(#s.matches,1);invoke('ENTER');eq(submitted[1],30);idle_resources()
+end
+function subtitle_lines_failed_read_retry_and_empty_no_off()
+    assert(M.open({kind='lines',tracks={},state={empty_title='无法读取字幕',empty_hint='请检查 FFmpeg。',can_retry=true},
+        retry=function() M.update({{id=5,title='重试后的字幕',time_text='01:05'}},5,'',{}) end,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();invoke('DOWN');eq(#submitted,0);invoke('TAB');eq(s.focus,'retry');invoke('ENTER');eq(s.focus,'search')
+    assert(data():find('重试后的字幕',1,true));text('不匹配');invoke('DOWN');invoke('ENTER');eq(#submitted,0);assert(M.is_open());invoke('ESC');idle_resources()
+end
+
+function export_subtitle_lines_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows={{id=1,title='第一句：山间的清晨',time_text='00:01'},{id=2,title='同秒第一行',time_text='00:05'},{id=3,title='同秒第二行',time_text='00:05'},{id=4,title='English subtitle',time_text='00:10'},{id=5,title='很长的中文字幕内容，用于检查单行省略、鼠标停留后的完整内容，以及键盘定位时的提示。',time_text='00:15'},{id=6,title='最后一句：回到旅途',time_text='00:22'}}
+    assert(M.open({kind='lines',tracks=rows,current_id=3,submit=function() return true end}));save('subtitle-lines-normal');M.close()
+    assert(M.open({kind='lines',tracks={},state={empty_title='当前主字幕为图形字幕',empty_hint='图形字幕不含可提取的文字。'},submit=function() return false end}));save('subtitle-lines-bitmap');M.close()
+end

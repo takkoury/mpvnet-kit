@@ -11,7 +11,10 @@ local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
+local function retry_list(s) return file_list(s) or s.kind=='lines' end
 local profiles={
+    lines={title='选择字幕行',search='查找字幕内容',fallback='字幕行 ',empty='没有可选择的字幕行',
+        hint='当前字幕没有可提取的文本。',nomatch='没有匹配的字幕行',failed='未能跳转到该字幕，请重试。'},
     watchlater={title='稍后继续播放',search='查找待继续的媒体',fallback='媒体 ',empty='没有可继续播放的记录',
         hint='可通过“保存进度并退出”留存播放位置。',nomatch='没有匹配的记录',failed='未能打开该媒体，请重试。'},
     history={title='播放历史',search='查找播放历史',fallback='记录 ',empty='没有播放历史',
@@ -510,7 +513,7 @@ key=function(name, info)
     elseif name=='paste' and selectable(s) then replace_selection(s,mp.get_property('clipboard/text',''))
     elseif name=='tab' then
         reset_tip(s)
-        if file_list(s) then
+        if retry_list(s) then
             if s.focus=='search' and s.matches[1] then focus_row(s,s.matches[1].id)
             elseif (s.focus=='search' or s.focus=='row') and s.state.can_clear then s.focus='clear';s.focus_id=nil
             elseif s.focus=='close' and s.state.can_retry then s.focus='retry'
@@ -731,7 +734,7 @@ render=function()
                     add_text(out,fitted(s,track.parent_text,parent_width,meta_size*scale),tx+width,r.y+36*scale,meta_size*scale,'999999',nil,false,6)
                 end
             elseif single then
-                if kind=='chapter' or kind=='edition' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
+                if kind=='chapter' or kind=='edition' or kind=='lines' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..track.number_text;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if kind=='audio' or kind=='video' then
@@ -800,7 +803,7 @@ render=function()
         if s.kind=='edition' and #s.tracks==1 then title='当前媒体只有一个版本';hint=fitted(s,label(s.tracks[1],s.kind),(panel_width-40)*scale,meta_size*scale) end
         add_text(out,title,x+(panel_width*scale-measure(s,title,title_size*scale))/2,listtop+30*scale,title_size*scale,'DDDDDD')
         add_text(out,hint,x+(panel_width*scale-measure(s,hint,meta_size*scale))/2,listtop+60*scale,meta_size*scale,'AAAAAA')
-        if history and s.state.can_retry then
+        if retry_list(s) and s.state.can_retry then
             l.retry={x=x+panel_width*scale/2-36*scale,y=listtop+82*scale,w=72*scale,h=28*scale}
             rect(out,l.retry.x,l.retry.y,l.retry.w,l.retry.h,s.focus=='retry' and '777777' or '444444',4*scale)
             rect(out,l.retry.x+scale,l.retry.y+scale,l.retry.w-2*scale,l.retry.h-2*scale,'242424',3*scale)
@@ -862,8 +865,8 @@ render=function()
             add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
         end
     else
-    add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    add_text(out,(s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end
     if s.tip_focus then
@@ -906,15 +909,28 @@ end
 function M.is_open() return active~=nil end
 function M.update(tracks,id,notice,state)
     local s=active;if not s then return false end
+    -- Playback only advances the reference row; retain search, tooltip dwell
+    -- and normalized text when the subtitle snapshot itself is unchanged.
+    if s.kind=='lines' and tracks==s.source_tracks and not state and clean(notice or '')==s.notice then
+        local next_id=current_id(id)
+        if next_id~=s.current then s.current=next_id;render() end
+        return true
+    end
+    s.source_tracks=tracks
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
     if state then s.state=state end
-    if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' or file_list(s) then s.error='' end
+    if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' or retry_list(s) then s.error='' end
     if s.confirming then -- Modal focus remains owned until its callback completes.
-    elseif file_list(s) and selectable(s) and (s.focus=='close' or s.focus=='retry') then s.focus='search';caret(s)
+    elseif retry_list(s) and selectable(s) and (s.focus=='close' or s.focus=='retry') then s.focus='search';caret(s)
     elseif not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
         if not valid then s.focus='search';s.focus_id=nil end
+    end
+    if state and state.reveal_id and s.revealed_id~=state.reveal_id then
+        local old_focus,old_id=s.focus,s.focus_id
+        focus_row(s,state.reveal_id)
+        s.focus,s.focus_id=old_focus,old_id;s.revealed_id=state.reveal_id
     end
     reset_tip(s);render();return true
 end
@@ -949,7 +965,7 @@ function M.open(options)
         active.submit=options.submit;active.close=options.close;active.clear=options.clear;active.retry=options.retry
         M.update(options.tracks,options.current_id,options.notice,options.state);active.focus=selectable(active) and 'search' or 'close';caret(active);render();return true
     end
-    local s={kind=kind,profile=profiles[kind],tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
+    local s={kind=kind,profile=profiles[kind],source_tracks=options.tracks,tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
         state=options.state or {},clear=options.clear,retry=options.retry,filter='all',filter_index=1,chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=selectable(s) and 'search' or 'close';active=s
     status('opening')

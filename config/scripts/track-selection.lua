@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, device and saved media submissions.
+-- One selector session owns track, chapter, subtitle line, device and saved media submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -8,6 +8,7 @@ local chapter_snapshot
 local edition_snapshot
 local history_data, history_snapshot
 local watch_later_data, refresh_watch_later
+local subtitle_lines, refresh_subtitle_lines, retire_subtitle_lines
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -18,6 +19,7 @@ local kinds = {
     primary = {property='sid', type='sub', label='主字幕', other='secondary-sid', other_label='次字幕'},
     secondary = {property='secondary-sid', type='sub', label='次字幕', other='sid', other_label='主字幕'},
     chapter = {property='chapter', label='章节'},
+    lines = {label='字幕行'},
     edition = {property='edition', label='媒体版本'},
     device = {property='audio-device', label='音频设备'},
     history = {label='播放历史'},
@@ -289,6 +291,11 @@ local function retire_session()
     edition_snapshot = nil
     history_snapshot = nil
     refresh_watch_later = nil
+    if retire_subtitle_lines then
+        local retire = retire_subtitle_lines
+        refresh_subtitle_lines, retire_subtitle_lines = nil, nil
+        retire()
+    end
     device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
     track_ids, track_targets, next_track_id = nil, nil, nil
 end
@@ -299,7 +306,8 @@ local function close_selector()
 end
 
 local function refresh_selector()
-    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and selector and selector.is_open() then
+    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
+        selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
         local notice = selection_notice(active_kind,tracks,selected)
@@ -588,6 +596,146 @@ local function select_watch_later()
     read(nil, true)
 end
 
+local function load_subtitle_lines()
+    if subtitle_lines then return true end
+    local ok, module = pcall(dofile,
+        mp.command_native({'expand-path', '~~/script-modules/subtitle-lines.lua'}))
+    if not ok or type(module) ~= 'table' then return false end
+    for _, method in ipairs({'source', 'same_source', 'run'}) do
+        if type(module[method]) ~= 'function' then return false end
+    end
+    subtitle_lines = module
+    return true
+end
+
+local lines_loading = {empty_title='正在读取字幕行…', empty_hint=''}
+local lines_changed = '主字幕来源已变化，请重新选择。'
+local lines_empty = {
+    no_subtitle={empty_title='当前没有主字幕', empty_hint='选择主字幕轨后即可查找字幕行。'},
+    bitmap={empty_title='当前主字幕为图形字幕', empty_hint='图形字幕不含可提取的文字。'},
+    source={empty_title='无法读取当前主字幕', empty_hint='请检查媒体与字幕来源，然后重试。', can_retry=true},
+    failed={empty_title='未能提取字幕行', empty_hint='请确认媒体与字幕来源可读取，然后重试。', can_retry=true},
+    ffmpeg={empty_title='无法启动 FFmpeg', empty_hint='请检查 FFmpeg 路径，或将 FFmpeg 加入 PATH，然后重试。', can_retry=true},
+    timeout={empty_title='读取字幕行超时', empty_hint='请检查媒体与字幕来源，然后重试。', can_retry=true},
+    too_large={empty_title='字幕内容超过读取限制', empty_hint='最多读取 8 MiB、显示 10000 行字幕。'},
+    empty={empty_title='没有可选择的字幕行', empty_hint='当前主字幕没有可提取的文字行。'},
+    module={empty_title='无法读取字幕行', empty_hint='请检查配置包文件，然后重试。', can_retry=true},
+}
+
+local function subtitle_delay()
+    local delay = mp.get_property_native('sub-delay')
+    return type(delay) == 'number' and delay > -math.huge and delay < math.huge and delay or 0
+end
+
+local function select_subtitle_line()
+    if not load_selector('lines') then return end
+    close_selector()
+    active_kind = 'lines'
+    local session, media = session_generation, media_generation
+    local rows, targets, current, next_id = {}, {}, 0, 0
+    local snapshot, pending, notice = nil, nil, ''
+    local function live()
+        return session == session_generation and media == media_generation and
+            active_kind == 'lines' and selector.is_open()
+    end
+    local function cancel_read()
+        local job = pending
+        pending = nil
+        if job and job.cancel then job.cancel() end
+    end
+    local function marker()
+        local position = mp.get_property_native('time-pos')
+        if not valid_time(position) then return 0 end
+        local time, left, right = position - subtitle_delay(), 1, #rows
+        -- The last row at or before playback time is a reference, even in a gap.
+        while left <= right do
+            local middle = math.floor((left + right) / 2)
+            if targets[rows[middle].id] <= time then left = middle + 1 else right = middle - 1 end
+        end
+        return right > 0 and rows[right].id or 0
+    end
+    local function update_marker()
+        if not live() or #rows == 0 then return end
+        local selected = marker()
+        if current == selected then return end
+        current = selected
+        selector.update(rows, current, notice)
+    end
+    local function read(source, reason, first)
+        if not live() then return end
+        cancel_read()
+        rows, targets, current, notice = {}, {}, 0, reason or ''
+        snapshot = source or (load_subtitle_lines() and subtitle_lines.source() or nil)
+        if not snapshot or snapshot.problem then
+            selector.update(rows, current, notice, lines_empty[snapshot and snapshot.problem or 'module'])
+            return
+        end
+        if not first then selector.update(rows, current, notice, lines_loading) end
+        local job = {}
+        pending = job
+        job.cancel = subtitle_lines.run(snapshot, function(lines, problem)
+            if not live() or pending ~= job then return end
+            pending = nil
+            local latest = subtitle_lines.source()
+            if not subtitle_lines.same_source(snapshot, latest) then
+                read(latest, lines_changed)
+            elseif not lines or #lines == 0 then
+                selector.update(rows, current, notice, lines_empty[problem or 'empty'])
+            else
+                local duration = mp.get_property_native('duration')
+                local hours = (valid_time(duration) and duration >= 3600) or lines[#lines].time >= 3600
+                for _, line in ipairs(lines) do
+                    next_id = next_id + 1
+                    local seconds = line.time
+                    rows[#rows+1] = {id=next_id, title=line.title, time_text=hours and
+                        string.format('%02.0f:%02d:%02d', math.floor(seconds/3600), math.floor(seconds/60)%60, seconds%60)
+                        or string.format('%02d:%02d', math.floor(seconds/60), seconds%60)}
+                    targets[next_id] = seconds
+                end
+                current = marker()
+                selector.update(rows, current, notice, {reveal_id=current > 0 and current or nil})
+            end
+        end)
+    end
+    local opened, err = selector.open({kind='lines', tracks=rows, current_id=0, notice=notice, state=lines_loading,
+        submit=function(id)
+            if not live() then return false, '选择已失效，请重新打开选择器。' end
+            local time = targets[tonumber(id)]
+            if time == nil then return false, '该字幕行已失效，请重新选择。' end
+            local latest = subtitle_lines.source()
+            if not subtitle_lines.same_source(snapshot, latest) then
+                read(latest, lines_changed)
+                return false, lines_changed
+            end
+            local position = time + subtitle_delay()
+            if mp.get_property_native('current-tracks/video/image') ~= false then position = position + 0.1 end
+            -- A negative absolute mpv seek would count backwards from EOF.
+            local _, seek_error = mp.command_native({'seek', math.max(0, position), 'absolute'})
+            if seek_error then return false, '未能跳转到该字幕行，请重试。' end
+            return true
+        end,
+        retry=function() if not pending then read() end end,
+        close=function() if session == session_generation then retire_session() end end,
+    })
+    if not opened then
+        close_selector()
+        mp.osd_message(err or '无法打开字幕行选择器，请重试。', 3)
+        return
+    end
+    retire_subtitle_lines = function()
+        cancel_read()
+        mp.unobserve_property(update_marker)
+    end
+    refresh_subtitle_lines = function()
+        if not live() or not subtitle_lines then return end
+        local latest = subtitle_lines.source()
+        if not subtitle_lines.same_source(snapshot, latest) then read(latest, lines_changed) end
+    end
+    mp.observe_property('time-pos', 'native', update_marker)
+    mp.observe_property('sub-delay', 'native', update_marker)
+    read(nil, nil, true)
+end
+
 local function select_tracks(kind)
     if not load_selector(kind) then return end
     close_selector()
@@ -748,6 +896,7 @@ mp.add_key_binding(nil, 'select-secondary', function() select_tracks('secondary'
 mp.add_key_binding(nil, 'select-audio', function() select_tracks('audio') end)
 mp.add_key_binding(nil, 'select-video', function() select_tracks('video') end)
 mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') end)
+mp.add_key_binding(nil, 'select-subtitle-line', select_subtitle_line)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.add_key_binding(nil, 'select-history', select_history)
@@ -759,9 +908,16 @@ for _, property in ipairs({'current-watch-later-dir', 'working-directory', 'resu
 end
 mp.observe_property('track-list', 'native', function()
     if active_kind == 'all' or active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
+    if refresh_subtitle_lines then refresh_subtitle_lines() end
 end)
 mp.observe_property('aid', 'native', function() if active_kind == 'all' or active_kind == 'audio' then refresh_selector() end end)
-mp.observe_property('sid', 'native', function() if active_kind == 'all' or active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
+mp.observe_property('sid', 'native', function()
+    if active_kind == 'all' or active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
+    if refresh_subtitle_lines then refresh_subtitle_lines() end
+end)
+mp.observe_property('current-tracks/sub', 'native', function()
+    if refresh_subtitle_lines then refresh_subtitle_lines() end
+end)
 for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub/id','current-tracks/sub2/id'}) do
     mp.observe_property(property,'native',function() if active_kind=='all' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
 end

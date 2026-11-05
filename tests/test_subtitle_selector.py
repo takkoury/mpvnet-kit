@@ -107,6 +107,12 @@ class SubtitleSelector(unittest.TestCase):
     def test_saved_playback_loading_retry_and_no_match_have_no_off_action(self):
         self.run_case('saved_playback_loading_retry_and_no_match_have_no_off_action')
 
+    def test_subtitle_lines_share_chapter_rows_and_reveal_without_stealing_search(self):
+        self.run_case('subtitle_lines_share_chapter_rows_and_reveal_without_stealing_search')
+
+    def test_subtitle_lines_failed_read_retry_and_empty_no_off(self):
+        self.run_case('subtitle_lines_failed_read_retry_and_empty_no_off')
+
 
 if __name__ == '__main__':
     unittest.main()
