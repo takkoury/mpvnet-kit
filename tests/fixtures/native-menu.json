@@ -137,6 +137,7 @@
     "script-binding select/select-sid": "script-binding track_selection/select-primary",
     "script-binding select/select-secondary-sid": "script-binding track_selection/select-secondary",
     "script-binding select/select-edition": "script-binding track_selection/select-edition",
+    "script-binding select/menu": "script-binding track_selection/menu",
     "script-binding select/show-properties": "script-binding track_selection/show-properties",
     "script-binding select/select-binding": "script-binding track_selection/select-binding",
     "script-binding select/select-subtitle-line": "script-binding track_selection/select-subtitle-line",

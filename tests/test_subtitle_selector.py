@@ -128,6 +128,15 @@ class SubtitleSelector(unittest.TestCase):
     def test_properties_large_snapshot_does_not_measure_hidden_ids(self):
         self.run_case('properties_large_snapshot_does_not_measure_hidden_ids')
 
+    def test_menu_dynamic_rows_keep_focus_and_cancel_stale_mouse_press(self):
+        self.run_case('menu_dynamic_rows_keep_focus_and_cancel_stale_mouse_press')
+
+    def test_menu_to_child_does_not_activate_child_on_held_enter(self):
+        self.run_case('menu_to_child_does_not_activate_child_on_held_enter')
+
+    def test_menu_insertions_keep_existing_keyboard_action_visible(self):
+        self.run_case('menu_insertions_keep_existing_keyboard_action_visible')
+
 
 if __name__ == '__main__':
     unittest.main()

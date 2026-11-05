@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, subtitle line, device, binding, property and saved media submissions.
+-- One selector session owns track, chapter, subtitle line, device, binding, property, saved media and menu submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -11,6 +11,7 @@ local watch_later_data, refresh_watch_later
 local subtitle_lines, refresh_subtitle_lines, retire_subtitle_lines
 local bindings_data, binding_labels
 local properties_data
+local menu_data, refresh_menu
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -28,6 +29,7 @@ local kinds = {
     watchlater = {label='稍后继续播放'},
     bindings = {label='快捷键'},
     properties = {label='播放器属性'},
+    menu = {label='屏幕内主菜单'},
 }
 
 local function valid_device_name(name)
@@ -295,6 +297,7 @@ local function retire_session()
     edition_snapshot = nil
     history_snapshot = nil
     refresh_watch_later = nil
+    refresh_menu = nil
     if retire_subtitle_lines then
         local retire = retire_subtitle_lines
         refresh_subtitle_lines, retire_subtitle_lines = nil, nil
@@ -311,7 +314,7 @@ end
 
 local function refresh_selector()
     if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
-        active_kind ~= 'bindings' and active_kind ~= 'properties' and
+        active_kind ~= 'bindings' and active_kind ~= 'properties' and active_kind ~= 'menu' and
         selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
@@ -344,6 +347,89 @@ local function load_selector(kind)
     end
     mp.osd_message('无法打开' .. kinds[kind].label .. '选择器，请检查配置包文件。', 3)
     return false
+end
+
+local function read_menu()
+    if not menu_data then
+        local ok, module = pcall(function()
+            return dofile(mp.command_native({'expand-path', '~~/script-modules/selector-menu.lua'}))
+        end)
+        if ok and type(module) == 'table' and type(module.snapshot) == 'function' then menu_data = module end
+    end
+    if menu_data then
+        local ok, rows, targets = pcall(menu_data.snapshot, mp.get_property_native)
+        if ok and type(rows) == 'table' and type(targets) == 'table' then return rows, targets, {} end
+    end
+    return {}, {}, {empty_title='未能读取屏幕内主菜单', empty_hint='请检查配置包文件，然后重试。', can_retry=true}
+end
+
+local function select_menu()
+    if not load_selector('menu') then return end
+    local session, media = session_generation + 1, media_generation
+    close_selector()
+    if session ~= session_generation or media ~= media_generation then return end
+    active_kind = 'menu'
+    local function current_session()
+        return session == session_generation and media == media_generation and active_kind == 'menu'
+    end
+    local function live() return current_session() and selector.is_open() end
+    local rows, targets, state = read_menu()
+    if not current_session() then return end
+
+    local function update(next_rows, next_targets, next_state)
+        local changed = #rows ~= #next_rows or state.can_retry ~= next_state.can_retry
+        if not changed then
+            for index, row in ipairs(rows) do
+                if row.id ~= next_rows[index].id or row.title ~= next_rows[index].title then
+                    changed = true
+                    break
+                end
+            end
+        end
+        rows, targets, state = next_rows, next_targets, next_state
+        -- An initial observer notification or irrelevant property change must
+        -- not reset list focus or disturb an in-progress click.
+        if changed then selector.update(rows, 0, '', state) end
+    end
+    local refreshing = false
+    refresh_menu = function()
+        if refreshing or not live() then return end
+        refreshing = true
+        local next_rows, next_targets, next_state = read_menu()
+        if live() then update(next_rows, next_targets, next_state) end
+        refreshing = false
+    end
+    local opened = selector.open({kind='menu', tracks=rows, current_id=0, notice='', state=state,
+        submit=function(id)
+            if not live() then return false, '菜单已关闭，请重新打开。' end
+            local target = type(id) == 'number' and targets[id]
+            local next_rows, next_targets, next_state = read_menu()
+            if not live() then return false end
+            if not target or next_targets[id] ~= target then
+                update(next_rows, next_targets, next_state)
+                return false, '该菜单项当前不可用，请重新选择。'
+            end
+            -- Release the shared input before the binding can open its target.
+            local retired = session + 1
+            local function still_retired()
+                return retired == session_generation and media == media_generation and not selector.is_open()
+            end
+            close_selector()
+            if not still_retired() then return false end
+            local ok, applied = pcall(mp.commandv, 'script-binding', target)
+            if not ok or applied ~= true then
+                if still_retired() then mp.osd_message('未能执行该菜单项，请重试。', 3) end
+                return false
+            end
+            return true
+        end,
+        retry=function() if live() then refresh_menu() end end,
+        close=function() if current_session() then retire_session() end end,
+    })
+    if not opened and current_session() then
+        close_selector()
+        mp.osd_message('无法打开屏幕内主菜单，请重试。', 3)
+    end
 end
 
 local function effective_bindings()
@@ -1072,6 +1158,7 @@ mp.add_key_binding(nil, 'select-history', select_history)
 mp.add_key_binding(nil, 'select-watch-later', select_watch_later)
 mp.add_key_binding(nil, 'select-binding', select_bindings)
 mp.add_key_binding(nil, 'show-properties', select_properties)
+mp.add_key_binding(nil, 'menu', select_menu)
 for _, property in ipairs({'current-watch-later-dir', 'working-directory', 'resume-playback'}) do
     mp.observe_property(property, 'native', function(name)
         if refresh_watch_later then refresh_watch_later(name or property) end
@@ -1080,6 +1167,7 @@ end
 mp.observe_property('track-list', 'native', function()
     if active_kind == 'all' or active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
     if refresh_subtitle_lines then refresh_subtitle_lines() end
+    if refresh_menu then refresh_menu() end
 end)
 mp.observe_property('aid', 'native', function() if active_kind == 'all' or active_kind == 'audio' then refresh_selector() end end)
 mp.observe_property('sid', 'native', function()
@@ -1088,6 +1176,7 @@ mp.observe_property('sid', 'native', function()
 end)
 mp.observe_property('current-tracks/sub', 'native', function()
     if refresh_subtitle_lines then refresh_subtitle_lines() end
+    if refresh_menu then refresh_menu() end
 end)
 for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub/id','current-tracks/sub2/id'}) do
     mp.observe_property(property,'native',function() if active_kind=='all' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
@@ -1099,7 +1188,10 @@ mp.observe_property('vid', 'native', function() if active_kind == 'all' or activ
 -- Refresh presentation/current markers without accepting a new index mapping.
 -- A changed chapter list is acknowledged only by the rejected submit above.
 for _, property in ipairs({'chapter', 'chapter-list', 'duration'}) do
-    mp.observe_property(property, 'native', function() if active_kind == 'chapter' then refresh_selector() end end)
+    mp.observe_property(property, 'native', function()
+        if active_kind == 'chapter' then refresh_selector() end
+        if property == 'chapter-list' and refresh_menu then refresh_menu() end
+    end)
 end
 for _, property in ipairs({'audio-device', 'audio-device-list'}) do
     mp.observe_property(property, 'native', function() if active_kind == 'device' then refresh_selector() end end)
@@ -1107,7 +1199,13 @@ end
 -- The displayed edition mapping stays a snapshot until a rejected submission
 -- explicitly refreshes it, just like chapter indices during a pending click.
 for _,property in ipairs({'current-edition','edition-list'}) do
-    mp.observe_property(property,'native',function() if active_kind=='edition' then refresh_selector() end end)
+    mp.observe_property(property,'native',function()
+        if active_kind=='edition' then refresh_selector() end
+        if property == 'edition-list' and refresh_menu then refresh_menu() end
+    end)
+end
+for _, property in ipairs({'playlist-count', 'current-demuxer', 'filename'}) do
+    mp.observe_property(property, 'native', function() if refresh_menu then refresh_menu() end end)
 end
 local function reset_for_media()
     media_generation = media_generation + 1

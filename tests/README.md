@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+`SelectorMenu`归入lua，覆盖17项固定目标、媒体动态条件、稳定ID、旧动作失效、子面板重入和失败重试；`SubtitleSelector`检查动态菜单焦点/命中与按住Enter交接。实际设置窗口、浏览器和原生队列不由此测试自动打开；真实核心只验证本批内部选择器交接。
+
 `PropertiesData`归入lua，覆盖false/0/空值、原生数组/普通map、路径排序去重、循环/大小限制、日志级别借用与恢复、快照展示和OSD转义。`SubtitleSelector`验证属性名/值搜索、预览与大快照无多余编号测量。真实核心证据只采集合成环境与公开配置生成的属性，测试不导出个人完整属性集合。
 
 `BindingsData`归入lua，执行数据模块与控制器，覆盖原生绑定优先级、ignore遮挡、改绑拒绝、输入恢复顺序和命令重入。真实核心检查只注册本批合成的音量/倍速/选择器命令，不执行个人绑定；`SubtitleSelector`另验证命令查找、提示和重复Enter防护。

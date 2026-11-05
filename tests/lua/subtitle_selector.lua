@@ -844,3 +844,51 @@ function export_properties_ass(output)
         {id=6,title='video-params/pixelformat',property_value='"yuv420p"'}}
     assert(M.open({kind='properties',tracks=rows,submit=function() return true end}));save('properties-normal');M.close()
 end
+
+function menu_dynamic_rows_keep_focus_and_cancel_stale_mouse_press()
+    local rows={{id=1,title='主字幕轨'},{id=4,title='音轨'},{id=10,title='执行快捷键动作'}}
+    assert(M.open({kind='menu',tracks=rows,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();eq(s.layout.rows[1].h,38);assert(s.layout.clear==nil)
+    invoke('TAB');eq(s.focus_id,1);M.update({rows[2],rows[3]},0,'',{});eq(s.focus,'search')
+    invoke('TAB');eq(s.focus_id,4);invoke('TAB');eq(s.focus,'close');M.update(rows,0,'',{});eq(s.focus,'close')
+    local r=s.layout.rows[2];mouse(r.x+40,r.y+10);invoke('MBTN_LEFT',{event='down'})
+    M.update({rows[1],rows[3]},0,'',{});invoke('MBTN_LEFT',{event='up'});eq(#submitted,0)
+    invoke('Ctrl+f');text('来源未标注');eq(#s.matches,0);invoke('Ctrl+u');text('快捷键');invoke('ENTER');eq(submitted[1],10);idle_resources()
+end
+function menu_to_child_does_not_activate_child_on_held_enter()
+    local child_submits=0
+    assert(M.open({kind='menu',tracks={{id=4,title='音轨'}},submit=function()
+        M.close();assert(M.open({kind='audio',tracks={{id=1,title='普通话'}},current_id=1,
+            submit=function() child_submits=child_submits+1;return true end}));return true
+    end}))
+    invoke('ENTER');eq(active_state().kind,'audio')
+    invoke('ENTER',{event='repeat'});invoke('ESC',{event='repeat'});eq(child_submits,0);assert(M.is_open())
+    invoke('ESC');idle_resources()
+end
+
+function menu_insertions_keep_existing_keyboard_action_visible()
+    local rows={};for i=10,29 do rows[#rows+1]={id=i,title='菜单项 '..i} end
+    assert(M.open({kind='menu',tracks=rows,submit=function() return true end}))
+    invoke('DOWN');invoke('END');local s=active_state();eq(s.focus_id,29)
+    local expanded={};for i=1,5 do expanded[#expanded+1]={id=i,title='新增菜单项 '..i} end
+    for _,r in ipairs(rows) do expanded[#expanded+1]=r end
+    M.update(expanded,0,'',{});eq(s.focus_id,29)
+    local visible=false;for _,r in ipairs(s.layout.rows) do if r.id==29 then visible=true end end
+    assert(visible,'dynamic menu must keep its keyboard target visible');M.close();idle_resources()
+end
+
+function export_menu_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local names={'主字幕轨','次字幕轨','字幕行','音轨','视频轨','播放列表（屏幕内）','章节','媒体版本','音频设备','执行快捷键动作','播放历史','稍后继续播放','播放统计','文件信息（统计）','常用设置','快捷键帮助（统计）','mpv 在线文档'}
+    local rows={};for id,title in ipairs(names) do rows[#rows+1]={id=id,title=title} end
+    assert(M.open({kind='menu',tracks=rows,submit=function() return true end}));save('menu-normal')
+    text('设置');save('menu-settings-search');M.close()
+end

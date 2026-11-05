@@ -11,8 +11,10 @@ local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
-local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' or s.kind=='properties' end
+local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' or s.kind=='properties' or s.kind=='menu' end
 local profiles={
+    menu={title='主菜单',search='查找菜单项',fallback='菜单项 ',empty='没有可用菜单项',
+        hint='稍后重试读取菜单。',nomatch='没有匹配的菜单项',failed='未能打开该菜单项，请重试。'},
     properties={title='播放器属性',search='查找属性或值',fallback='属性 ',empty='没有可读取的属性',
         hint='稍后重试读取播放器属性。',nomatch='没有匹配的属性',failed='未能显示该属性，请重试。'},
     bindings={title='执行快捷键动作',search='查找快捷键或命令',fallback='动作 ',empty='没有可执行的快捷键',
@@ -185,6 +187,7 @@ local function filtered(s)
         local kind=row_kind(s,track)
         local haystack
         if kind=='properties' then haystack=track.title..' '..track.property_value
+        elseif kind=='menu' then haystack=track.title
         else
             haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
             kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text,track.action_command,track.property_value}, ' ')
@@ -481,7 +484,7 @@ mouse_button=function(info)
 end
 key=function(name, info)
     local s=active;if not s or info.canceled or not ({press=true,down=true,['repeat']=true})[info.event] then return end
-    if (file_list(s) or s.kind=='bindings') and info.event=='repeat' and (name=='enter' or name=='escape') then return end
+    if info.event=='repeat' and (name=='enter' or name=='escape') then return end
     if s.confirming then
         if s.clearing then return end
         if name=='escape' then cancel_clear(s)
@@ -897,7 +900,7 @@ render=function()
         end
     else
     add_text(out,properties and '↑ ↓ 移动　Enter 查看　Esc 取消' or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or s.kind=='menu' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end
     if s.tip_focus then
@@ -947,16 +950,18 @@ function M.update(tracks,id,notice,state)
         if next_id~=s.current then s.current=next_id;render() end
         return true
     end
+    local was_selectable=selectable(s)
     s.source_tracks=tracks
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
     if state then s.state=state end
     if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' or retry_list(s) then s.error='' end
     if s.confirming then -- Modal focus remains owned until its callback completes.
-    elseif retry_list(s) and selectable(s) and (s.focus=='close' or s.focus=='retry') then s.focus='search';caret(s)
+    elseif retry_list(s) and selectable(s) and ((not was_selectable and s.focus=='close') or s.focus=='retry') then s.focus='search';caret(s)
     elseif not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
-        if not valid then s.focus='search';s.focus_id=nil end
+        if not valid then s.focus='search';s.focus_id=nil
+        elseif s.kind=='menu' then focus_row(s,s.focus_id) end
     end
     if state and state.reveal_id and s.revealed_id~=state.reveal_id then
         local old_focus,old_id=s.focus,s.focus_id
