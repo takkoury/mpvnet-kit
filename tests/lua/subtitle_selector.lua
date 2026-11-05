@@ -892,3 +892,55 @@ function export_menu_ass(output)
     assert(M.open({kind='menu',tracks=rows,submit=function() return true end}));save('menu-normal')
     text('设置');save('menu-settings-search');M.close()
 end
+
+function playlist_rows_search_paths_and_retain_identity_during_reorder()
+    local rows={{id=11,title='第01集',time_text='1',history_path='D:/海岸/第01集.mkv'},
+        {id=22,title='第01集',time_text='2',history_path='D:/城市/第01集.mkv'}}
+    assert(M.open({kind='playlist',tracks=rows,current_id=22,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();eq(s.layout.rows[1].h,38);assert(s.layout.clear==nil)
+    text('城市');eq(#s.matches,1);eq(s.matches[1].id,22);invoke('TAB');tick(.6);assert(data():find('D:/城市/第01集.mkv',1,true))
+    local swapped={{id=22,title='第01集',time_text='1',history_path='D:/城市/第01集.mkv'},rows[1]}
+    M.update(swapped,22,'',{});eq(s.focus_id,22);invoke('ENTER');eq(submitted[1],22);idle_resources()
+end
+function playlist_reveals_current_and_empty_cannot_submit()
+    assert(M.open({kind='playlist',tracks={},submit=function(id) submitted[#submitted+1]=id;return true end}))
+    invoke('DOWN');invoke('ENTER',{event='repeat'});eq(#submitted,0);assert(M.is_open())
+    local rows={};for i=1,20 do rows[i]={id=i,title='第'..i..'项',time_text=tostring(i),history_path='D:/合成/'..i..'.mkv'} end
+    M.update(rows,18,'',{reveal_id=18});local s=active_state();eq(s.focus,'search');assert(s.scroll>0)
+    invoke('DOWN');local selected=s.focus_id;M.update({},0,'',{});eq(s.focus,'close');eq(#submitted,0)
+    M.close();idle_resources()
+end
+
+function playlist_initial_current_reveal_waits_for_valid_osd()
+    local rows={};for i=1,20 do rows[i]={id=i,title='条目 '..i,time_text=tostring(i)} end
+    width,height=0,0
+    assert(M.open({kind='playlist',tracks=rows,current_id=18,state={reveal_id=18},submit=function() return true end}))
+    local s=active_state();eq(s.pending_reveal,18)
+    width,height=1280,720;emit('osd-dimensions',{})
+    eq(s.pending_reveal,nil);eq(s.focus,'search');assert(s.scroll>0)
+    local found=false;for _,row in ipairs(s.layout.rows) do if row.id==18 then found=true end end
+    assert(found,'initial playing entry must be visible after OSD becomes available');M.close();idle_resources()
+end
+
+function playlist_media_text_cannot_switch_ass_escape_mode()
+    local control=string.char(194,145)
+    assert(M.open({kind='playlist',tracks={{id=1,title='标题'..control..'{\\fs100}正文',time_text='1',history_path='D:/路径'..control..'/片段.mkv'}},submit=function() return true end}))
+    assert(not data():find(control,1,true));assert(data():find('\\x91',1,true))
+    invoke('DOWN');tick(.6);assert(not data():find(control,1,true));M.close();idle_resources()
+end
+
+function export_playlist_selector_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows={}
+    for i=1,16 do rows[i]={id=i,title=string.format('%02d - 播放列表试用.mkv',i),time_text=tostring(i),history_path='D:/合成媒体/'..i..'.mkv'} end
+    rows[8].title='08 - 很长的中文标题，用于检查窄窗省略、完整路径提示与选片定位.mkv'
+    assert(M.open({kind='playlist',tracks=rows,current_id=10,state={reveal_id=10},submit=function() return true end}));save('playlist-selector-current');M.close()
+end

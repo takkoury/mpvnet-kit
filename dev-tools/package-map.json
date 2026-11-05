@@ -3,6 +3,12 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/script-modules/playlist-selector-data.lua",
+      "destination": "config/script-modules/playlist-selector-data.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/selector-menu.lua",
       "destination": "config/script-modules/selector-menu.lua",
       "component": "author",

@@ -11,8 +11,10 @@ local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
-local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' or s.kind=='properties' or s.kind=='menu' end
+local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' or s.kind=='properties' or s.kind=='menu' or s.kind=='playlist' end
 local profiles={
+    playlist={title='选择播放项',search='查找播放项',fallback='播放项 ',empty='播放列表为空',
+        hint='添加媒体后再选择播放项。',nomatch='没有匹配的播放项',failed='未能播放该条目，请重试。'},
     menu={title='主菜单',search='查找菜单项',fallback='菜单项 ',empty='没有可用菜单项',
         hint='稍后重试读取菜单。',nomatch='没有匹配的菜单项',failed='未能打开该菜单项，请重试。'},
     properties={title='播放器属性',search='查找属性或值',fallback='属性 ',empty='没有可读取的属性',
@@ -71,6 +73,9 @@ local function chars(text)
 end
 local function clean(text)
     local value=tostring(text or ''):gsub('[%z\1-\31\127]', ' ')
+    -- escape-ass recognizes mpv's in-band C1 controls before escaping braces.
+    -- Treat controls in media titles/paths as visible text, never as OSD modes.
+    value=value:gsub('\194[\128-\159]',function(code) return string.format('\\x%02X',code:byte(2)) end)
     return value
 end
 local function escape(text)
@@ -188,6 +193,7 @@ local function filtered(s)
         local haystack
         if kind=='properties' then haystack=track.title..' '..track.property_value
         elseif kind=='menu' then haystack=track.title
+        elseif kind=='playlist' then haystack=track.title..' '..track.history_path..' '..track.time_text
         else
             haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
             kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text,track.action_command,track.property_value}, ' ')
@@ -638,6 +644,12 @@ render=function()
         s.scroll=clamp(s.scroll,0,s.max_scroll)
         s.capacity=math.max(1,math.floor((listheight-28)/54))
     end
+    if s.pending_reveal then
+        local id=s.pending_reveal;s.pending_reveal=nil
+        local old_focus,old_id=s.focus,s.focus_id
+        focus_row(s,id)
+        s.focus,s.focus_id=old_focus,old_id;s.revealed_id=id;reset_tip(s)
+    end
     local height=(34+54+extra+listheight+34+(grouped and 36 or 0))*scale
     if s.confirming then height=math.max(height,290*scale) end
     local x,y=(w-panel_width*scale)/2,(h-height)/2
@@ -731,6 +743,7 @@ render=function()
         if not off and kind=='video' then r.details=video_details(track) end
         if not off and track.blocked_reason~='' then r.details={track.blocked_reason} end
         if history then r.details={track.history_path,track.date_text} end
+        if kind=='playlist' then r.details={track.history_path} end
         if properties then r.details={(preview(track.property_value,1536))} end
         if kind=='bindings' then r.details={'快捷键  '..track.time_text,track.action_command} end
         if kind=='device' then
@@ -768,7 +781,7 @@ render=function()
             elseif single then
                 if kind=='bindings' then
                     add_text(out,fitted(s,track.time_text,id_width,meta_size*scale),r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6)
-                elseif kind=='chapter' or kind=='edition' or kind=='lines' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
+                elseif kind=='chapter' or kind=='edition' or kind=='lines' or kind=='playlist' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..track.number_text;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if kind=='audio' or kind=='video' then
@@ -899,8 +912,8 @@ render=function()
             add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
         end
     else
-    add_text(out,properties and '↑ ↓ 移动　Enter 查看　Esc 取消' or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or s.kind=='menu' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    add_text(out,s.kind=='playlist' and '↑ ↓ 移动　Enter 播放　Esc 取消' or properties and '↑ ↓ 移动　Enter 查看　Esc 取消' or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or s.kind=='menu' or s.kind=='playlist' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end
     if s.tip_focus then
@@ -961,7 +974,7 @@ function M.update(tracks,id,notice,state)
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
         if not valid then s.focus='search';s.focus_id=nil
-        elseif s.kind=='menu' then focus_row(s,s.focus_id) end
+        elseif s.kind=='menu' or s.kind=='playlist' then focus_row(s,s.focus_id) end
     end
     if state and state.reveal_id and s.revealed_id~=state.reveal_id then
         local old_focus,old_id=s.focus,s.focus_id
@@ -1002,7 +1015,7 @@ function M.open(options)
         M.update(options.tracks,options.current_id,options.notice,options.state);active.focus=selectable(active) and 'search' or 'close';caret(active);render();return true
     end
     local s={kind=kind,profile=profiles[kind],source_tracks=options.tracks,tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
-        state=options.state or {},clear=options.clear,retry=options.retry,filter='all',filter_index=1,chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
+        state=options.state or {},pending_reveal=options.state and options.state.reveal_id,clear=options.clear,retry=options.retry,filter='all',filter_index=1,chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=selectable(s) and 'search' or 'close';active=s
     status('opening')
     local ok,failure=pcall(function()

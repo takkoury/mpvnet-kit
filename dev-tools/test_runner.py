@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_playlist_selector_data.PlaylistSelectorData',
         'test_selector_menu.SelectorMenu',
         'test_properties_data.PropertiesData',
         'test_bindings_data.BindingsData',

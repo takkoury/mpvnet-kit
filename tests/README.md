@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+`PlaylistSelectorData`归入lua，覆盖真实队列ID0/重复/替换、标题模式、重排定位、删除失效与释放输入后的再次索引解析；`SubtitleSelector`检查当前项初始可见、动态焦点、路径搜索与媒体OSD控制字符中和。真实核心另用合成文件验证重排后播放、当前项重播、长队列和空态，不读取个人播放列表。
+
 `SelectorMenu`归入lua，覆盖17项固定目标、媒体动态条件、稳定ID、旧动作失效、子面板重入和失败重试；`SubtitleSelector`检查动态菜单焦点/命中与按住Enter交接。实际设置窗口、浏览器和原生队列不由此测试自动打开；真实核心只验证本批内部选择器交接。
 
 `PropertiesData`归入lua，覆盖false/0/空值、原生数组/普通map、路径排序去重、循环/大小限制、日志级别借用与恢复、快照展示和OSD转义。`SubtitleSelector`验证属性名/值搜索、预览与大快照无多余编号测量。真实核心证据只采集合成环境与公开配置生成的属性，测试不导出个人完整属性集合。

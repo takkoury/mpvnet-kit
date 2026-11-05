@@ -110,7 +110,7 @@ local function all_whitelisted_actions_dispatch_after_close()
         {'字幕行', 'track_selection/select-subtitle-line'},
         {'音轨', 'track_selection/select-audio'},
         {'视频轨', 'track_selection/select-video'},
-        {'播放列表（屏幕内）', 'select/select-playlist'},
+        {'播放列表（屏幕内）', 'track_selection/select-playlist'},
         {'章节', 'track_selection/select-chapter'},
         {'媒体版本', 'track_selection/select-edition'},
         {'音频设备', 'track_selection/select-device'},
@@ -197,7 +197,7 @@ local function refresh_is_in_place_and_rejects_stale_and_never_presented_rows()
     eq(menu.submit(stale_playlist_id), false)
     eq(#updates, 2); eq(#commands, 0)
     eq(menu.submit(stale_playlist_id), true)
-    eq(commands[1][2], 'select/select-playlist')
+    eq(commands[1][2], 'track_selection/select-playlist')
 end
 
 local function retirement_prevents_old_actions_and_can_open_child_inline()

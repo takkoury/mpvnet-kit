@@ -137,6 +137,18 @@ class SubtitleSelector(unittest.TestCase):
     def test_menu_insertions_keep_existing_keyboard_action_visible(self):
         self.run_case('menu_insertions_keep_existing_keyboard_action_visible')
 
+    def test_playlist_rows_search_paths_and_retain_identity_during_reorder(self):
+        self.run_case('playlist_rows_search_paths_and_retain_identity_during_reorder')
+
+    def test_playlist_reveals_current_and_empty_cannot_submit(self):
+        self.run_case('playlist_reveals_current_and_empty_cannot_submit')
+
+    def test_playlist_initial_current_reveal_waits_for_valid_osd(self):
+        self.run_case('playlist_initial_current_reveal_waits_for_valid_osd')
+
+    def test_playlist_media_text_cannot_switch_ass_escape_mode(self):
+        self.run_case('playlist_media_text_cannot_switch_ass_escape_mode')
+
 
 if __name__ == '__main__':
     unittest.main()

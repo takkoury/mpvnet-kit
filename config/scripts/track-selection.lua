@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, subtitle line, device, binding, property, saved media and menu submissions.
+-- One selector session owns track, chapter, subtitle line, device, binding, property, playlist, saved media and menu submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -12,6 +12,7 @@ local subtitle_lines, refresh_subtitle_lines, retire_subtitle_lines
 local bindings_data, binding_labels
 local properties_data
 local menu_data, refresh_menu
+local playlist_data, refresh_playlist
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -30,6 +31,7 @@ local kinds = {
     bindings = {label='快捷键'},
     properties = {label='播放器属性'},
     menu = {label='屏幕内主菜单'},
+    playlist = {label='播放列表'},
 }
 
 local function valid_device_name(name)
@@ -298,6 +300,11 @@ local function retire_session()
     history_snapshot = nil
     refresh_watch_later = nil
     refresh_menu = nil
+    if refresh_playlist then
+        local refresh = refresh_playlist
+        refresh_playlist = nil
+        mp.unobserve_property(refresh)
+    end
     if retire_subtitle_lines then
         local retire = retire_subtitle_lines
         refresh_subtitle_lines, retire_subtitle_lines = nil, nil
@@ -314,7 +321,7 @@ end
 
 local function refresh_selector()
     if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
-        active_kind ~= 'bindings' and active_kind ~= 'properties' and active_kind ~= 'menu' and
+        active_kind ~= 'bindings' and active_kind ~= 'properties' and active_kind ~= 'menu' and active_kind ~= 'playlist' and
         selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
@@ -347,6 +354,119 @@ local function load_selector(kind)
     end
     mp.osd_message('无法打开' .. kinds[kind].label .. '选择器，请检查配置包文件。', 3)
     return false
+end
+
+local function select_playlist()
+    if not load_selector('playlist') then return end
+    local session, media = session_generation + 1, media_generation
+    close_selector()
+    if session ~= session_generation or media ~= media_generation then return end
+    active_kind = 'playlist'
+    local function current_session()
+        return session == session_generation and media == media_generation and active_kind == 'playlist'
+    end
+    local function live() return current_session() and selector.is_open() end
+    local platform = mp.get_property_native('platform')
+    local snapshot
+    local function read()
+        if not playlist_data then
+            local ok, module = pcall(function()
+                return dofile(mp.command_native({'expand-path', '~~/script-modules/playlist-selector-data.lua'}))
+            end)
+            if ok and type(module) == 'table' and type(module.new) == 'function' and
+                type(module.resolve) == 'function' then playlist_data = module end
+        end
+        if not playlist_data then
+            return {rows={}, targets={}, current_id=0, status='missing-module'}
+        end
+        snapshot = snapshot or playlist_data.new()
+        local mode = mp.get_property_native('osd-playlist-entry')
+        return snapshot(mp.get_property_native('playlist'), mode, platform)
+    end
+    local function presentation(view, first)
+        local state, notice = {}, ''
+        if view.status == 'empty' then
+            state.empty_title, state.empty_hint = '播放列表为空', '打开媒体后，即可在这里选择播放条目。'
+        elseif view.status == 'partial' then
+            notice = '部分播放列表条目无法识别，已跳过。'
+        elseif view.status ~= 'ready' then
+            state.empty_title = '未能读取播放列表'
+            state.empty_hint = view.status == 'missing-module' and '请检查配置包文件，然后重试。'
+                or '请重试，或关闭后重新打开。'
+            state.can_retry = true
+        end
+        if first and view.current_id ~= 0 then state.reveal_id = view.current_id end
+        return notice, state
+    end
+    local view = read()
+    if not current_session() then return end
+    local function update(next_view)
+        local changed = view.status ~= next_view.status or view.current_id ~= next_view.current_id or
+            #view.rows ~= #next_view.rows
+        if not changed then
+            for index, row in ipairs(view.rows) do
+                local other = next_view.rows[index]
+                if row.id ~= other.id or row.title ~= other.title or row.time_text ~= other.time_text then
+                    changed = true
+                    break
+                end
+            end
+        end
+        view = next_view
+        if changed then
+            local notice, state = presentation(view)
+            selector.update(view.rows, view.current_id, notice, state)
+        end
+    end
+    local function refresh()
+        if not live() then return end
+        local latest = read()
+        if live() then update(latest) end
+    end
+    local notice, state = presentation(view, true)
+    local opened = selector.open({kind='playlist', tracks=view.rows, current_id=view.current_id, notice=notice, state=state,
+        submit=function(id)
+            if not live() then return false, '播放列表已关闭，请重新打开。' end
+            local target = type(id) == 'number' and view.targets[id]
+            local latest = read()
+            if not live() then return false end
+            if not target or latest.targets[id] ~= target then
+                update(latest)
+                return false, '该播放条目已不可用，请重新选择。'
+            end
+            -- Release input before playback can trigger start-file/end-file.
+            local retired = session + 1
+            local function still_retired()
+                return retired == session_generation and media == media_generation and not selector.is_open()
+            end
+            close_selector()
+            if not still_retired() then return false end
+            -- Re-resolve after releasing input; another queue control may have
+            -- changed the order during close. mpv accepts an index, not an ID.
+            local position = playlist_data.resolve(mp.get_property_native('playlist'), target)
+            if not still_retired() then return false end
+            if position == nil then
+                mp.osd_message('该播放条目已不可用，请重新打开播放列表选择。', 3)
+                return false
+            end
+            local ok, applied = pcall(mp.commandv, 'playlist-play-index', position)
+            if not ok or applied ~= true then
+                if still_retired() then mp.osd_message('未能播放该条目，请重试。', 3) end
+                return false
+            end
+            return true
+        end,
+        retry=refresh,
+        close=function() if current_session() then retire_session() end end,
+    })
+    if not opened and current_session() then
+        close_selector()
+        mp.osd_message('无法打开播放列表选择器，请重试。', 3)
+    elseif opened and live() then
+        refresh_playlist = refresh
+        mp.observe_property('playlist', 'native', refresh)
+        if live() then mp.observe_property('osd-playlist-entry', 'native', refresh) end
+    end
 end
 
 local function read_menu()
@@ -1155,6 +1275,7 @@ mp.add_key_binding(nil, 'select-subtitle-line', select_subtitle_line)
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.add_key_binding(nil, 'select-history', select_history)
+mp.add_key_binding(nil, 'select-playlist', select_playlist)
 mp.add_key_binding(nil, 'select-watch-later', select_watch_later)
 mp.add_key_binding(nil, 'select-binding', select_bindings)
 mp.add_key_binding(nil, 'show-properties', select_properties)
