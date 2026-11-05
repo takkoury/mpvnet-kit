@@ -9,7 +9,10 @@ local published = 'user-data/mpvnet/track-selector/open'
 local defined = false
 local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
+local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local profiles={
+    all={title='全部轨道',search='查找轨道',fallback='轨道 #',empty='没有可用轨道',
+        hint='打开媒体后再选择。',nomatch='没有匹配的轨道',failed='未能切换轨道，请重试。'},
     subtitle={title='选择普通字幕',search='查找字幕',off='不显示普通字幕',fallback='字幕轨道 #',
         empty='没有普通字幕轨道',hint='加载字幕文件后再选择。',nomatch='没有匹配的字幕',failed='无法应用字幕，请重新选择。'},
     primary={title='选择主字幕轨',search='查找字幕轨',off='不使用主字幕',fallback='字幕轨道 #',
@@ -71,7 +74,7 @@ local function normalize(tracks)
         local id = type(track) == 'table' and track.id
         if type(id) == 'number' and id > 0 and id < math.huge and id == math.floor(id) and not seen[id] then
             seen[id] = true
-            out[#out + 1] = {id=id, title=type(track.title)=='string' and track.title or '',
+            out[#out + 1] = {id=id, display_kind=({video=true,audio=true,primary=true})[track.display_kind] and track.display_kind or 'primary', current=track.current==true, title=type(track.title)=='string' and track.title or '',
                 time_text=type(track.time_text)=='string' and track.time_text or '',
                 number_text=type(track.number_text)=='string' and track.number_text or tostring(id),
                 device_name=type(track.device_name)=='string' and track.device_name or '',
@@ -96,7 +99,7 @@ local function language(track) return language_names[track.lang:lower():gsub('_'
 local function label(track,kind)
     if track.title~='' then return clean(track.title) end
     if track.lang~='' and kind~='video' then return language(track) end
-    return profiles[kind or 'subtitle'].fallback .. tostring(track.id)
+    return profiles[kind or 'subtitle'].fallback .. track.number_text
 end
 local function source(track)
     return track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
@@ -162,14 +165,41 @@ local function contains(rect, x, y)
     return rect and x >= rect.x and y >= rect.y and x < rect.x + rect.w and y < rect.y + rect.h
 end
 local function query(s) return table.concat(s.chars) end
+local function row_kind(s,track) return s.kind=='all' and track.display_kind or s.kind end
 local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
-        local haystack = table.concat({label(track,s.kind), language(track), track.lang, track.codec, source(track), tostring(track.id),
-            s.kind=='audio' and table.concat(audio_details(track),' ') or s.kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label}, ' '):lower()
-        if needle == '' or haystack:find(needle, 1, true) then result[#result + 1] = track end
+        local kind=row_kind(s,track)
+        local haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
+            kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label}, ' '):lower()
+        if (s.kind~='all' or s.filter=='all' or track.display_kind==s.filter) and (needle == '' or haystack:find(needle, 1, true)) then result[#result + 1] = track end
+    end
+    if s.kind=='all' then
+        local order={video=1,audio=2,primary=3}
+        local position={};for i,track in ipairs(result) do position[track.id]=i end
+        table.sort(result,function(a,b) if a.display_kind==b.display_kind then return position[a.id]<position[b.id] end;return order[a.display_kind]<order[b.display_kind] end)
     end
     return result
+end
+-- All-track scrolling uses logical pixels because group headers are not rows.
+local function group_layout(s)
+    local entries,groups,total={}, {},0
+    local previous
+    for _,track in ipairs(s.matches) do
+        if track.display_kind~=previous then
+            previous=track.display_kind
+            groups[#groups+1]={kind=previous,top=total}
+            total=total+28
+        end
+        entries[track.id]={top=total,height=54}
+        total=total+54
+    end
+    return entries,groups,total
+end
+local function scroll_limit(s) return s.kind=='all' and (s.max_scroll or 0) or math.max(0,#s.matches-s.capacity) end
+local function set_filter(s,index)
+    s.filter_index=index;s.filter=filters[index].key;s.scroll=0;s.error='';s.focus='filter';s.focus_id=nil;s.tip=nil;s.tip_focus=nil
+    render()
 end
 local function measure(s, text, size, bold)
     local cache_key = tostring(size) .. ':' .. tostring(bold==true) .. ':' .. text
@@ -224,7 +254,11 @@ local function focus_row(s,id)
     if id==nil then return end
     s.focus='row';s.focus_id=id; reset_tip(s)
     if (s.kind=='audio' or s.kind=='video' or s.kind=='primary' or s.kind=='secondary' or not s.profile.off) and id~=0 then s.tip_focus=id end
-    if id~=0 then
+    if s.kind=='all' then
+        local entry=group_layout(s)
+        entry=entry[id]
+        if entry then s.scroll=clamp(s.scroll,math.max(0,entry.top+entry.height-(s.viewport or 340)),math.max(0,entry.top-28)) end
+    elseif id~=0 then
         for index,track in ipairs(s.matches) do
             if track.id==id then
                 s.scroll=clamp(s.scroll,math.max(0,index-s.capacity),index-1); break
@@ -309,14 +343,16 @@ local function get_hit(s)
     if not contains(s.layout.panel,x,y) then return 'outside' end
     if contains(s.layout.close,x,y) then return 'close' end
     if contains(s.layout.search,x,y) and selectable(s) then return 'search' end
+    for _,tab in ipairs(s.layout.filters or {}) do if contains(tab,x,y) then return 'filter'..tab.index,tab end end
     if contains(s.layout.thumb,x,y) then return 'thumb' end
     if contains(s.layout.scrollbar,x,y) then return 'scrollbar' end
+    if contains(s.layout.group_header,x,y) then return nil end
     for _,row in ipairs(s.layout.rows) do if contains(row,x,y) then return row.id,row end end
     return nil
 end
 wheel=function(delta)
     local s=active;if not s then return end
-    reset_tip(s);s.scroll=clamp(s.scroll+delta,0,math.max(0,#s.matches-s.capacity));render()
+    reset_tip(s);s.scroll=clamp(s.scroll+delta*(s.kind=='all' and 54 or 1),0,scroll_limit(s));render()
 end
 mouse_leave=function()
     local s=active;if not s then return end
@@ -328,7 +364,8 @@ mouse_move=function()
     if not hover then mouse_leave();return end
     if s.drag and s.layout.scrollbar and s.layout.thumb then
         local bar,thumb=s.layout.scrollbar,s.layout.thumb
-        s.scroll=math.floor(clamp((y-s.drag-bar.y)/math.max(1,bar.h-thumb.h),0,1)*math.max(0,#s.matches-s.capacity)+0.5)
+        local target=clamp((y-s.drag-bar.y)/math.max(1,bar.h-thumb.h),0,1)*scroll_limit(s)
+        s.scroll=s.kind=='all' and target or math.floor(target+0.5)
         reset_tip(s);render();return
     end
     local hit,row=get_hit(s)
@@ -357,13 +394,15 @@ mouse_button=function(info)
                 s.cursor=i
             end
             caret(s)
+        elseif type(hit)=='string' and hit:match('^filter%d$') then s.focus='filter'
         elseif type(hit)=='number' then focus_row(s,hit)
         elseif hit=='scrollbar' then local _,y=position();wheel(y<s.layout.thumb.y and -s.capacity or s.capacity) end
         render()
     end
     if info.event=='up' or info.event=='press' then
         local pressed=s.pressed;s.pressed=nil;s.drag=nil
-        if pressed==hit and type(hit)=='number' then submit(s,hit)
+        if pressed==hit and type(hit)=='string' and hit:match('^filter%d$') then set_filter(s,tonumber(hit:sub(-1)))
+        elseif pressed==hit and type(hit)=='number' then submit(s,hit)
         elseif pressed==hit and hit=='close' then M.close()
         -- Keep the exclusive section until release so dismissal cannot also
         -- activate the video/OSC beneath it. Dragging out is not a click out.
@@ -378,6 +417,7 @@ key=function(name, info)
     elseif name=='escape' then M.close()
     elseif name=='enter' then
         if s.focus=='close' then M.close()
+        elseif s.focus=='filter' then set_filter(s,s.filter_index)
         elseif s.focus=='row' then submit(s,s.focus_id)
         elseif #s.matches>0 then
             for _,track in ipairs(s.matches) do if track.blocked_reason=='' then submit(s,track.id);break end end
@@ -386,8 +426,9 @@ key=function(name, info)
     elseif name=='down' then move_rows(s,1)
     elseif name=='pageup' then move_rows(s,-math.max(1,s.capacity))
     elseif name=='pagedown' then move_rows(s,math.max(1,s.capacity))
-    elseif name=='left' then move_cursor(s,-1,false)
-    elseif name=='right' then move_cursor(s,1,false)
+    elseif name=='left' or name=='right' then
+        if s.focus=='filter' then set_filter(s,(s.filter_index-1+(name=='left' and -1 or 1))%#filters+1)
+        else move_cursor(s,name=='left' and -1 or 1,false) end
     elseif name=='selectleft' then move_cursor(s,-1,true)
     elseif name=='selectright' then move_cursor(s,1,true)
     elseif name=='home' or name=='end' then
@@ -410,7 +451,8 @@ key=function(name, info)
     elseif name=='paste' and selectable(s) then replace_selection(s,mp.get_property('clipboard/text',''))
     elseif name=='tab' then
         reset_tip(s)
-        if s.focus=='search' and selectable(s) then
+        if s.focus=='search' and s.kind=='all' then s.focus='filter'
+        elseif (s.focus=='search' or s.focus=='filter') and selectable(s) then
             if not s.profile.off then
                 if s.matches[1] then focus_row(s,s.matches[1].id) else s.focus='close' end
             else focus_row(s,0) end
@@ -484,24 +526,36 @@ render=function()
     s.matches=filtered(s)
     local notice=s.error~='' and s.error or s.notice
     local extra=notice~='' and 28 or 0
-    local single=not s.profile.off
-    local off_step,row_step=single and 0 or 34,single and 40 or 54
-    local minimum_height=122+(not selectable(s) and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
+    local grouped=s.kind=='all'
+    local single=not s.profile.off and not grouped
+    local off_step,row_step=(single or grouped) and 0 or 34,single and 40 or 54
+    local minimum_height=grouped and 240 or 122+(not selectable(s) and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
     if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
     local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/panel_width,math.max(1,h-12)/(minimum_height+extra)))
     local capacity=clamp(math.floor((h/scale-28-122-off_step-8-extra)/row_step),1,single and 8 or 5)
-    s.capacity=capacity;s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity))
+    s.capacity=capacity
+    if not grouped then s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity)) end
     local rows=math.min(capacity,#s.matches)
     local listheight=not selectable(s) and 116 or off_step+(rows>0 and rows*row_step or 76)+8
-    local height=(34+54+extra+listheight+34)*scale
+    local entries,groups,total
+    if grouped then
+        entries,groups,total=group_layout(s)
+        s.viewport=math.max(82,math.min(340,h/scale-28-122-36-extra))
+        listheight=math.min(s.viewport,math.max(82,total))
+        s.viewport=listheight;s.max_scroll=math.max(0,total-listheight)
+        s.scroll=clamp(s.scroll,0,s.max_scroll)
+        s.capacity=math.max(1,math.floor((listheight-28)/54))
+    end
+    local height=(34+54+extra+listheight+34+(grouped and 36 or 0))*scale
     local x,y=(w-panel_width*scale)/2,(h-height)/2
     local l={x=x,y=y,w=w,h=h,scale=scale,rows={}}
     s.layout=l
     l.panel={x=x,y=y,w=panel_width*scale,h=height}
     l.close={x=x+(panel_width-44)*scale,y=y,w=44*scale,h=34*scale}
     l.search={x=x+16*scale,y=y+48*scale,w=(panel_width-32)*scale,h=30*scale}
-    local listtop=y+(88+extra)*scale
+    local listtop=y+(88+extra+(grouped and 36 or 0))*scale
+    local listclip={x=x+1,y=listtop,w=panel_width*scale-2,h=listheight*scale}
     local out={}
     rect(out,x,y,panel_width*scale,height,'393939',8*scale);rect(out,x+1,y+1,panel_width*scale-2,height-2,'151515',7*scale)
     rect(out,x+1,y+1,panel_width*scale-2,33*scale,'1C1C1C',6*scale)
@@ -535,31 +589,52 @@ render=function()
     end
     if s.focus=='search' and selectable(s) and s.caret then rect(out,l.search.x+36*scale+prefixwidth-s.query_offset,l.search.y+(l.search.h-18*scale)/2,scale,18*scale,'E5E5E5') end
     if extra>0 then local message=fitted(s,notice,(panel_width-36)*scale,meta_size*scale);add_text(out,message,x+18*scale,y+89*scale,meta_size*scale,'D8B780') end
-    -- Shared columns use the whole track set, so scrolling/filtering cannot
-    -- shift separators. Missing fields leave their column empty.
-    local lang_width,codec_width,id_width,channel_width=0,0,0,36*scale
-    local has_language,has_codec=false,false
-    local function meta_language(track)
-        return track.lang~='' and label(track,s.kind)~=language(track) and language(track) or ''
-    end
-    for _,track in ipairs(s.tracks) do
-        local lang=s.kind=='audio' and language(track) or meta_language(track)
-        if lang~='' then has_language=true;lang_width=math.max(lang_width,measure(s,lang,meta_size*scale)) end
-        if track.codec~='' then has_codec=true;codec_width=math.max(codec_width,measure(s,track.codec,meta_size*scale)) end
-        id_width=math.max(id_width,measure(s,s.kind=='edition' and track.number_text or single and track.time_text or '#'..track.id,meta_size*scale))
-        if s.kind=='audio' and track.channels then
-            channel_width=math.max(channel_width,measure(s,string.format('%g 声道',track.channels),meta_size*scale))
+    if grouped then
+        l.filters={}
+        for i,filter in ipairs(filters) do
+            local fx=x+(16+(i-1)*62)*scale;local fy=y+(84+extra)*scale
+            local tab={x=fx,y=fy,w=56*scale,h=32*scale,index=i};l.filters[i]=tab
+            local chosen=s.filter==filter.key
+            add_text(out,filter.title,fx+28*scale,fy+14*scale,14*scale,chosen and 'E5E5E5' or '999999',nil,false,5)
+            if chosen then rect(out,fx+16*scale,fy+29*scale,24*scale,2*scale,'54B8E3',scale) end
+            if s.focus=='filter' and s.filter_index==i then
+                rect(out,fx+5*scale,fy+3*scale,46*scale,scale,'777777');rect(out,fx+5*scale,fy+25*scale,46*scale,scale,'777777')
+            end
         end
     end
-    lang_width=clamp(lang_width,24*scale,80*scale)
-    codec_width=clamp(codec_width,32*scale,84*scale)
+    -- Shared columns use the whole track set, so scrolling/filtering cannot
+    -- shift separators. Missing fields leave their column empty.
+    local function columns(kind)
+        local lang_width,codec_width,id_width,channel_width=0,0,0,36*scale
+        local has_language,has_codec=false,false
+        local function meta_language(track)
+            return track.lang~='' and label(track,kind)~=language(track) and language(track) or ''
+        end
+        for _,track in ipairs(s.tracks) do
+            if row_kind(s,track)==kind then
+                local lang=kind=='audio' and language(track) or meta_language(track)
+                if lang~='' then has_language=true;lang_width=math.max(lang_width,measure(s,lang,meta_size*scale)) end
+                if track.codec~='' then has_codec=true;codec_width=math.max(codec_width,measure(s,track.codec,meta_size*scale)) end
+                id_width=math.max(id_width,measure(s,kind=='edition' and track.number_text or single and track.time_text or '#'..track.number_text,meta_size*scale))
+                if kind=='audio' and track.channels then
+                    channel_width=math.max(channel_width,measure(s,string.format('%g 声道',track.channels),meta_size*scale))
+                end
+            end
+        end
+        return {clamp(lang_width,24*scale,80*scale),clamp(codec_width,32*scale,84*scale),id_width,channel_width,has_language,has_codec,meta_language}
+    end
+    local metrics={}
+    for _,track in ipairs(s.tracks) do local kind=row_kind(s,track);if not metrics[kind] then metrics[kind]=columns(kind) end end
     local function row(track,top,off)
-        local id=off and 0 or track.id;local current=s.current==id;local focused=s.focus=='row' and s.focus_id==id
-        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or single and 38 or 52)*scale,id=id,title=off and s.profile.off or label(track,s.kind)}
-        if not off and s.kind=='audio' then r.details=audio_details(track) end
-        if not off and s.kind=='video' then r.details=video_details(track) end
+        local kind=off and s.kind or row_kind(s,track)
+        local lang_width,codec_width,id_width,channel_width,has_language,has_codec,meta_language=unpack(metrics[kind] or columns(kind))
+        local first_line=#out+1
+        local id=off and 0 or track.id;local current=(grouped and track.current) or (not grouped and s.current==id);local focused=s.focus=='row' and s.focus_id==id
+        local r={x=x+8*scale,y=top,w=(panel_width-16)*scale,h=(off and 30 or single and 38 or 52)*scale,id=id,title=off and s.profile.off or label(track,kind)}
+        if not off and kind=='audio' then r.details=audio_details(track) end
+        if not off and kind=='video' then r.details=video_details(track) end
         if not off and track.blocked_reason~='' then r.details={track.blocked_reason} end
-        if s.kind=='device' then
+        if kind=='device' then
             r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
             r.tip_title=track.detail_title~='' and clean(track.detail_title) or r.title
         end
@@ -568,7 +643,7 @@ render=function()
         if focused then rect(out,r.x,r.y,r.w,r.h,'777777',4*scale);rect(out,r.x+scale,r.y+scale,r.w-2*scale,r.h-2*scale,background,3*scale)
         else rect(out,r.x,r.y,r.w,r.h,background,4*scale) end
         local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or id_width)
-        if s.kind=='device' then width=r.w-50*scale end
+        if kind=='device' then width=r.w-50*scale end
         local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
         add_text(out,title,tx,(off or single) and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or (not off and track.blocked_reason~='' and '999999' or 'E5E5E5'),
             {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or single and 34 or 25)*scale},current,(off or single) and 4 or 7)
@@ -579,10 +654,10 @@ render=function()
         end
         if not off then
             if single then
-                if s.kind=='chapter' or s.kind=='edition' then add_text(out,s.kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
+                if kind=='chapter' or kind=='edition' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
-            local identifier='#'..id;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
-            if s.kind=='audio' or s.kind=='video' then
+            local identifier='#'..track.number_text;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
+            if kind=='audio' or kind=='video' then
                 -- Compact, bounded columns shared across the complete track
                 -- set. Audio centers interior cells; video centers each compact
                 -- cell. Neither layout distributes the group across the row.
@@ -590,7 +665,7 @@ render=function()
                 local cells={math.min(lang_width,56*scale),math.min(codec_width,64*scale),
                     math.min(channel_width,48*scale),72*scale}
                 local values={language(track),track.codec,track.channels and string.format('%g 声道',track.channels) or '',source(track)}
-                if s.kind=='video' then
+                if kind=='video' then
                     -- Interior columns share a width so the two spaces bounded
                     -- by dividers match, without stretching the entire group.
                     cells={80*scale,56*scale,56*scale,52*scale}
@@ -599,7 +674,7 @@ render=function()
                 local left=tx
                 for i,value in ipairs(values) do
                     local cell=cells[i]
-                    local centered=s.kind=='video' or (i>1 and i<#values)
+                    local centered=kind=='video' or (i>1 and i<#values)
                     add_text(out,fitted(s,value~='' and value or '—',cell,meta_size*scale),centered and left+cell/2 or left,r.y+36*scale,meta_size*scale,'AAAAAA',
                         {x=left,y=r.y+26*scale,w=cell,h=20*scale},false,centered and 5 or 4)
                     if i<4 then rect(out,left+cell+gap,r.y+31*scale,line,10*scale,'555555') end
@@ -629,6 +704,19 @@ render=function()
             end
             end
         end
+        if grouped then
+            for i=first_line,#out do
+                local line=out[i]
+                if line:find('\\clip',1,true) then
+                    line=line:gsub('\\clip%(([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),([%d%.%-]+)%)',function(a,b,c,d)
+                        return string.format('\\clip(%.2f,%.2f,%.2f,%.2f)',math.max(tonumber(a),listclip.x),math.max(tonumber(b),listclip.y),math.min(tonumber(c),listclip.x+listclip.w),math.max(math.max(tonumber(b),listclip.y),math.min(tonumber(d),listclip.y+listclip.h)))
+                    end)
+                else line=line:gsub('^{',string.format('{\\clip(%.2f,%.2f,%.2f,%.2f)',listclip.x,listclip.y,listclip.x+listclip.w,listclip.y+listclip.h),1) end
+                out[i]=line
+            end
+            local bottom=math.min(r.y+r.h,listclip.y+listclip.h)
+            r.y=math.max(r.y,listclip.y);r.h=math.max(0,bottom-r.y)
+        end
     end
     if not selectable(s) then
         local title,hint=s.profile.empty,s.profile.hint
@@ -636,8 +724,39 @@ render=function()
         add_text(out,title,x+(panel_width*scale-measure(s,title,title_size*scale))/2,listtop+30*scale,title_size*scale,'DDDDDD')
         add_text(out,hint,x+(panel_width*scale-measure(s,hint,meta_size*scale))/2,listtop+60*scale,meta_size*scale,'AAAAAA')
     else
-        if not single then row(nil,listtop,true) end
+        if not single and not grouped then row(nil,listtop,true) end
         if #s.matches==0 then local message=s.profile.nomatch;add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+(off_step+30)*scale,search_size*scale,'AAAAAA') end
+        if grouped then
+            for _,track in ipairs(s.matches) do
+                local top=entries[track.id].top-s.scroll
+                if top+52>0 and top<listheight then row(track,listtop+top*scale,false) end
+            end
+            local sticky
+            local titles={video='视频',audio='音轨',primary='主字幕'}
+            for i,group in ipairs(groups) do
+                local top=group.top-s.scroll
+                if top<=0 then sticky=i
+                elseif top<listheight then
+                    -- Clip header backgrounds at the bottom of the viewport.
+                    rect(out,x+scale,listtop+top*scale,(panel_width-2)*scale,math.min(28,listheight-top)*scale,'151515')
+                    add_text(out,titles[group.kind],x+18*scale,listtop+(top+14)*scale,12*scale,'999999',listclip,false,4)
+                end
+            end
+            if sticky then
+                local next_group=groups[sticky+1]
+                local top=next_group and math.min(0,next_group.top-s.scroll-28) or 0
+                -- A pushed-out header must not paint over the fixed filter bar.
+                rect(out,x+scale,listtop,(panel_width-2)*scale,(28+top)*scale,'151515')
+                add_text(out,titles[groups[sticky].kind],x+18*scale,listtop+(top+14)*scale,12*scale,'999999',listclip,false,4)
+                l.group_header={x=x,y=listtop,w=panel_width*scale,h=(28+top)*scale}
+            end
+            if s.max_scroll>0 then
+                local bh=listheight*scale;local th=math.max(24*scale,bh*listheight/total)
+                l.scrollbar={x=x+(panel_width-14)*scale,y=listtop,w=10*scale,h=bh}
+                l.thumb={x=x+(panel_width-12)*scale,y=listtop+(bh-th)*s.scroll/s.max_scroll,w=6*scale,h=th}
+                rect(out,l.thumb.x,l.thumb.y,l.thumb.w,l.thumb.h,s.drag and '1287BB' or '707070',3*scale)
+            end
+        else
         for i=1,rows do row(s.matches[s.scroll+i],listtop+(off_step+(i-1)*row_step)*scale,false) end
         if #s.matches>capacity then
             local top=listtop+off_step*scale;local bh=rows*row_step*scale
@@ -646,9 +765,10 @@ render=function()
             rect(out,l.thumb.x,l.thumb.y,l.thumb.w,l.thumb.h,s.drag and '1287BB' or '707070',3*scale)
         end
     end
+    end
     local footer=y+height-34*scale;rect(out,x+1,footer,panel_width*scale-2,scale,'2C2C2C')
     add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     if s.tip_focus then
         for _,r in ipairs(l.rows) do
@@ -673,7 +793,7 @@ function M.is_open() return active~=nil end
 function M.update(tracks,id,notice)
     local s=active;if not s then return false end
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
-    if s.kind=='primary' or s.kind=='secondary' then s.error='' end
+    if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' then s.error='' end
     if not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end
@@ -713,7 +833,7 @@ function M.open(options)
         M.update(options.tracks,options.current_id,options.notice);active.focus=selectable(active) and 'search' or 'close';caret(active);render();return true
     end
     local s={kind=kind,profile=profiles[kind],tracks=normalize(options.tracks),current=current_id(options.current_id),submit=options.submit,close=options.close,
-        chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
+        filter='all',filter_index=1,chars={},cursor=0,query_offset=0,scroll=0,error='',notice=clean(options.notice or ''),binding_names={},borrowed={},widths={},matches={},capacity=1,caret=true,blink=now()}
     s.focus=selectable(s) and 'search' or 'close';active=s
     status('opening')
     local ok,failure=pcall(function()

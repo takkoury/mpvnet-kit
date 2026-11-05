@@ -537,3 +537,79 @@ function export_ass(output)
         {id=3,title='English',lang='en',codec='ass',external=false},
         {id=9,title='Bilibili Danmaku',codec='ass',external=true}},false,'secondary')
 end
+
+local function active_state()
+    for i=1,10 do local name,value=debug.getupvalue(M.is_open,i);if name=='active' then return value end end
+end
+local function dense_tracks()
+    local list={}
+    for group,kind in ipairs({'video','audio','primary'}) do
+        for id=1,12 do
+            list[#list+1]={id=(group-1)*12+id,number_text=tostring(id),display_kind=kind,
+                title=({video='画面 ',audio='音轨 ',primary='字幕 '})[kind]..id,
+                current=id==2,lang='zh',codec=kind=='video' and 'h264' or kind=='audio' and 'aac' or 'subrip',external=false,
+                ['demux-channel-count']=2,['demux-w']=1920,['demux-h']=1080,['demux-fps']=24,
+                blocked_reason=(group==3 and id==3) and '该轨道已用于次字幕。' or '',
+                slot_label=(group==3 and id==3) and '已用于次字幕' or ''}
+        end
+    end
+    return list
+end
+function all_tracks_groups_filters_and_contained_scrolling()
+    local list=dense_tracks()
+    assert(M.open({kind='all',tracks=list,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();eq(#s.matches,36);eq(s.viewport,340)
+    local fixed=s.layout.search.y;local panel=s.layout.panel.h
+    assert(not data():find('关闭视频画面',1,true));assert(data():find('画面 2',1,true))
+    invoke('WHEEL_DOWN');eq(s.scroll,162);eq(s.layout.search.y,fixed);eq(s.layout.panel.h,panel)
+    assert(s.layout.group_header and s.layout.group_header.h==28)
+    local header=s.layout.group_header
+    mouse(header.x+100,header.y+10);invoke('MBTN_LEFT');eq(#submitted,0,'sticky header is not selectable')
+    invoke('TAB');eq(s.focus,'filter');invoke('RIGHT');eq(s.filter,'video');eq(s.scroll,0);eq(#s.matches,12)
+    invoke('RIGHT');eq(s.filter,'audio');eq(#s.matches,12);assert(data():find('音轨 1',1,true));assert(not data():find('画面 1',1,true))
+    invoke('TAB');invoke('END');eq(s.focus_id,24);assert(s.scroll>0);assert(data():find('音轨 12',1,true))
+    local last=s.layout.rows[#s.layout.rows];assert(last.y+last.h<=s.layout.panel.y+s.layout.panel.h-34)
+    invoke('Ctrl+f');text('音轨 2');eq(s.scroll,0);eq(#s.matches,1);eq(s.matches[1].id,14)
+    invoke('ENTER');eq(submitted[1],14);idle_resources()
+    assert(M.open({kind='all',tracks=list,submit=function() return true end}));s=active_state()
+    eq(s.filter,'all');eq(s.scroll,0);eq(#s.matches,36);M.close();idle_resources()
+end
+function all_tracks_markers_occupancy_thumb_and_small_viewports()
+    for _,dpi in ipairs({1,1.5,2}) do
+        for _,size in ipairs({{1469,826},{480,320}}) do
+            width,height=size[1],size[2];properties['display-hidpi-scale']=dpi
+            assert(M.open({kind='all',tracks=dense_tracks(),submit=function(id) submitted[#submitted+1]=id;return true end}))
+            local s=active_state();local l=s.layout
+            assert(l.panel.x>=0 and l.panel.y>=0 and l.panel.y+l.panel.h<=height)
+            invoke('TAB');invoke('RIGHT');invoke('RIGHT');invoke('RIGHT');eq(s.filter,'primary')
+            invoke('TAB');invoke('DOWN');eq(s.focus_id,26)
+            local current_line
+            for line in data():gmatch('[^\n]+') do if line:sub(-#'字幕 2')=='字幕 2' then current_line=line end end
+            assert(current_line and current_line:find('\\b1',1,true),'per-type current must be bold')
+            invoke('DOWN');eq(s.focus_id,27);invoke('ENTER');eq(#submitted,0);assert(data():find('该轨道已用于次字幕。',1,true))
+            local thumb=s.layout.thumb;assert(thumb)
+            mouse(thumb.x+thumb.w/2,thumb.y+thumb.h/2);invoke('MBTN_LEFT',{event='down'})
+            local bar=s.layout.scrollbar;mouse(thumb.x+thumb.w/2,bar.y+bar.h);invoke('MBTN_LEFT',{event='up'})
+            eq(s.scroll,s.max_scroll);eq(#submitted,0)
+            M.update({},0);assert(M.is_open());eq(s.scroll,0);M.close();idle_resources()
+        end
+    end
+end
+
+function export_all_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    assert(M.open({kind='all',tracks=dense_tracks(),submit=function() return false end}))
+    save('all-dense')
+    for i=1,9 do invoke('WHEEL_DOWN') end
+    save('all-scrolled')
+    invoke('TAB');invoke('RIGHT');invoke('RIGHT');save('all-audio')
+    M.close()
+end

@@ -515,3 +515,73 @@ function advanced_auto_slots_failures_and_stale_sessions_are_safe()
     bindings['select-primary']();properties['track-list']={};observers['track-list']();eq(#request.tracks,0)
     eq(request.submit(3),false);eq(#writes,0)
 end
+
+
+local function all_fixture()
+    properties['track-list']={
+        {type='sub',id=1,title='Same'}, {type='audio',id=1,title='Same',codec='aac'},
+        {type='video',id=1,title='Same'}, {type='video',id=2,title='Camera'},
+        {type='audio',id=2,title='English'}, {type='sub',id=2,title='Bilibili Danmaku'},
+        {type='sub',id=3,title='English'}}
+    properties.vid=1;properties.aid=1;properties.sid=1;properties['secondary-sid']=2
+    bindings['select-tracks']()
+end
+local function all_row(kind,id)
+    for _,row in ipairs(request.tracks) do
+        if row.display_kind==kind and row.number_text==tostring(id) then return row end
+    end
+end
+function all_tracks_use_composite_identity_and_independent_current_markers()
+    all_fixture();eq(request.kind,'all');eq(#request.tracks,7);eq(request.current_id,0)
+    local video,audio,sub=all_row('video',1),all_row('audio',1),all_row('primary',1)
+    assert(video.id~=audio.id and video.id~=sub.id and audio.id~=sub.id)
+    assert(video.current and audio.current and sub.current)
+    eq(request.tracks[1].display_kind,'video');eq(request.tracks[3].display_kind,'audio');eq(request.tracks[5].display_kind,'primary')
+    eq(all_row('primary',2).slot_label,'已用于次字幕')
+    eq(properties['track-list'][1].display_kind,nil);eq(properties['track-list'][1].current,nil)
+    clear();assert(request.submit(audio.id));eq(properties.aid,'no');eq(properties.sid,1);eq(properties.vid,1)
+    assert(request.submit(sub.id));eq(properties.sid,'no');eq(properties.vid,1)
+    assert(request.submit(video.id));eq(properties.vid,'no');eq(properties['user-data/mpvnet/video-selection-revision'],1)
+    eq(writes[1][1],'aid');eq(writes[2][1],'sid');eq(writes[3][1],'vid')
+    eq(properties['secondary-sid'],2);eq(properties.volume,83);eq(properties.mute,false);eq(properties['audio-device'],'auto')
+end
+function all_tracks_reorder_removal_and_retyping_preserve_identity()
+    all_fixture();local video=all_row('video',2).id;local audio=all_row('audio',2).id
+    local source=properties['track-list'];properties['track-list']={source[5],source[4],source[1]}
+    observers['track-list']();eq(all_row('video',2).id,video);eq(all_row('audio',2).id,audio)
+    clear();assert(request.submit(audio));eq(properties.aid,'2');eq(properties.vid,1)
+    properties['track-list']={{type='video',id=2},{type='sub',id=2}}
+    eq(request.submit(audio),false);eq(#writes,1)
+    assert(all_row('primary',2).id~=audio);assert(request.submit(video));eq(properties.vid,'2')
+    local removed=all_row('primary',2).id
+    properties['track-list']={{type='video',id=2},{type='sub',id=4}};observers['track-list']()
+    assert(all_row('primary',4).id~=removed);eq(request.submit(removed),false);eq(#writes,2)
+end
+function all_tracks_occupancy_race_failure_and_auto_current_are_rechecked()
+    all_fixture();local sub=all_row('primary',3).id;local video=all_row('video',2).id
+    clear();properties['secondary-sid']=3
+    eq(request.submit(sub),false);eq(#writes,0);eq(all_row('primary',3).slot_label,'已用于次字幕')
+    properties['secondary-sid']='no';observers['secondary-sid']();eq(all_row('primary',3).slot_label,nil)
+    properties.sid='auto';properties['current-tracks/sub/id']=3;observers['current-tracks/sub/id']()
+    assert(all_row('primary',3).current);assert(request.submit(sub));eq(properties.sid,'no')
+    set_failure=true;eq(request.submit(video),false);eq(properties['user-data/mpvnet/video-selection-revision'],nil)
+    set_failure=false;readback_override='no';eq(request.submit(video),false);eq(properties['user-data/mpvnet/video-selection-revision'],nil)
+    readback_override=nil;properties.vid='auto';properties['current-tracks/video/id']=2
+    observers['current-tracks/video/id']();assert(all_row('video',2).current)
+    assert(request.submit(video));eq(properties.vid,'no');eq(properties['user-data/mpvnet/video-selection-revision'],1)
+    properties.aid='auto';properties['current-tracks/audio/id']=2;observers['current-tracks/audio/id']()
+    assert(all_row('audio',2).current)
+    properties['sub-visibility']=false;observers['sub-visibility']();assert(request.notice:find('主字幕当前隐藏',1,true))
+end
+function all_tracks_observers_and_session_retirement_do_not_cross_instances()
+    all_fixture();local old=request;local id=all_row('audio',2).id
+    clear();observers.aid();observers.vid();observers.sid();eq(#calls,3)
+    observers.chapter();observers['audio-device']();observers['current-edition']();eq(#calls,3)
+    bindings['select-audio']();clear();old.close();eq(old.submit(id),false);eq(#writes,0);assert(opened)
+    assert(request.submit(2));eq(properties.aid,'2')
+    bindings['select-tracks']();old=request;id=all_row('video',2).id;events['start-file']();clear()
+    eq(old.submit(id),false);eq(#writes,0)
+    bindings['select-tracks']();old.close();assert(opened)
+    clear();eq(request.submit(0),false);eq(request.submit(999),false);eq(#writes,0)
+    properties['track-list']={};observers['track-list']();eq(#request.tracks,0)
+end

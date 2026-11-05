@@ -31,6 +31,10 @@ def _case(name):
 
 
 for _name in (
+    'all_tracks_use_composite_identity_and_independent_current_markers',
+    'all_tracks_reorder_removal_and_retyping_preserve_identity',
+    'all_tracks_occupancy_race_failure_and_auto_current_are_rechecked',
+    'all_tracks_observers_and_session_retirement_do_not_cross_instances',
     'advanced_slots_include_all_tracks_and_do_not_mutate_source',
     'advanced_secondary_preserves_other_slot_visibility_and_danmaku_options',
     'advanced_occupancy_is_checked_again_at_submit_and_observed',

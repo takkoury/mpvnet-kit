@@ -7,7 +7,9 @@ local active_kind
 local chapter_snapshot
 local edition_snapshot
 local device_ids, device_names, device_rows, next_device_id
+local track_ids, track_targets, next_track_id
 local kinds = {
+    all = {label='全部轨道'},
     audio = {property='aid', type='audio', label='音轨'},
     video = {property='vid', type='video', label='视频轨'},
     subtitle = {property='sid', type='sub', label='字幕'},
@@ -167,6 +169,7 @@ local function subtitle_slot_id(property)
     return id and id>0 and id<math.huge and id==math.floor(id) and id or 0
 end
 local function current_id(kind)
+    if kind=='all' then return 0 end
     if kinds[kind].other then return subtitle_slot_id(kinds[kind].property) end
     if kind=='edition' then
         local current=mp.get_property_native('current-edition')
@@ -183,7 +186,54 @@ local function current_id(kind)
     return current and current >= 0 and current < math.huge and current == math.floor(current) and current + 1 or 0
 end
 
+-- UI identities are session-local and never shared across native track types.
+local track_kinds={video='video',audio='audio',sub='primary'}
+local function selected_track(kind)
+    if kind=='primary' then return subtitle_slot_id('sid') end
+    local current=mp.get_property_native(kinds[kind].property)
+    if current=='auto' then current=mp.get_property_native('current-tracks/'..kinds[kind].type..'/id') end
+    return tonumber(current) or 0
+end
+local function all_tracks()
+    local source=mp.get_property_native('track-list',{})
+    local rows,seen={},{}
+    for _,type_name in ipairs({'video','audio','sub'}) do
+        local kind=track_kinds[type_name]
+        for _,track in ipairs(type(source)=='table' and source or {}) do
+            local real_id=type(track)=='table' and track.id
+            if type(track)=='table' and track.type==type_name and type(real_id)=='number' and
+                real_id>0 and real_id<math.huge and real_id==math.floor(real_id) then
+                local key=type_name..':'..real_id
+                if not seen[key] then
+                    seen[key]=true
+                    if not track_ids[key] then
+                        next_track_id=next_track_id+1
+                        track_ids[key]=next_track_id
+                        track_targets[next_track_id]={kind=kind,id=real_id}
+                    end
+                    local row={};for name,value in pairs(track) do row[name]=value end
+                    row.id=track_ids[key];row.number_text=tostring(real_id)
+                    row.display_kind=kind;row.current=real_id==selected_track(kind)
+                    if kind=='primary' and real_id==subtitle_slot_id('secondary-sid') then
+                        row.blocked_reason='该轨道已用于次字幕，不能同时用于主字幕。'
+                        row.slot_label='已用于次字幕'
+                    end
+                    rows[#rows+1]=row
+                end
+            end
+        end
+    end
+    return rows
+end
+local function invalidate_video_restore()
+    local property='user-data/mpvnet/video-selection-revision'
+    local revision=mp.get_property_native(property,0)
+    if type(revision)~='number' or revision~=revision or revision<0 or revision>=math.huge then revision=0 end
+    mp.set_property_native(property,revision+1)
+end
+
 local function tracks_for(kind)
+    if kind=='all' then return all_tracks() end
     if kind == 'chapter' then return chapter_tracks() end
     if kind == 'device' then return output_devices() end
     if kind == 'edition' then return edition_tracks() end
@@ -207,6 +257,11 @@ local function tracks_for(kind)
 end
 
 local function selection_notice(kind,tracks,selected)
+    if kind=='all' and mp.get_property_native('sub-visibility')==false then
+        for _,track in ipairs(tracks) do
+            if track.display_kind=='primary' then return '主字幕当前隐藏，选择轨道不会开启显示。' end
+        end
+    end
     if kind=='device' and #tracks>0 and selected==0 then return '已选设备不在列表中，可重新选择。' end
     if kind=='secondary' then
         for _,track in ipairs(tracks) do
@@ -229,6 +284,7 @@ local function close_selector()
     chapter_snapshot = nil
     edition_snapshot = nil
     device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
+    track_ids, track_targets, next_track_id = nil, nil, nil
     if selector then selector.close() end
 end
 
@@ -259,6 +315,7 @@ local function select_tracks(kind)
     if not load_selector(kind) then return end
     close_selector()
     active_kind = kind
+    if kind=='all' then track_ids,track_targets,next_track_id={},{},0 end
     if kind == 'chapter' then chapter_snapshot = chapter_list() end
     if kind == 'edition' then edition_snapshot = edition_list() end
     if kind == 'device' then device_ids, device_names, device_rows, next_device_id = {}, {}, {}, 0 end
@@ -273,6 +330,27 @@ local function select_tracks(kind)
             if session ~= session_generation or media ~= media_generation or
                 active_kind ~= kind or not selector.is_open() then
                 return false, '选择已失效，请重新打开选择器。'
+            end
+            if kind=='all' then
+                local target=track_targets[tonumber(id)]
+                if not target then return false,'该轨道已失效，请重新选择。' end
+                local target_kind=target.kind
+                local target_definition=kinds[target_kind]
+                local present=false
+                for _,track in ipairs(tracks_for(target_kind)) do
+                    if track.id==target.id then present=true;break end
+                end
+                if not present then refresh_selector();return false,'该轨道已移除，请重新选择。' end
+                if target_kind=='primary' and target.id==subtitle_slot_id('secondary-sid') then
+                    refresh_selector();return false,'该轨道已用于次字幕，不能同时用于主字幕。'
+                end
+                local value=selected_track(target_kind)==target.id and 'no' or tostring(target.id)
+                local ok=mp.set_property(target_definition.property,value)
+                if not ok or selected_track(target_kind)~=(value=='no' and 0 or target.id) then
+                    refresh_selector();return false,'未能应用'..target_definition.label..'，请重试。'
+                end
+                if target_kind=='video' then invalidate_video_restore() end
+                return true
             end
             if kind=='subtitle' and tonumber(id) and tonumber(id)>0 and tonumber(id)==subtitle_slot_id('secondary-sid') then
                 return false,'该轨道已用于次字幕，不能同时用于主字幕。'
@@ -372,10 +450,7 @@ local function select_tracks(kind)
             if kind == 'video' then
                 -- Explicit selection retires audio-only's earlier restore record.
                 -- A shared revision avoids a delayed message clearing a newer save.
-                local property='user-data/mpvnet/video-selection-revision'
-                local revision=mp.get_property_native(property,0)
-                if type(revision)~='number' or revision~=revision or revision<0 or revision>=math.huge then revision=0 end
-                mp.set_property_native(property,revision+1)
+                invalidate_video_restore()
             end
             return true
         end,
@@ -386,6 +461,7 @@ local function select_tracks(kind)
                 chapter_snapshot = nil
                 edition_snapshot = nil
                 device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
+                track_ids, track_targets, next_track_id = nil, nil, nil
             end
         end,
     })
@@ -395,6 +471,7 @@ local function select_tracks(kind)
     end
 end
 
+mp.add_key_binding(nil, 'select-tracks', function() select_tracks('all') end)
 mp.add_key_binding(nil, 'select-subtitle', function() select_tracks('subtitle') end)
 mp.add_key_binding(nil, 'select-primary', function() select_tracks('primary') end)
 mp.add_key_binding(nil, 'select-secondary', function() select_tracks('secondary') end)
@@ -404,14 +481,17 @@ mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') en
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.observe_property('track-list', 'native', function()
-    if active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
+    if active_kind == 'all' or active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
 end)
-mp.observe_property('aid', 'native', function() if active_kind == 'audio' then refresh_selector() end end)
-mp.observe_property('sid', 'native', function() if active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
+mp.observe_property('aid', 'native', function() if active_kind == 'all' or active_kind == 'audio' then refresh_selector() end end)
+mp.observe_property('sid', 'native', function() if active_kind == 'all' or active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
 for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub/id','current-tracks/sub2/id'}) do
-    mp.observe_property(property,'native',function() if active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
+    mp.observe_property(property,'native',function() if active_kind=='all' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
 end
-mp.observe_property('vid', 'native', function() if active_kind == 'video' then refresh_selector() end end)
+for _,property in ipairs({'current-tracks/video/id','current-tracks/audio/id'}) do
+    mp.observe_property(property,'native',function() if active_kind=='all' then refresh_selector() end end)
+end
+mp.observe_property('vid', 'native', function() if active_kind == 'all' or active_kind == 'video' then refresh_selector() end end)
 -- Refresh presentation/current markers without accepting a new index mapping.
 -- A changed chapter list is acknowledged only by the rejected submit above.
 for _, property in ipairs({'chapter', 'chapter-list', 'duration'}) do

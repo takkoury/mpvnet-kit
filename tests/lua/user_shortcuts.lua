@@ -227,6 +227,7 @@ function native_catalog_coverage()
         ['script-binding select/select-sid']='subtitle.select-native',
         ['script-binding select/select-secondary-sid']='subtitle.select-secondary',
         ['script-binding select/select-edition']='edition.select',
+        ['script-binding select/select-track']='tools.selector-tracks',
         ['script-binding select/select-vid']='video.select',
         ['script-binding select/select-audio-device']='audio.device',
         ['script-binding select/select-chapter']='chapter.select',
@@ -245,6 +246,7 @@ function native_catalog_coverage()
     eq(catalog.by_command['script-binding select/select-audio-device'].command,'script-binding track_selection/select-device')
     eq(catalog.by_command['script-binding select/select-vid'].command,'script-binding track_selection/select-video')
     eq(catalog.by_command['script-binding select/select-edition'].command,'script-binding track_selection/select-edition')
+    eq(catalog.by_command['script-binding select/select-track'].command,'script-binding track_selection/select-tracks')
     eq(catalog.by_command['script-binding select/select-sid'].command,'script-binding track_selection/select-primary')
     eq(catalog.by_command['script-binding select/select-secondary-sid'].command,'script-binding track_selection/select-secondary')
     assert(catalog.by_command['multiply speed 2.0'].id~='playback.speed-up')

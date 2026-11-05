@@ -86,6 +86,12 @@ class SubtitleSelector(unittest.TestCase):
     def test_zero_negative_nan_and_infinite_dpi_use_a_visible_unit_scale(self):
         self.run_case('invalid_hidpi_values_use_visible_unit_scale')
 
+    def test_all_tracks_groups_filters_and_contained_scrolling(self):
+        self.run_case('all_tracks_groups_filters_and_contained_scrolling')
+
+    def test_all_tracks_markers_occupancy_thumb_and_small_viewports(self):
+        self.run_case('all_tracks_markers_occupancy_thumb_and_small_viewports')
+
 
 if __name__ == '__main__':
     unittest.main()
