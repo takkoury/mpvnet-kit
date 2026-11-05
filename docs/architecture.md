@@ -85,12 +85,6 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 屏幕内主菜单、工具菜单、ModernZ原精确队列命令和tools.selector-playlist均指向新入口；P侧窗切换与管理API不变。共用ASS转义前将媒体文本中的OSD C1控制码显示为可见转义，避免它们改变转义模式；后台播放仍使用控制层原始身份与路径。
 
-### 原生播放统计外观
-
-[stats.conf](../config/script-opts/stats.conf)只设置原生stats脚本支持的字体/等宽数字字体、文字颜色/透明度、描边/阴影和图表颜色/边框。使用Microsoft YaHei UI与Consolas，字号20沿原生默认；ASS颜色为BGR，图表BB8712对应套件强调色#1287BB。统计仍叠加画面，不增加外层窗口或固定背景面板，深色图表底色与文字描边用于可读性。
-
-原生stats.lua仍由宿主核心提供，发行包不复制或修改它；页面0–5、字段/顺序、图表开关、采样、分页/滚动/搜索和Tab/数字键/Esc均保持。没有设置custom_header、persistent_overlay、vidscale或任何功能选项，不改变其他OSD样式。已有同名个人stats.conf按安装器的未知/修改文件保护处理，不自动接管；本批不做个人部署。样式配置加载与原生输出对照、实际窗口验收分别记录。
-
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。
