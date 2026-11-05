@@ -763,3 +763,40 @@ function export_subtitle_lines_ass(output)
     assert(M.open({kind='lines',tracks=rows,current_id=3,submit=function() return true end}));save('subtitle-lines-normal');M.close()
     assert(M.open({kind='lines',tracks={},state={empty_title='当前主字幕为图形字幕',empty_hint='图形字幕不含可提取的文字。'},submit=function() return false end}));save('subtitle-lines-bitmap');M.close()
 end
+
+function bindings_command_search_tooltip_no_current_and_repeat_guard()
+    local rows={{id=11,title='播放／暂停',time_text='SPACE',action_command='cycle pause'},
+        {id=22,title='自定义动作',time_text='Ctrl+Shift+Alt+MBTN_LEFT_DBL',action_command='show-text "only a synthetic message"'}}
+    assert(M.open({kind='bindings',tracks=rows,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();assert(s.layout.clear==nil);assert(not data():find('cycle pause',1,true));assert(data():find('SPACE',1,true))
+    invoke('ENTER',{event='repeat'});eq(#submitted,0)
+    text('synthetic');eq(#s.matches,1);invoke('TAB');tick(.6)
+    assert(data():find('Ctrl+Shift+Alt+MBTN_LEFT_DBL',1,true));assert(data():find('show-text',1,true))
+    invoke('ENTER');eq(submitted[1],22);idle_resources()
+end
+function bindings_empty_retry_and_action_errors_do_not_create_off_rows()
+    assert(M.open({kind='bindings',tracks={},state={empty_title='未能读取快捷键',empty_hint='请重试。',can_retry=true},
+        retry=function() M.update({{id=4,title='暂停',time_text='SPACE',action_command='cycle pause'}},0,'',{}) end,
+        submit=function() return false,'快捷键已变化，请重新选择。' end}))
+    local s=active_state();invoke('TAB');eq(s.focus,'retry');invoke('ENTER');eq(s.focus,'search')
+    invoke('ENTER');assert(data():find('快捷键已变化，请重新选择。',1,true));assert(M.is_open());invoke('ESC');idle_resources()
+end
+
+function export_bindings_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows={{id=1,title='播放／暂停',time_text='SPACE',action_command='cycle pause'},
+        {id=2,title='下一条普通字幕轨',time_text='j',action_command='script-binding subtitle_controls/cycle-next'},
+        {id=3,title='选择音轨…',time_text='Ctrl+3',action_command='script-binding track_selection/select-audio'},
+        {id=4,title='set speed 1.25',time_text='Ctrl+1',action_command='set speed 1.25'},
+        {id=5,title='截图并复制到剪贴板',time_text='Ctrl+Shift+Alt+s',action_command='screenshot'}}
+    assert(M.open({kind='bindings',tracks=rows,submit=function() return true end}));save('bindings-normal')
+    invoke('DOWN');invoke('DOWN');tick(.6);save('bindings-command-tip');M.close()
+end

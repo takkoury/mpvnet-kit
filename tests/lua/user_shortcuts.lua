@@ -227,6 +227,7 @@ function native_catalog_coverage()
         ['script-binding select/select-sid']='subtitle.select-native',
         ['script-binding select/select-secondary-sid']='subtitle.select-secondary',
         ['script-binding select/select-edition']='edition.select',
+        ['script-binding select/select-binding']='tools.selector-bindings',
         ['script-binding select/select-subtitle-line']='subtitle.select-line',
         ['script-binding select/select-watch-later']='file.watch-later',
         ['script-binding select/select-watch-history']='file.history',

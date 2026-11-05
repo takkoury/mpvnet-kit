@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_bindings_data.BindingsData',
         'test_subtitle_lines.SubtitleLines',
         'test_watch_later_data.WatchLaterData',
         'test_history_data.HistoryData',

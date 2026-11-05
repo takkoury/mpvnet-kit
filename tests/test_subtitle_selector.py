@@ -113,6 +113,12 @@ class SubtitleSelector(unittest.TestCase):
     def test_subtitle_lines_failed_read_retry_and_empty_no_off(self):
         self.run_case('subtitle_lines_failed_read_retry_and_empty_no_off')
 
+    def test_bindings_command_search_tooltip_no_current_and_repeat_guard(self):
+        self.run_case('bindings_command_search_tooltip_no_current_and_repeat_guard')
+
+    def test_bindings_empty_retry_and_action_errors_do_not_create_off_rows(self):
+        self.run_case('bindings_empty_retry_and_action_errors_do_not_create_off_rows')
+
 
 if __name__ == '__main__':
     unittest.main()

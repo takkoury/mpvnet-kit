@@ -11,8 +11,10 @@ local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
-local function retry_list(s) return file_list(s) or s.kind=='lines' end
+local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' end
 local profiles={
+    bindings={title='执行快捷键动作',search='查找快捷键或命令',fallback='动作 ',empty='没有可执行的快捷键',
+        hint='当前没有生效的快捷键动作。',nomatch='没有匹配的快捷键',failed='未能执行该快捷键动作。'},
     lines={title='选择字幕行',search='查找字幕内容',fallback='字幕行 ',empty='没有可选择的字幕行',
         hint='当前字幕没有可提取的文本。',nomatch='没有匹配的字幕行',failed='未能跳转到该字幕，请重试。'},
     watchlater={title='稍后继续播放',search='查找待继续的媒体',fallback='媒体 ',empty='没有可继续播放的记录',
@@ -83,7 +85,7 @@ local function normalize(tracks)
         if type(id) == 'number' and id > 0 and id < math.huge and id == math.floor(id) and not seen[id] then
             seen[id] = true
             out[#out + 1] = {id=id, display_kind=({video=true,audio=true,primary=true})[track.display_kind] and track.display_kind or 'primary', current=track.current==true, title=type(track.title)=='string' and track.title or '',
-                date_text=clean(track.date_text or ''),parent_text=clean(track.parent_text or ''),history_path=clean(track.history_path or ''),
+                action_command=clean(track.action_command or ''),date_text=clean(track.date_text or ''),parent_text=clean(track.parent_text or ''),history_path=clean(track.history_path or ''),
                 time_text=type(track.time_text)=='string' and track.time_text or '',
                 number_text=type(track.number_text)=='string' and track.number_text or tostring(id),
                 device_name=type(track.device_name)=='string' and track.device_name or '',
@@ -180,7 +182,7 @@ local function filtered(s)
     for _, track in ipairs(s.tracks) do
         local kind=row_kind(s,track)
         local haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
-            kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text}, ' '):lower()
+            kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text,track.action_command}, ' '):lower()
         if (s.kind~='all' or s.filter=='all' or track.display_kind==s.filter) and (needle == '' or haystack:find(needle, 1, true)) then result[#result + 1] = track end
     end
     if s.kind=='all' then
@@ -464,7 +466,7 @@ mouse_button=function(info)
 end
 key=function(name, info)
     local s=active;if not s or info.canceled or not ({press=true,down=true,['repeat']=true})[info.event] then return end
-    if file_list(s) and info.event=='repeat' and (name=='enter' or name=='escape') then return end
+    if (file_list(s) or s.kind=='bindings') and info.event=='repeat' and (name=='enter' or name=='escape') then return end
     if s.confirming then
         if s.clearing then return end
         if name=='escape' then cancel_clear(s)
@@ -692,6 +694,7 @@ render=function()
                 end
             end
         end
+        if kind=='bindings' then id_width=math.min(id_width,144*scale) end
         return {clamp(lang_width,24*scale,80*scale),clamp(codec_width,32*scale,84*scale),id_width,channel_width,has_language,has_codec,meta_language}
     end
     local metrics={}
@@ -706,6 +709,7 @@ render=function()
         if not off and kind=='video' then r.details=video_details(track) end
         if not off and track.blocked_reason~='' then r.details={track.blocked_reason} end
         if history then r.details={track.history_path,track.date_text} end
+        if kind=='bindings' then r.details={'快捷键  '..track.time_text,track.action_command} end
         if kind=='device' then
             r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
             r.tip_title=track.detail_title~='' and clean(track.detail_title) or r.title
@@ -734,7 +738,9 @@ render=function()
                     add_text(out,fitted(s,track.parent_text,parent_width,meta_size*scale),tx+width,r.y+36*scale,meta_size*scale,'999999',nil,false,6)
                 end
             elseif single then
-                if kind=='chapter' or kind=='edition' or kind=='lines' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
+                if kind=='bindings' then
+                    add_text(out,fitted(s,track.time_text,id_width,meta_size*scale),r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6)
+                elseif kind=='chapter' or kind=='edition' or kind=='lines' then add_text(out,kind=='edition' and track.number_text or track.time_text,r.x+r.w-10*scale,r.y+r.h/2,meta_size*scale,'AAAAAA',nil,false,6) end
             else
             local identifier='#'..track.number_text;add_text(out,identifier,r.x+r.w-10*scale,r.y+9*scale,meta_size*scale,'999999',nil,false,9)
             if kind=='audio' or kind=='video' then
@@ -865,8 +871,8 @@ render=function()
             add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
         end
     else
-    add_text(out,(s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    add_text(out,s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='bindings' and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end
     if s.tip_focus then

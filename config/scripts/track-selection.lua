@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, subtitle line, device and saved media submissions.
+-- One selector session owns track, chapter, subtitle line, device, binding and saved media submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -9,6 +9,7 @@ local edition_snapshot
 local history_data, history_snapshot
 local watch_later_data, refresh_watch_later
 local subtitle_lines, refresh_subtitle_lines, retire_subtitle_lines
+local bindings_data, binding_labels
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -24,6 +25,7 @@ local kinds = {
     device = {property='audio-device', label='音频设备'},
     history = {label='播放历史'},
     watchlater = {label='稍后继续播放'},
+    bindings = {label='快捷键'},
 }
 
 local function valid_device_name(name)
@@ -306,7 +308,7 @@ local function close_selector()
 end
 
 local function refresh_selector()
-    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
+    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and active_kind ~= 'bindings' and
         selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
@@ -339,6 +341,94 @@ local function load_selector(kind)
     end
     mp.osd_message('无法打开' .. kinds[kind].label .. '选择器，请检查配置包文件。', 3)
     return false
+end
+
+local function effective_bindings()
+    if not bindings_data then
+        local ok, module = pcall(dofile,
+            mp.command_native({'expand-path', '~~/script-modules/bindings-data.lua'}))
+        if not ok or type(module) ~= 'table' or type(module.effective) ~= 'function' or
+            type(module.rows) ~= 'function' then return nil end
+        bindings_data = module
+    end
+    local ok, source = pcall(mp.get_property_native, 'input-bindings')
+    if ok then return bindings_data.effective(source) end
+end
+
+local function binding_catalog()
+    if not binding_labels then
+        -- Use the built-in action labels only. The live binding snapshot is the
+        -- sole source for commands; no input or preference file is read here.
+        local ok, labels = pcall(function()
+            local model = dofile(mp.command_native({'expand-path', '~~/script-modules/user-shortcuts.lua'}))
+            return model.catalog('').by_command
+        end)
+        binding_labels = ok and type(labels) == 'table' and labels or {}
+    end
+    return binding_labels
+end
+
+local function select_bindings()
+    if not load_selector('bindings') then return end
+    close_selector()
+    active_kind = 'bindings'
+    local session, media = session_generation, media_generation
+    local function live()
+        return session == session_generation and media == media_generation and
+            active_kind == 'bindings' and selector.is_open()
+    end
+    -- Read outside the panel's exclusive input section. Reuse this snapshot
+    -- until closing; our own temporary inputs must never trigger a refresh.
+    local effective = effective_bindings()
+    local rows, targets, state = {}, {}, {}
+    if effective then
+        rows, targets = bindings_data.rows(effective, binding_catalog())
+        if #rows == 0 then
+            state = {empty_title='没有可执行的快捷键', empty_hint='生效的快捷键会出现在这里。'}
+        end
+    else
+        state = {empty_title='未能读取快捷键', empty_hint='请检查配置包文件，然后重试。', can_retry=true}
+    end
+    local opened, err = selector.open({kind='bindings', tracks=rows, current_id=0, state=state,
+        submit=function(id)
+            if not live() then return false, '选择已失效，请重新打开选择器。' end
+            local target = targets[tonumber(id)]
+            if not target then return false, '该快捷键已失效，请重新选择。' end
+
+            -- Retire before restoring input and rechecking the command. The
+            -- command itself can open a selector, change media, or quit.
+            local retired = session_generation + 1
+            local function still_retired()
+                return retired == session_generation and media == media_generation and not selector.is_open()
+            end
+            close_selector()
+            if not still_retired() then return false end
+            local latest = effective_bindings()
+            if not still_retired() then return false end
+            if not latest then
+                mp.osd_message('未能核对快捷键，请重新打开选择器。', 3)
+                return false
+            end
+            if not latest[target.key] or latest[target.key].cmd ~= target.cmd then
+                mp.osd_message('该快捷键已变化，请重新打开选择器。', 3)
+                return false
+            end
+            -- Keep quoting, flags and multi-command sequences exactly as mpv
+            -- supplied them. Do not include native errors in our OSD or logs.
+            local ok, applied = pcall(mp.command, target.cmd)
+            if not ok or applied ~= true then
+                if still_retired() then mp.osd_message('未能执行该快捷键，请重试。', 3) end
+                return false
+            end
+            return true
+        end,
+        retry=function() if live() then select_bindings() end end,
+        close=function() if session == session_generation then retire_session() end end,
+    })
+    if not opened and session == session_generation then
+        close_selector()
+        mp.osd_message(err or '无法打开快捷键选择器，请重试。', 3)
+    end
 end
 
 local history_loading = {empty_title='正在读取播放历史…', empty_hint=''}
@@ -901,6 +991,7 @@ mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.add_key_binding(nil, 'select-history', select_history)
 mp.add_key_binding(nil, 'select-watch-later', select_watch_later)
+mp.add_key_binding(nil, 'select-binding', select_bindings)
 for _, property in ipairs({'current-watch-later-dir', 'working-directory', 'resume-playback'}) do
     mp.observe_property(property, 'native', function(name)
         if refresh_watch_later then refresh_watch_later(name or property) end
