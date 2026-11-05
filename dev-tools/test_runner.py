@@ -24,6 +24,7 @@ PROFILES = {
         'test_documentation.DocumentationLinks',
     ),
     'lua': (
+        'test_watch_later_data.WatchLaterData',
         'test_history_data.HistoryData',
         'test_track_selection.TrackSelection',
         'test_subtitle_selector.SubtitleSelector',
@@ -40,6 +41,7 @@ PROFILES = {
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
+        'test_watch_later_data.WatchLaterStore',
         'test_history_data.HistoryStore',
         'test_media_info_data.MediaInfoDataTests', 'test_media_info_view.MediaInfoViewTests', 'test_media_info_controller.MediaInfoLauncher',
         'test_about_window.AboutWindowTests',

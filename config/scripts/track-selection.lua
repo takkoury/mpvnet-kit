@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, device and history submissions.
+-- One selector session owns track, chapter, device and saved media submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -7,6 +7,7 @@ local active_kind
 local chapter_snapshot
 local edition_snapshot
 local history_data, history_snapshot
+local watch_later_data, refresh_watch_later
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -20,6 +21,7 @@ local kinds = {
     edition = {property='edition', label='媒体版本'},
     device = {property='audio-device', label='音频设备'},
     history = {label='播放历史'},
+    watchlater = {label='稍后继续播放'},
 }
 
 local function valid_device_name(name)
@@ -286,6 +288,7 @@ local function retire_session()
     chapter_snapshot = nil
     edition_snapshot = nil
     history_snapshot = nil
+    refresh_watch_later = nil
     device_ids, device_names, device_rows, next_device_id = nil, nil, nil, nil
     track_ids, track_targets, next_track_id = nil, nil, nil
 end
@@ -296,7 +299,7 @@ local function close_selector()
 end
 
 local function refresh_selector()
-    if active_kind and active_kind ~= 'history' and selector and selector.is_open() then
+    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
         local notice = selection_notice(active_kind,tracks,selected)
@@ -465,6 +468,126 @@ local function select_history()
     end
 end
 
+local function load_watch_later_data()
+    if watch_later_data then return true end
+    local ok, module = pcall(dofile,
+        mp.command_native({'expand-path', '~~/script-modules/watch-later-data.lua'}))
+    if not ok or type(module) ~= 'table' then return false end
+    for _, method in ipairs({'parse', 'source', 'matches', 'run'}) do
+        if type(module[method]) ~= 'function' then return false end
+    end
+    watch_later_data = module
+    return true
+end
+
+local watch_later_loading = {empty_title='正在读取保存记录…', empty_hint=''}
+local watch_later_changed = '保存记录已变化，请重新选择。'
+local resume_disabled = '已关闭进度恢复，将按播放器当前设置打开。'
+
+local function select_watch_later()
+    if not load_selector('watchlater') then return end
+    close_selector()
+    active_kind = 'watchlater'
+    local session, media = session_generation, media_generation
+    local directory, reading, next_id = nil, false, 0
+    local rows, targets, state, warning = {}, {}, watch_later_loading, ''
+    local function live()
+        return session == session_generation and media == media_generation and
+            active_kind == 'watchlater' and selector.is_open()
+    end
+    local function notice()
+        if mp.get_property_native('resume-playback') ~= false then return warning end
+        return warning == '' and resume_disabled or warning .. ' ' .. resume_disabled
+    end
+    local function render()
+        selector.update(rows, 0, notice(), state)
+    end
+    local function no_rows(title, hint, can_retry)
+        state = {empty_title=title, empty_hint=hint, can_retry=can_retry}
+    end
+    local function read(reason, first)
+        if not live() or reading then return end
+        directory = load_watch_later_data() and watch_later_data.source() or nil
+        rows, targets, state, warning = {}, {}, watch_later_loading, ''
+        if not first then render() end
+        warning = reason or ''
+        if not directory then
+            no_rows('未能读取保存记录', '请检查保存目录和配置包文件，然后重试。', true)
+            render()
+            return
+        end
+        reading = true
+        watch_later_data.run(directory, function(reply)
+            if not live() then return end
+            reading = false
+            if directory ~= watch_later_data.source() then
+                read(watch_later_changed)
+                return
+            elseif reply.ok ~= true then
+                local hint = reply.code == 'too_many' and '保存目录中的文件超过 2048 个，未能载入。' or
+                    '请检查保存目录是否可访问，然后重试。'
+                no_rows('未能读取保存记录', hint, true)
+            elseif reply.missing == true then
+                no_rows('没有可继续播放的记录', '保存进度后，播放器会创建保存目录。', false)
+            else
+                local records, status = watch_later_data.parse(reply)
+                if status.notice ~= '' then
+                    warning = warning == '' and status.notice or warning .. ' ' .. status.notice
+                end
+                for _, record in ipairs(records) do
+                    next_id = next_id + 1
+                    record.row.id = next_id
+                    rows[#rows+1] = record.row
+                    targets[next_id] = record
+                end
+                if #rows > 0 then
+                    state = {}
+                elseif status.unreadable then
+                    no_rows('未能读取保存记录', '请检查保存记录是否可访问，然后重试。', true)
+                elseif status.no_path then
+                    no_rows('记录未包含媒体路径',
+                        '启用 write-filename-in-watch-later-config 后重新保存进度。', false)
+                else
+                    no_rows('没有可继续播放的记录', '可通过“保存进度并退出”留存播放位置。', false)
+                end
+            end
+            render()
+        end)
+    end
+    local opened, error = selector.open({kind='watchlater', tracks=rows, current_id=0, notice=notice(), state=state,
+        submit=function(id)
+            if not live() then return false, '选择已失效，请重新打开选择器。' end
+            local record = targets[tonumber(id)]
+            if not record then return false, '这条记录已失效，请重新选择。' end
+            local source = watch_later_data.source()
+            if source ~= directory or not watch_later_data.matches(source, record) then
+                read(watch_later_changed)
+                return false, watch_later_changed
+            end
+            -- Leave the core in charge of resuming and consuming the record.
+            local _, err = mp.command_native({'loadfile', record.row.history_path})
+            if err then return false, '未能打开该记录，请重试。' end
+            return true
+        end,
+        retry=function() read() end,
+        close=function() if session == session_generation then retire_session() end end,
+    })
+    if not opened then
+        close_selector()
+        mp.osd_message(error or '无法打开稍后继续播放选择器，请重试。', 3)
+        return
+    end
+    refresh_watch_later = function(property)
+        if not live() then return end
+        if property == 'resume-playback' then
+            render()
+        elseif not reading and watch_later_data and directory ~= watch_later_data.source() then
+            read(watch_later_changed)
+        end
+    end
+    read(nil, true)
+end
+
 local function select_tracks(kind)
     if not load_selector(kind) then return end
     close_selector()
@@ -628,6 +751,12 @@ mp.add_key_binding(nil, 'select-chapter', function() select_tracks('chapter') en
 mp.add_key_binding(nil, 'select-device', function() select_tracks('device') end)
 mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') end)
 mp.add_key_binding(nil, 'select-history', select_history)
+mp.add_key_binding(nil, 'select-watch-later', select_watch_later)
+for _, property in ipairs({'current-watch-later-dir', 'working-directory', 'resume-playback'}) do
+    mp.observe_property(property, 'native', function(name)
+        if refresh_watch_later then refresh_watch_later(name or property) end
+    end)
+end
 mp.observe_property('track-list', 'native', function()
     if active_kind == 'all' or active_kind == 'audio' or active_kind == 'subtitle' or active_kind == 'video' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
 end)

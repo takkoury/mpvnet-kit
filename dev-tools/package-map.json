@@ -3,6 +3,18 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/script-modules/watch-later-data.lua",
+      "destination": "config/script-modules/watch-later-data.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/watch-later-store.ps1",
+      "destination": "config/helpers/watch-later-store.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/history-data.lua",
       "destination": "config/script-modules/history-data.lua",
       "component": "author",

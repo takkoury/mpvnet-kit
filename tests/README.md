@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+`WatchLaterData`归入lua，覆盖保存文件首行解析、mtime排序、目录及快照边界；`WatchLaterStore`归入helpers，使用合成目录验证只读扫描、部分失败、非法文本与数量／大小限制。控制层的目录变化、恢复关闭和旧回调由`TrackSelection`覆盖，真实进度恢复另用播放器核心及合成媒体验证。
+
 播放历史的`HistoryData`归入lua，检查JSON行解析、去重和路径／日期边界；`TrackSelection`与`SubtitleSelector`分别验证会话、异步回调、快照重查和清空确认输入。`HistoryStore`归入helpers，使用仓外合成文件验证真实PowerShell文件锁、摘要冲突、清空和失败保留，不接触个人历史。
 
 常用设置基础的 `UserSettings` 归入 lua，覆盖原文补丁、两实例生效、异步通知顺序、媒体代次、手动覆盖及失败恢复；`SettingsStorage`、`SettingsWindow` 归入 helpers，分别验证真实文件保存与 WPF 控件／草稿状态。窗口检查默认不显示，不等同于真实键鼠、观感或跨 DPI 验收。

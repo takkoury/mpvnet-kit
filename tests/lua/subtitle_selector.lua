@@ -686,3 +686,44 @@ function export_history_ass(output)
     assert(M.open({kind='history',tracks={},state={can_retry=true,empty_title='未能读取播放历史',empty_hint='请稍后重试。'},retry=function() end,submit=function() return false end}))
     save('history-read-error');M.close()
 end
+
+function saved_playback_reuses_history_rows_without_clear_or_current()
+    local rows=history_rows();rows[1].date_text='保存于 2026-11-05';rows[2].date_text='保存于 2026-11-04'
+    assert(M.open({kind='history',tracks=rows,state={can_clear=true},submit=function() return true end}))
+    local h=active_state();local rect=h.layout.panel;local row=h.layout.rows[1]
+    local geometry={rect.x,rect.y,rect.w,rect.h,row.x,row.y,row.w,row.h};M.close()
+    assert(M.open({kind='watchlater',tracks=rows,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();rect=s.layout.panel;row=s.layout.rows[1]
+    eq(table.concat({rect.x,rect.y,rect.w,rect.h,row.x,row.y,row.w,row.h},','),table.concat(geometry,','))
+    assert(not data():find('清空',1,true));assert(not data():find('#11',1,true));assert(not data():find('D:/演示',1,true))
+    assert(data():find('保存于 2026-11-05',1,true));assert(s.layout.clear==nil)
+    text('城市漫步');eq(#s.matches,1);invoke('TAB');tick(.6)
+    assert(data():find('D:/演示/城市漫步/第 01 集.mkv',1,true))
+    invoke('ENTER');eq(submitted[1],22);idle_resources()
+end
+function saved_playback_loading_retry_and_no_match_have_no_off_action()
+    local calls=0
+    assert(M.open({kind='watchlater',tracks={},state={empty_title='正在读取保存记录…',empty_hint=''},submit=function(id) calls=calls+1;return true end,
+        retry=function() M.update(history_rows(),0,'',{can_retry=false}) end}))
+    local s=active_state();eq(s.focus,'close');invoke('DOWN');eq(calls,0)
+    M.update({},0,'',{empty_title='未能读取保存记录',empty_hint='请重试。',can_retry=true})
+    invoke('TAB');eq(s.focus,'retry');invoke('ENTER');eq(s.focus,'search');eq(#s.tracks,2)
+    text('no-match');invoke('ENTER');invoke('DOWN');eq(calls,0);assert(M.is_open())
+    invoke('TAB');eq(s.focus,'close');invoke('ESC');idle_resources()
+end
+
+function export_watch_later_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows=history_rows();rows[1].date_text='保存于 2026-11-05';rows[2].date_text='保存于 2026-11-04'
+    rows[#rows+1]={id=33,title='山间的一天 — 从晨雾到日落的旅途记录（含幕后镜头完整版）.mkv',history_path='D:/演示/纪录片/山间的一天.mkv',date_text='保存于 2026-11-03'}
+    assert(M.open({kind='watchlater',tracks=rows,submit=function() return true end}));save('watch-later-normal');M.close()
+    assert(M.open({kind='watchlater',tracks=rows,notice='已关闭进度恢复，将按播放器当前设置打开。',submit=function() return true end}));save('watch-later-resume-off');M.close()
+end

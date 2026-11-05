@@ -101,6 +101,12 @@ class SubtitleSelector(unittest.TestCase):
     def test_history_modal_fits_small_dimensions_and_outside_cancel(self):
         self.run_case('history_modal_fits_small_dimensions_and_outside_cancel')
 
+    def test_saved_playback_reuses_history_rows_without_clear_or_current(self):
+        self.run_case('saved_playback_reuses_history_rows_without_clear_or_current')
+
+    def test_saved_playback_loading_retry_and_no_match_have_no_off_action(self):
+        self.run_case('saved_playback_loading_retry_and_no_match_have_no_off_action')
+
 
 if __name__ == '__main__':
     unittest.main()

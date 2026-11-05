@@ -28,6 +28,8 @@
 - `README.md`
 - `assets/screenshots/settings.png`
 - `assets/screenshots/settings-shortcuts.png`
+- `config/script-modules/watch-later-data.lua`
+- `config/helpers/watch-later-store.ps1`
 - `config/script-modules/history-data.lua`
 - `config/helpers/history-store.ps1`
 - `config/helpers/capture-media.ps1`

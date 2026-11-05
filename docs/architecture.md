@@ -53,6 +53,10 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 [history-store.ps1](../config/helpers/history-store.ps1)仅通过参数数组调用，读取结果在子进程stdout传回，不额外落盘历史副本或记录其内容。Read短暂拒绝写入以取得一致的UTF-8字节与SHA256；Clear在独占句柄中再次核对摘要，随后截断并刷新同一文件，保留空文件而不删除后重建。清空二次确认默认取消，针对完整文件，与搜索子集无关；不涉及媒体文件或watch-later进度。锁冲突、摘要变化及写入前失败不修改内容；开始截断后遇异常返回结果不确定并重读，不虚称记录已保留。两个操作限2 MiB，超限明确拒绝，不截断读取。已开始的Clear不因关闭面板中途撤销，迟到结果不能重新打开或改变新面板。
 
+`track_selection/select-watch-later`复用历史行显示但不提供清空，只读取`current-watch-later-dir`中的保存记录。[watch-later-data.lua](../config/script-modules/watch-later-data.lua)保留首行媒体原路径及文件字节快照，排除redirect entry，按mtime倒序且同时间按叶名稳定排序；同名文件附父目录，保存日期不是观看时间。提交重查目录与被选文件字节，改变/删除则刷新且旧ID不复用。恢复与记录消费均由plain loadfile交回核心，不解析start来seek，也不写resume-playback或保存选项；恢复关闭时只提示，选项通知刷新不重映射行ID。
+
+[watch-later-store.ps1](../config/helpers/watch-later-store.ps1)以异步只读子进程扫描一层目录，不落盘副本；单文件读锁取得UTF-8字节与mtime，结果经stdout传回。目录缺失、空目录、没有媒体路径、读取失败分别展示；部分文件失败保留可读项并提示。限制2048文件、单文件64KiB与总读取2MiB，超限明确拒绝或部分提示，不截断成可提交内容；跳过文件重解析点。目录改变、工作目录改变和会话退休防止旧读取结果覆盖当前面板；无法确定的跨盘相对目录拒绝读取。选择器不直接删改保存文件，恢复后由核心正常消费不属于选择器的清理动作。
+
 ### 常用设置基础
 
 [user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。

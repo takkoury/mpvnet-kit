@@ -10,7 +10,10 @@ local defined = false
 local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
+local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
 local profiles={
+    watchlater={title='稍后继续播放',search='查找待继续的媒体',fallback='媒体 ',empty='没有可继续播放的记录',
+        hint='可通过“保存进度并退出”留存播放位置。',nomatch='没有匹配的记录',failed='未能打开该媒体，请重试。'},
     history={title='播放历史',search='查找播放历史',fallback='记录 ',empty='没有播放历史',
         hint='新的播放记录会显示在这里。',nomatch='没有匹配的记录',failed='未能打开该媒体，请重试。'},
     all={title='全部轨道',search='查找轨道',fallback='轨道 #',empty='没有可用轨道',
@@ -458,7 +461,7 @@ mouse_button=function(info)
 end
 key=function(name, info)
     local s=active;if not s or info.canceled or not ({press=true,down=true,['repeat']=true})[info.event] then return end
-    if s.kind=='history' and info.event=='repeat' and (name=='enter' or name=='escape') then return end
+    if file_list(s) and info.event=='repeat' and (name=='enter' or name=='escape') then return end
     if s.confirming then
         if s.clearing then return end
         if name=='escape' then cancel_clear(s)
@@ -507,7 +510,7 @@ key=function(name, info)
     elseif name=='paste' and selectable(s) then replace_selection(s,mp.get_property('clipboard/text',''))
     elseif name=='tab' then
         reset_tip(s)
-        if s.kind=='history' then
+        if file_list(s) then
             if s.focus=='search' and s.matches[1] then focus_row(s,s.matches[1].id)
             elseif (s.focus=='search' or s.focus=='row') and s.state.can_clear then s.focus='clear';s.focus_id=nil
             elseif s.focus=='close' and s.state.can_retry then s.focus='retry'
@@ -589,7 +592,7 @@ render=function()
     local notice=s.error~='' and s.error or s.notice
     local extra=notice~='' and 28 or 0
     local grouped=s.kind=='all'
-    local history=s.kind=='history'
+    local history=file_list(s)
     local single=not s.profile.off and not grouped and not history
     local off_step,row_step=(single or grouped or history) and 0 or 34,single and 40 or 54
     local minimum_height=grouped and 240 or 122+(not selectable(s) and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
@@ -849,11 +852,15 @@ render=function()
     local footer=y+height-34*scale;rect(out,x+1,footer,panel_width*scale-2,scale,'2C2C2C')
     if history then
         add_text(out,'↑ ↓ 移动　Enter 播放',x+18*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
-        local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..' 条'
-        add_text(out,count,x+186*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
-        l.clear={x=x+(panel_width-90)*scale,y=footer+3*scale,w=80*scale,h=28*scale}
-        if s.focus=='clear' or s.hover=='clear' then rect(out,l.clear.x,l.clear.y,l.clear.w,l.clear.h,s.focus=='clear' and '444444' or '252525',4*scale) end
-        add_text(out,'清空历史…',l.clear.x+l.clear.w/2,footer+17*scale,meta_size*scale,s.state.can_clear and 'CCCCCC' or '777777',nil,false,5)
+        local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='history' and ' 条' or ' 项')
+        if s.kind=='history' then
+            add_text(out,count,x+186*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
+            l.clear={x=x+(panel_width-90)*scale,y=footer+3*scale,w=80*scale,h=28*scale}
+            if s.focus=='clear' or s.hover=='clear' then rect(out,l.clear.x,l.clear.y,l.clear.w,l.clear.h,s.focus=='clear' and '444444' or '252525',4*scale) end
+            add_text(out,'清空历史…',l.clear.x+l.clear.w/2,footer+17*scale,meta_size*scale,s.state.can_clear and 'CCCCCC' or '777777',nil,false,5)
+        else
+            add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
+        end
     else
     add_text(out,s.kind=='chapter' and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
     local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
@@ -901,9 +908,9 @@ function M.update(tracks,id,notice,state)
     local s=active;if not s then return false end
     s.tracks=normalize(tracks);s.current=current_id(id);s.matches=filtered(s);s.notice=clean(notice or '')
     if state then s.state=state end
-    if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' or s.kind=='history' then s.error='' end
+    if s.kind=='primary' or s.kind=='secondary' or s.kind=='all' or file_list(s) then s.error='' end
     if s.confirming then -- Modal focus remains owned until its callback completes.
-    elseif s.kind=='history' and selectable(s) and (s.focus=='close' or s.focus=='retry') then s.focus='search';caret(s)
+    elseif file_list(s) and selectable(s) and (s.focus=='close' or s.focus=='retry') then s.focus='search';caret(s)
     elseif not selectable(s) then s.focus='close';s.focus_id=nil
     elseif s.focus=='row' and s.focus_id~=0 then
         local valid=false;for _,track in ipairs(s.matches) do valid=valid or track.id==s.focus_id end

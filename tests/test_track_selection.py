@@ -14,11 +14,13 @@ class TrackSelection(unittest.TestCase):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
         cls.history_data = (ROOT / 'config/script-modules/history-data.lua').read_text(encoding='utf-8')
+        cls.watch_later_data = (ROOT / 'config/script-modules/watch-later-data.lua').read_text(encoding='utf-8')
         cls.fixture = (ROOT / 'tests/lua/track_selection.lua').read_text(encoding='utf-8')
 
     def run_case(self, name):
         prelude, cases = self.fixture.split('-- COMPLETE SOURCE IS INSERTED HERE\n', 1)
         self.lua.execute('local function make_history_data()\n' + self.history_data + '\nend\n' +
+                         'local function make_watch_later_data()\n' + self.watch_later_data + '\nend\n' +
                          prelude + '\n' + self.script + '\n' + cases + '\n' + name + '()',
                          name='track-selection/' + name)
 
@@ -86,6 +88,10 @@ for _name in (
     'history_read_errors_retry_and_disabled_states_are_distinct',
     'history_clear_uses_the_snapshot_and_requires_another_confirmation_after_conflict',
     'history_late_replies_do_not_revive_closed_or_replaced_panel',
+    'watch_later_submits_plain_path_and_observes_resume_setting',
+    'watch_later_changed_removed_and_new_directory_require_new_ids',
+    'watch_later_distinguishes_empty_missing_path_and_unreadable',
+    'watch_later_stale_reads_never_update_other_panels',
 ):
     setattr(TrackSelection, 'test_' + _name, _case(_name))
 

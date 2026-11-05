@@ -16,6 +16,7 @@ local function get(name, default)
     return default
 end
 local set_failure, load_failure, open_failure, readback_override, notify_device_write
+local load_command_error
 local loads = 0
 local history_commands, history_loads, history_json = {}, {}, {}
 local mp = {
@@ -32,12 +33,16 @@ local mp = {
     end,
     command_native=function(args)
         if args[1]=='loadfile' then
-            assert(#args==2);history_loads[#history_loads+1]=args[2];return {}
+            assert(#args==2)
+            if load_command_error then return nil,'rejected' end
+            history_loads[#history_loads+1]=args[2];return {}
         end
         assert(args[1]=='expand-path')
         if args[2]=='~~/script-modules/track-selector.lua' then return 'expanded/track-selector.lua' end
         if args[2]=='~~/script-modules/history-data.lua' then return 'expanded/history-data.lua' end
         if args[2]=='~~/helpers/history-store.ps1' then return 'expanded/history-store.ps1' end
+        if args[2]=='~~/script-modules/watch-later-data.lua' then return 'expanded/watch-later-data.lua' end
+        if args[2]=='~~/helpers/watch-later-store.ps1' then return 'expanded/watch-later-store.ps1' end
         assert(args[2]==properties['watch-history-path']);return 'expanded/'..args[2]
     end,
     command_native_async=function(spec,done)
@@ -76,6 +81,7 @@ local renderer = {
 }
 local dofile=function(path)
     if path=='expanded/history-data.lua' then return make_history_data() end
+    if path=='expanded/watch-later-data.lua' then return make_watch_later_data() end
     loads=loads+1;assert(path=='expanded/track-selector.lua')
     if load_failure then error('missing module') end
     return renderer
@@ -120,6 +126,133 @@ local function finish_history(index, op, reply, hash, path)
     if hash then eq(args[12],'-ExpectedHash');eq(args[13],hash);eq(#args,13) else eq(#args,11) end
     history_json['helper reply']=reply
     command.done(true,{status=0,stdout='helper reply'})
+end
+
+local function watch_later_setup()
+    local directory = 'D:/合成/[保存记录]'
+    local path = 'https://example.invalid/合成.mkv?quote="native"#one'
+    local raw = '# '..path..'\nstart=12.000000\n'
+    properties['current-watch-later-dir']=directory
+    properties['resume-playback']=true
+    local files = {[directory..'/A']=raw}
+    io.open=function(filename, mode)
+        eq(mode,'rb')
+        local content=files[filename]
+        if content then
+            return {read=function(_,size) return content:sub(1,size) end,close=function() end}
+        end
+    end
+    return files,directory,path,raw
+end
+
+local function finish_watch_later(index, reply, directory)
+    local command=assert(history_commands[index])
+    local args=command.spec.args
+    eq(args[1],'powershell.exe');eq(args[6],'-File');eq(args[7],'expanded/watch-later-store.ps1')
+    eq(args[8],'-Path');eq(args[9],directory or properties['current-watch-later-dir']);eq(#args,9)
+    history_json['watch later helper reply']=reply
+    command.done(true,{status=0,stdout='watch later helper reply'})
+end
+
+local function watch_later_reply(name, content)
+    return {ok=true,files={{name=name,content=content,mtime=1735732800}},skipped={}}
+end
+
+function watch_later_submits_plain_path_and_observes_resume_setting()
+    local _,_,path,raw=watch_later_setup()
+    properties['resume-playback']=false
+    bindings['select-watch-later']();eq(request.kind,'watchlater');eq(request.current_id,0)
+    eq(#request.tracks,0);eq(request.clear,nil);assert(request.state.empty_title:find('正在读取'))
+    assert(request.notice:find('已关闭进度恢复'));eq(#history_commands,1)
+    finish_watch_later(1,watch_later_reply('A',raw))
+    local id=request.tracks[1].id
+    eq(request.tracks[1].history_path,path);eq(request.current_id,0);eq(request.state.can_clear,nil)
+    properties['resume-playback']=true;observers['resume-playback']()
+    eq(request.notice,'');eq(request.tracks[1].id,id);eq(#history_commands,1)
+    properties['resume-playback']=false;observers['resume-playback']('resume-playback',false)
+    assert(request.notice:find('已关闭进度恢复'));eq(request.tracks[1].id,id);eq(#history_commands,1)
+    load_command_error=true;clear()
+    local ok,reason=request.submit(id)
+    eq(ok,false);assert(reason:find('未能打开'));assert(opened);eq(#history_loads,0)
+    load_command_error=false
+    assert(request.submit(id));eq(history_loads[1],path);eq(#writes,0)
+    eq(properties['resume-playback'],false)
+end
+
+function watch_later_changed_removed_and_new_directory_require_new_ids()
+    local files,dir,path,raw=watch_later_setup()
+    bindings['select-watch-later']()
+    finish_watch_later(1,watch_later_reply('A',raw))
+    local old_id=request.tracks[1].id
+    local changed=raw:gsub('12%.000000','20.000000')
+    files[dir..'/A']=changed
+    local ok,reason=request.submit(old_id)
+    eq(ok,false);assert(reason:find('已变化'));eq(#history_loads,0);eq(#request.tracks,0)
+    finish_watch_later(2,watch_later_reply('A',changed))
+    assert(request.notice:find('已变化'))
+    local changed_id=request.tracks[1].id
+    assert(changed_id>old_id);eq(request.submit(old_id),false)
+    files[dir..'/A']=nil
+    eq(request.submit(changed_id),false)
+    finish_watch_later(3,{ok=true,files={},skipped={}})
+    eq(#request.tracks,0);assert(request.notice:find('已变化'));eq(#history_loads,0)
+    local second='D:/合成/目录二'
+    properties['current-watch-later-dir']=second;observers['current-watch-later-dir']()
+    files[second..'/A']=raw
+    finish_watch_later(4,watch_later_reply('A',raw))
+    local second_id=request.tracks[1].id
+    assert(second_id>changed_id);eq(request.submit(changed_id),false)
+    -- An unobserved directory change must be caught at submit as well.
+    properties['current-watch-later-dir']=dir;files[dir..'/A']=raw
+    eq(request.submit(second_id),false);eq(#history_loads,0)
+    finish_watch_later(5,watch_later_reply('A',raw))
+    local latest_id=request.tracks[1].id
+    assert(latest_id>second_id);eq(request.submit(second_id),false)
+    assert(request.submit(latest_id));eq(history_loads[1],path);eq(#writes,0)
+end
+
+function watch_later_distinguishes_empty_missing_path_and_unreadable()
+    local _,_,_,raw=watch_later_setup()
+    local replies={
+        {{ok=true,missing=true},'没有可继续播放','创建保存目录',false},
+        {{ok=true,files={},skipped={}},'没有可继续播放','保存进度并退出',false},
+        {watch_later_reply('A','start=1\n'),'记录未包含媒体路径','write-filename-in-watch-later-config',false},
+        {{ok=false,code='io'},'未能读取保存记录','保存目录是否可访问',true},
+        {{ok=false,code='too_many'},'未能读取保存记录','2048',true},
+        {{ok=true,files={},skipped={encoding=1}},'未能读取保存记录','保存记录是否可访问',true},
+    }
+    for index,entry in ipairs(replies) do
+        if index==1 then bindings['select-watch-later']() else request.retry() end
+        finish_watch_later(index,entry[1]);eq(#request.tracks,0)
+        assert(request.state.empty_title:find(entry[2],1,true))
+        assert(request.state.empty_hint:find(entry[3],1,true));eq(request.state.can_retry,entry[4])
+        eq(request.state.can_clear,nil)
+    end
+    request.retry()
+    local reply=watch_later_reply('A',raw)
+    reply.skipped.io=1
+    finish_watch_later(7,reply)
+    eq(#request.tracks,1);assert(request.notice:find('1 条保存记录无法读取'))
+    eq(request.clear,nil);eq(#history_loads,0);eq(#writes,0)
+end
+
+function watch_later_stale_reads_never_update_other_panels()
+    local _,dir,_,raw=watch_later_setup()
+    local reply=watch_later_reply('A',raw)
+    bindings['select-watch-later']();local first=request
+    renderer.close();clear();finish_watch_later(1,reply);eq(#calls,0)
+    first.retry();eq(#history_commands,1)
+    bindings['select-watch-later']();local second=request
+    bindings['select-audio']();clear();finish_watch_later(2,reply);eq(#calls,0)
+    second.close();second.retry();eq(second.submit(1),false);assert(opened);eq(request.kind,'audio')
+    bindings['select-watch-later']();local third=request
+    events['start-file']();clear();finish_watch_later(3,reply);eq(#calls,0);eq(third.submit(1),false)
+    bindings['select-watch-later']()
+    properties['current-watch-later-dir']='D:/合成/新目录'
+    observers['current-watch-later-dir']()
+    finish_watch_later(4,reply,dir);eq(#request.tracks,0);eq(#history_commands,5)
+    finish_watch_later(5,reply);eq(#request.tracks,1);assert(request.notice:find('已变化'))
+    eq(#history_loads,0);eq(#writes,0)
 end
 
 function history_submit_revalidates_source_and_bytes()
