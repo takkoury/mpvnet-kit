@@ -800,3 +800,47 @@ function export_bindings_ass(output)
     assert(M.open({kind='bindings',tracks=rows,submit=function() return true end}));save('bindings-normal')
     invoke('DOWN');invoke('DOWN');tick(.6);save('bindings-command-tip');M.close()
 end
+
+function properties_preserve_values_search_and_double_rows()
+    local long=string.rep('中文长值',500)..'最后可搜索的内容'
+    local rows={{id=1,title='pause',property_value='false'},{id=2,title='time-pos',property_value='0'},
+        {id=3,title='test/empty',property_value='""'},{id=4,title='test/long',property_value=long}}
+    assert(M.open({kind='properties',tracks=rows,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    local s=active_state();eq(s.layout.rows[1].h,52);assert(s.layout.clear==nil)
+    assert(data():find('false',1,true));assert(data():find('""',1,true));assert(not data():find('最后可搜索的内容',1,true),'preview is bounded')
+    text('来源未标注');eq(#s.matches,0);invoke('Ctrl+u')
+    text('最后可搜索的内容');eq(#s.matches,1);eq(s.matches[1].id,4)
+    invoke('TAB');tick(.6);assert(data():find('中文长值',1,true));invoke('ENTER');eq(submitted[1],4);idle_resources()
+end
+function properties_empty_retry_and_no_off_selection()
+    assert(M.open({kind='properties',tracks={},state={empty_title='未能读取属性',empty_hint='请重试。',can_retry=true},
+        retry=function() M.update({{id=3,title='volume',property_value='37'}},0,'',{}) end,submit=function(id) submitted[#submitted+1]=id;return true end}))
+    invoke('DOWN');eq(#submitted,0);invoke('TAB');eq(active_state().focus,'retry');invoke('ENTER');eq(active_state().focus,'search')
+    text('not-a-property');invoke('DOWN');invoke('ENTER');eq(#submitted,0);invoke('ESC');idle_resources()
+end
+
+function properties_large_snapshot_does_not_measure_hidden_ids()
+    local rows={};for i=1,2000 do rows[i]={id=i,title='test/property/'..i,property_value='value '..i} end
+    assert(M.open({kind='properties',tracks=rows,submit=function() return true end}))
+    local s=active_state();eq(#s.tracks,2000);assert(s.measure.updates<100,'hidden property ids must not trigger per-row ASS measurement')
+    text('value 2000');eq(#s.matches,1);eq(s.matches[1].id,2000);M.close();idle_resources()
+end
+
+function export_properties_ass(output)
+    width,height=1469,826;properties['display-hidpi-scale']=1.5
+    local function save(name)
+        local layer=overlay();local raw=layer.data
+        local file=assert(io.open(output..'/'..name..'.overlay.txt','wb'));file:write(raw);file:close()
+        file=assert(io.open(output..'/'..name..'.ass','wb'))
+        file:write('[Script Info]\nScriptType: v4.00+\nPlayResX: '..layer.res_x..'\nPlayResY: '..layer.res_y..'\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei UI,14,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+        for event in raw:gmatch('[^\n]+') do file:write('Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,',event,'\n') end
+        file:close();file=assert(io.open(output..'/'..name..'.size.txt','wb'));file:write(layer.res_x..' '..layer.res_y);file:close()
+    end
+    local rows={{id=1,title='audio-params/channel-count',property_value='2'},
+        {id=2,title='media-title',property_value='"山间的一天 — 旅途记录.mkv"'},
+        {id=3,title='pause',property_value='false'},
+        {id=4,title='time-pos',property_value='0'},
+        {id=5,title='track-list/0/title',property_value='"很长的标题示例，用于检查属性值预览、省略与按需查看原值。"'},
+        {id=6,title='video-params/pixelformat',property_value='"yuv420p"'}}
+    assert(M.open({kind='properties',tracks=rows,submit=function() return true end}));save('properties-normal');M.close()
+end

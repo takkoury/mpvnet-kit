@@ -119,6 +119,15 @@ class SubtitleSelector(unittest.TestCase):
     def test_bindings_empty_retry_and_action_errors_do_not_create_off_rows(self):
         self.run_case('bindings_empty_retry_and_action_errors_do_not_create_off_rows')
 
+    def test_properties_preserve_values_search_and_double_rows(self):
+        self.run_case('properties_preserve_values_search_and_double_rows')
+
+    def test_properties_empty_retry_and_no_off_selection(self):
+        self.run_case('properties_empty_retry_and_no_off_selection')
+
+    def test_properties_large_snapshot_does_not_measure_hidden_ids(self):
+        self.run_case('properties_large_snapshot_does_not_measure_hidden_ids')
+
 
 if __name__ == '__main__':
     unittest.main()

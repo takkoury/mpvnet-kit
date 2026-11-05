@@ -11,8 +11,10 @@ local panel_width, title_size, search_size, meta_size = 440, 16, 14, 12
 local render, mouse_move, mouse_button, mouse_leave, wheel, key, console_changed
 local filters={{key='all',title='全部'},{key='video',title='视频'},{key='audio',title='音轨'},{key='primary',title='主字幕'}}
 local function file_list(s) return s.kind=='history' or s.kind=='watchlater' end
-local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' end
+local function retry_list(s) return file_list(s) or s.kind=='lines' or s.kind=='bindings' or s.kind=='properties' end
 local profiles={
+    properties={title='播放器属性',search='查找属性或值',fallback='属性 ',empty='没有可读取的属性',
+        hint='稍后重试读取播放器属性。',nomatch='没有匹配的属性',failed='未能显示该属性，请重试。'},
     bindings={title='执行快捷键动作',search='查找快捷键或命令',fallback='动作 ',empty='没有可执行的快捷键',
         hint='当前没有生效的快捷键动作。',nomatch='没有匹配的快捷键',failed='未能执行该快捷键动作。'},
     lines={title='选择字幕行',search='查找字幕内容',fallback='字幕行 ',empty='没有可选择的字幕行',
@@ -85,7 +87,7 @@ local function normalize(tracks)
         if type(id) == 'number' and id > 0 and id < math.huge and id == math.floor(id) and not seen[id] then
             seen[id] = true
             out[#out + 1] = {id=id, display_kind=({video=true,audio=true,primary=true})[track.display_kind] and track.display_kind or 'primary', current=track.current==true, title=type(track.title)=='string' and track.title or '',
-                action_command=clean(track.action_command or ''),date_text=clean(track.date_text or ''),parent_text=clean(track.parent_text or ''),history_path=clean(track.history_path or ''),
+                property_value=clean(track.property_value or ''),action_command=clean(track.action_command or ''),date_text=clean(track.date_text or ''),parent_text=clean(track.parent_text or ''),history_path=clean(track.history_path or ''),
                 time_text=type(track.time_text)=='string' and track.time_text or '',
                 number_text=type(track.number_text)=='string' and track.number_text or tostring(id),
                 device_name=type(track.device_name)=='string' and track.device_name or '',
@@ -181,8 +183,13 @@ local function filtered(s)
     local result, needle = {}, query(s):lower()
     for _, track in ipairs(s.tracks) do
         local kind=row_kind(s,track)
-        local haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
-            kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text,track.action_command}, ' '):lower()
+        local haystack
+        if kind=='properties' then haystack=track.title..' '..track.property_value
+        else
+            haystack = table.concat({label(track,kind), language(track), track.lang, track.codec, source(track), track.number_text,
+            kind=='audio' and table.concat(audio_details(track),' ') or kind=='video' and table.concat(video_details(track),' ') or '',track.time_text,track.number_text,track.device_name,track.detail_title,track.slot_label,track.history_path,track.date_text,track.parent_text,track.action_command,track.property_value}, ' ')
+        end
+        haystack=haystack:lower()
         if (s.kind~='all' or s.filter=='all' or track.display_kind==s.filter) and (needle == '' or haystack:find(needle, 1, true)) then result[#result + 1] = track end
     end
     if s.kind=='all' then
@@ -236,6 +243,14 @@ local function fitted(s, text, width, size, bold)
         if measure(s,table.concat(parts,'',1,mid)..'…',size,bold) <= width then lo=mid else hi=mid-1 end
     end
     return table.concat(parts,'',1,lo)..'…', true
+end
+-- Bound only visual previews; search and the controller snapshot retain the
+-- complete property value. Never split a UTF-8 character at the byte boundary.
+local function preview(text,limit)
+    if #text<=limit then return text,false end
+    local at=limit+1
+    while at>1 and text:byte(at)>=128 and text:byte(at)<192 do at=at-1 end
+    return text:sub(1,at-1)..'…',true
 end
 local function add_text(out, text, x, y, size, color, clip, bold, alignment)
     local style = string.format('\\an%d\\pos(%.2f,%.2f)\\bord0\\shad0\\fnMicrosoft YaHei UI\\fs%.2f\\1c&H%s&\\b%d',alignment or 7,x,y,size,ass_color(color),bold and 1 or 0)
@@ -598,14 +613,15 @@ render=function()
     local extra=notice~='' and 28 or 0
     local grouped=s.kind=='all'
     local history=file_list(s)
-    local single=not s.profile.off and not grouped and not history
-    local off_step,row_step=(single or grouped or history) and 0 or 34,single and 40 or 54
+    local properties=s.kind=='properties'
+    local single=not s.profile.off and not grouped and not history and not properties
+    local off_step,row_step=(single or grouped or history or properties) and 0 or 34,single and 40 or 54
     local minimum_height=grouped and 240 or 122+(not selectable(s) and 116 or off_step+(#s.matches==0 and 76 or row_step)+8)
     if s.confirming then minimum_height=math.max(minimum_height,290) end
     local dpi=tonumber(native('display-hidpi-scale',1)) or 1
     if dpi~=dpi or dpi<=0 or dpi==math.huge then dpi=1 end
     local scale=math.max(0.000001,math.min(dpi,math.max(1,w-12)/panel_width,math.max(1,h-12)/(minimum_height+extra)))
-    local capacity=clamp(math.floor((h/scale-28-122-off_step-8-extra)/row_step),1,history and 6 or single and 8 or 5)
+    local capacity=clamp(math.floor((h/scale-28-122-off_step-8-extra)/row_step),1,(history or properties) and 6 or single and 8 or 5)
     s.capacity=capacity
     if not grouped then s.scroll=clamp(s.scroll,0,math.max(0,#s.matches-capacity)) end
     local rows=math.min(capacity,#s.matches)
@@ -678,6 +694,9 @@ render=function()
     -- Shared columns use the whole track set, so scrolling/filtering cannot
     -- shift separators. Missing fields leave their column empty.
     local function columns(kind)
+        -- Property rows have no id or track metadata columns. Avoid thousands
+        -- of hidden ASS measurements when inspecting the full property tree.
+        if kind=='properties' then return {0,0,0,0,false,false} end
         local lang_width,codec_width,id_width,channel_width=0,0,0,36*scale
         local has_language,has_codec=false,false
         local function meta_language(track)
@@ -709,6 +728,7 @@ render=function()
         if not off and kind=='video' then r.details=video_details(track) end
         if not off and track.blocked_reason~='' then r.details={track.blocked_reason} end
         if history then r.details={track.history_path,track.date_text} end
+        if properties then r.details={(preview(track.property_value,1536))} end
         if kind=='bindings' then r.details={'快捷键  '..track.time_text,track.action_command} end
         if kind=='device' then
             r.details={track.device_name=='auto' and '由播放器自动选择输出；不固定某个设备。' or track.device_name}
@@ -720,8 +740,10 @@ render=function()
         else rect(out,r.x,r.y,r.w,r.h,background,4*scale) end
         local tx=r.x+40*scale;local width=r.w-64*scale-(off and 0 or id_width)
         if kind=='device' then width=r.w-50*scale end
-        if history then tx=r.x+16*scale;width=r.w-32*scale end
-        local title,elided=fitted(s,r.title,width,title_size*scale,current);r.elided=elided
+        if history or properties then tx=r.x+16*scale;width=r.w-32*scale end
+        local shown,trimmed=r.title,false
+        if properties then shown,trimmed=preview(shown,512) end
+        local title,elided=fitted(s,shown,width,title_size*scale,current);r.elided=elided or trimmed
         add_text(out,title,tx,(off or single) and r.y+r.h/2 or r.y+7*scale,title_size*scale,current and '54B8E3' or (not off and track.blocked_reason~='' and '999999' or 'E5E5E5'),
             {x=tx,y=r.y+2*scale,w=width,h=(off and 26 or single and 34 or 25)*scale},current,(off or single) and 4 or 7)
         if current then
@@ -730,7 +752,10 @@ render=function()
                 ass_color('54B8E3'),cx-3*scale,cy-5*scale,cx+4*scale,cy,cx-3*scale,cy+5*scale)
         end
         if not off then
-            if history then
+            if properties then
+                local value=fitted(s,preview(track.property_value,512),width,meta_size*scale)
+                add_text(out,value,tx,r.y+36*scale,meta_size*scale,'AAAAAA',nil,false,4)
+            elseif history then
                 local parent_width=math.min(width*.45,measure(s,track.parent_text,meta_size*scale))
                 local date_width=math.max(0,width-parent_width-(parent_width>0 and 12*scale or 0))
                 add_text(out,fitted(s,track.date_text,date_width,meta_size*scale),tx,r.y+36*scale,meta_size*scale,'AAAAAA',nil,false,4)
@@ -816,7 +841,7 @@ render=function()
             add_text(out,'重试',l.retry.x+l.retry.w/2,l.retry.y+l.retry.h/2,14*scale,'E5E5E5',nil,false,5)
         end
     else
-        if not single and not grouped and not history then row(nil,listtop,true) end
+        if not single and not grouped and not history and not properties then row(nil,listtop,true) end
         if #s.matches==0 then local message=s.profile.nomatch;add_text(out,message,x+(panel_width*scale-measure(s,message,search_size*scale))/2,listtop+(off_step+30)*scale,search_size*scale,'AAAAAA') end
         if grouped then
             for _,track in ipairs(s.matches) do
@@ -871,8 +896,8 @@ render=function()
             add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
         end
     else
-    add_text(out,s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
-    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='bindings' and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
+    add_text(out,properties and '↑ ↓ 移动　Enter 查看　Esc 取消' or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end
     if s.tip_focus then

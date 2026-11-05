@@ -1,4 +1,4 @@
--- One selector session owns track, chapter, subtitle line, device, binding and saved media submissions.
+-- One selector session owns track, chapter, subtitle line, device, binding, property and saved media submissions.
 -- mpv normalizes this filename to the script name track_selection.
 local mp = require('mp')
 local selector
@@ -10,6 +10,7 @@ local history_data, history_snapshot
 local watch_later_data, refresh_watch_later
 local subtitle_lines, refresh_subtitle_lines, retire_subtitle_lines
 local bindings_data, binding_labels
+local properties_data
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -26,6 +27,7 @@ local kinds = {
     history = {label='播放历史'},
     watchlater = {label='稍后继续播放'},
     bindings = {label='快捷键'},
+    properties = {label='播放器属性'},
 }
 
 local function valid_device_name(name)
@@ -308,7 +310,8 @@ local function close_selector()
 end
 
 local function refresh_selector()
-    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and active_kind ~= 'bindings' and
+    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
+        active_kind ~= 'bindings' and active_kind ~= 'properties' and
         selector and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
@@ -428,6 +431,82 @@ local function select_bindings()
     if not opened and session == session_generation then
         close_selector()
         mp.osd_message(err or '无法打开快捷键选择器，请重试。', 3)
+    end
+end
+
+local function read_properties()
+    if not properties_data then
+        local ok, module = pcall(function()
+            return dofile(mp.command_native({'expand-path', '~~/script-modules/properties-data.lua'}))
+        end)
+        if not ok or type(module) ~= 'table' or type(module.snapshot) ~= 'function' then return nil end
+        properties_data = module
+    end
+    return properties_data.snapshot()
+end
+
+local function select_properties()
+    if not load_selector('properties') then return end
+    local session, media = session_generation + 1, media_generation
+    close_selector()
+    if session ~= session_generation or media ~= media_generation then return end
+    active_kind = 'properties'
+    local function current_session()
+        return session == session_generation and media == media_generation and active_kind == 'properties'
+    end
+    local function live() return current_session() and selector.is_open() end
+    -- Capture before installing the selector's temporary input section. Never
+    -- observe values or replace the snapshot while the user is inspecting it.
+    local ok, rows, targets, code = pcall(read_properties)
+    if not current_session() then return end
+    local state = {}
+    if not ok or not rows then
+        rows, targets = {}, {}
+        local hint = code == 'limit' and '属性数据超过读取上限，请减少加载的内容后重试。' or
+            code == 'cycle' and '属性数据包含循环引用，无法完整读取。' or
+            code == 'restore' and '未能确认日志级别已恢复，请检查播放器设置后重试。' or
+            '请检查播放器状态和配置包文件，然后重试。'
+        state = {empty_title='未能读取播放器属性', empty_hint=hint, can_retry=true}
+    elseif #rows == 0 then
+        state = {empty_title='暂无播放器属性', empty_hint='播放器提供的属性会出现在这里。', can_retry=true}
+    end
+    local opened = selector.open({kind='properties', tracks=rows, current_id=0, notice='', state=state,
+        submit=function(id)
+            if not live() then return false, '选择已失效，请重新打开选择器。' end
+            local target = targets[tonumber(id)]
+            if not target then return false, '该属性已失效，请重新选择。' end
+
+            local retired = session_generation + 1
+            local function still_retired()
+                return retired == session_generation and media == media_generation and not selector.is_open()
+            end
+            close_selector()
+            if not still_retired() then return false end
+            local shown, success = pcall(function()
+                local vo = mp.get_property_native('vo-configured')
+                if not still_retired() then return false end
+                local text = target.title .. ': ' .. target.value
+                if not vo then
+                    mp.msg.info(text)
+                    return true
+                end
+                local escaped = mp.command_native({'escape-ass', text})
+                if type(escaped) ~= 'string' or not still_retired() then return false end
+                -- Expand only the trusted ASS switch, then treat the escaped
+                -- snapshot literally; ${...} inside a value must stay text.
+                local prefix = '${osd-ass-cc/0}' .. (#text > 100 and '{\\fs9}' or '')
+                return mp.commandv('expand-properties', 'show-text', prefix .. '$>' .. escaped, 20000)
+            end)
+            if shown and success == true then return true end
+            if still_retired() then mp.osd_message('未能显示该属性，请重试。', 3) end
+            return false
+        end,
+        retry=function() if live() then select_properties() end end,
+        close=function() if session == session_generation then retire_session() end end,
+    })
+    if not opened and current_session() then
+        close_selector()
+        mp.osd_message('无法打开播放器属性选择器，请重试。', 3)
     end
 end
 
@@ -992,6 +1071,7 @@ mp.add_key_binding(nil, 'select-edition', function() select_tracks('edition') en
 mp.add_key_binding(nil, 'select-history', select_history)
 mp.add_key_binding(nil, 'select-watch-later', select_watch_later)
 mp.add_key_binding(nil, 'select-binding', select_bindings)
+mp.add_key_binding(nil, 'show-properties', select_properties)
 for _, property in ipairs({'current-watch-later-dir', 'working-directory', 'resume-playback'}) do
     mp.observe_property(property, 'native', function(name)
         if refresh_watch_later then refresh_watch_later(name or property) end

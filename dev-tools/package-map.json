@@ -3,6 +3,12 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/script-modules/properties-data.lua",
+      "destination": "config/script-modules/properties-data.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/bindings-data.lua",
       "destination": "config/script-modules/bindings-data.lua",
       "component": "author",

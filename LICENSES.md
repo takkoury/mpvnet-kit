@@ -28,6 +28,7 @@
 - `README.md`
 - `assets/screenshots/settings.png`
 - `assets/screenshots/settings-shortcuts.png`
+- `config/script-modules/properties-data.lua`
 - `config/script-modules/bindings-data.lua`
 - `config/script-modules/subtitle-lines.lua`
 - `config/script-modules/watch-later-data.lua`

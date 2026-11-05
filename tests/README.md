@@ -22,6 +22,8 @@ python -B dev-tools/run-tests.py --profile core
 
 ## Lua 与 helper 条件
 
+`PropertiesData`归入lua，覆盖false/0/空值、原生数组/普通map、路径排序去重、循环/大小限制、日志级别借用与恢复、快照展示和OSD转义。`SubtitleSelector`验证属性名/值搜索、预览与大快照无多余编号测量。真实核心证据只采集合成环境与公开配置生成的属性，测试不导出个人完整属性集合。
+
 `BindingsData`归入lua，执行数据模块与控制器，覆盖原生绑定优先级、ignore遮挡、改绑拒绝、输入恢复顺序和命令重入。真实核心检查只注册本批合成的音量/倍速/选择器命令，不执行个人绑定；`SubtitleSelector`另验证命令查找、提示和重复Enter防护。
 
 `SubtitleLines`归入lua，同时执行字幕行数据模块和控制器源码，覆盖FFmpeg流映射、同秒文本/时间对应、延迟、异步取消/超时与旧回调；`SubtitleSelector`验证章节式布局、首次定位及参考标记更新不打断查找。真实FFmpeg提取和mpv跳转仍以隔离合成素材核心检查补充，mock不代表网络或所有字幕格式可读。
