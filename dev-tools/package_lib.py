@@ -4,6 +4,7 @@ Both operations validate before writing and preview unless apply=True. Staging
 owns managed-file updates; ZIP creation never replaces different existing output.
 """
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -17,6 +18,24 @@ import zipfile
 
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def _check_menu_asset(source, destination, data):
+    """Reject a stale checked-in menu payload; ordinary packaging needs no SDK."""
+    if destination != 'config/extensions/KitContextMenu/KitContextMenu.dll':
+        return
+    inputs = source / 'src' / 'context-menu'
+    if not inputs.exists():
+        return  # Already-generated packages contain the validated binary only.
+    spec = importlib.util.spec_from_file_location('kit_menu_build', Path(__file__).with_name('build-context-menu.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    digest = module.source_digest(inputs)
+    key = module.SOURCE_METADATA_KEY.encode('ascii')
+    # ECMA custom-attribute blob: prolog, two SerStrings, zero named arguments.
+    metadata = b'\x01\x00' + bytes([len(key)]) + key + b'\x40' + digest.encode('ascii') + b'\x00\x00'
+    if metadata not in data:
+        raise ValueError('menu extension does not match its sources; rebuild KitContextMenu.dll')
 
 
 def _relative(value):
@@ -179,6 +198,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
         if not path.is_file():
             raise ValueError('missing source file: ' + src)
         data = path.read_bytes()
+        _check_menu_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
     entries.sort(key=lambda x: x['path'])

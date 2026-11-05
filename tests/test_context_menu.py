@@ -71,7 +71,7 @@ class ContextMenu(unittest.TestCase):
         menu = {path: command for _, command, path in entries() if path}
         expected = {
             '工具与设置 > 常用设置…': 'script-binding user_settings/open',
-            '播放 > 播放／暂停（Space）': 'script-binding playback_feedback/toggle-pause',
+            '播放 > 播放／暂停': 'script-binding playback_feedback/toggle-pause',
             '窗口与界面 > 切换控制栏显示方式': 'script-binding playback_feedback/osc-visibility',
             '窗口与界面 > 显示／隐藏播放列表侧窗': 'script-binding playlist_controls/toggle',
             '字幕与弹幕 > 恢复字幕位置与字号': 'script-binding subtitle_controls/reset-adjustment',

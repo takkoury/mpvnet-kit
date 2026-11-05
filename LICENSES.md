@@ -1,6 +1,6 @@
 # Component licenses
 
-独立自有代码、配置和公开文档采用根目录 [MIT License](LICENSE)，适用文件在下方明确列出。第三方组件及其派生修改继续采用各自许可；根目录 MIT 不覆盖它们。此包提供各组件的源码、许可和来源记录。
+独立自有代码、配置和公开文档采用根目录 [MIT License](LICENSE)，适用文件在下方明确列出。第三方组件及其派生修改继续采用各自许可；根目录 MIT 不覆盖它们。本项目保留各组件的源码、许可和来源记录；菜单扩展 DLL 的自有源码位于源码仓库的 `src/context-menu/`，构建方法见 CONTRIBUTING。
 
 | 组件 | 已保留的许可/说明 |
 | --- | --- |
@@ -40,6 +40,7 @@
 - `config/helpers/history-store.ps1`
 - `config/helpers/capture-media.ps1`
 - `config/helpers/media-info-window.ps1`
+- `config/extensions/KitContextMenu/KitContextMenu.dll`
 - `config/helpers/media-info-data.cs`
 - `config/helpers/media-info-view.cs`
 - `config/scripts/media-info.lua`

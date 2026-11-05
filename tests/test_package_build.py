@@ -16,6 +16,29 @@ PACKAGER = ROOT / 'dev-tools/prepare-release.py'
 
 
 class PackageBuild(unittest.TestCase):
+    def test_stale_menu_binary_is_rejected_before_package_writes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'source'
+            source.mkdir()
+            inputs = source / 'src/context-menu'
+            inputs.mkdir(parents=True)
+            for name in ('ContextMenu.csproj', 'ContextMenuExtension.cs', 'MenuPresentation.cs', 'MenuStyles.xaml'):
+                (inputs / name).write_bytes((ROOT / 'src/context-menu' / name).read_bytes())
+            target = 'config/extensions/KitContextMenu/KitContextMenu.dll'
+            binary = source / target
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes((ROOT / target).read_bytes())
+            spec = root / 'map.json'
+            spec.write_text(json.dumps({'schema': 1, 'version': 'test', 'files': [
+                {'source': target, 'destination': target, 'component': 'author', 'origin': 'test'}
+            ]}), encoding='utf-8')
+            stage_package(source, root / 'valid', spec)
+            (inputs / 'MenuStyles.xaml').write_bytes(b'changed source')
+            with self.assertRaisesRegex(ValueError, 'does not match its sources'):
+                stage_package(source, root / 'invalid', spec, apply=True)
+            self.assertFalse((root / 'invalid').exists())
+
     def fixture(self, root, files=None):
         files = files or {
             'README.md': b'# Package\n\n[Guide](docs/guide.md#usage)\n',

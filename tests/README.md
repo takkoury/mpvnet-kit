@@ -20,6 +20,18 @@ python -B dev-tools/run-tests.py --profile core
 
 执行器先检查全部所选组的必要条件，再运行测试。缺少必要条件、失败或意外跳过都会返回非零；返回零只表示所选组通过。末尾摘要列出执行、失败、跳过数量及原因。新增测试类必须归入一组，发现遗漏或重复时入口会停止。
 
+## 右键菜单扩展
+
+core 检查包含扩展构建输入、单文件宿主提取边界、仓外输出保护、菜单能力和受管 DLL 的源码摘要；这些检查只需 Python。修改 WPF 扩展时另运行：
+
+```powershell
+python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContextMenu/KitContextMenu.dll --output D:/Builds/menu-wpf-check
+```
+
+此入口需要 Windows 与本地 .NET 10 SDK，离线构建独立 STA 检查程序，通过 `Assembly.LoadFile` 读取真实运行 DLL。它验证模板、动态容器继承、原点击保留、状态标记、已应用快捷键/空绑定/回退、资源隔离及卸载恢复，不加载宿主程序集或打开可见窗口。缺少 SDK 时不能将该层写成通过；输出目录须全新且在仓外。
+
+真实宿主验证仍须使用独立配置和合成媒体，核对扩展加载、动态菜单、设备记忆、近期文件及原命令；不得读取个人历史。原生鼠标/键盘、焦点、屏幕边缘与跨 DPI 的可见试用另记。
+
 ## Lua 与 helper 条件
 
 `PlaylistSelectorData`归入lua，覆盖真实队列ID0/重复/替换、标题模式、重排定位、删除失效与释放输入后的再次索引解析；`SubtitleSelector`检查当前项初始可见、动态焦点、路径搜索与媒体OSD控制字符中和。真实核心另用合成文件验证重排后播放、当前项重播、长队列和空态，不读取个人播放列表。

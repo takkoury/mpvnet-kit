@@ -18,7 +18,7 @@ from support.install_fixtures import (checked_fixture_root, load_release_files,
 
 PROFILES = {
     'core': (
-        'test_context_menu.ContextMenu', 'test_danmaku.DanmakuTests',
+        'test_context_menu.ContextMenu', 'test_context_menu_build.ContextMenuBuild', 'test_danmaku.DanmakuTests',
         'test_package_build.PackageBuild', 'test_user_preferences_export.UserPreferencesExport',
         'test_test_support.TestSupport', 'test_test_runner.RunnerContract',
         'test_documentation.DocumentationLinks',

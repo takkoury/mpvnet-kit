@@ -1,3 +1,4 @@
 # Preserve vendored source and manifest bytes across Git checkouts.
 * -text
 *.ttf binary
+*.dll binary

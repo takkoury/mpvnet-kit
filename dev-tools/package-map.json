@@ -3,6 +3,12 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/extensions/KitContextMenu/KitContextMenu.dll",
+      "destination": "config/extensions/KitContextMenu/KitContextMenu.dll",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; reproducible source in src/context-menu; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-opts/stats.conf",
       "destination": "config/script-opts/stats.conf",
       "component": "author",

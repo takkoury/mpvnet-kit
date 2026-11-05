@@ -163,6 +163,16 @@ Playlist 的 WinForms 展示继续位于 `playlist-window.ps1`：`PlaylistStyle`
 
 Playlist普通侧窗通过`DWMWA_WINDOW_CORNER_PREFERENCE=DWMWCP_ROUND`请求Windows标准圆角，不使用自定义窗口Region或逐像素透明度。父播放器最大化／全屏时请求直角，恢复普通窗口后恢复标准圆角；句柄创建或DWM合成恢复时重新提交。属性不受支持时保留既有窗口，不阻断打开。具体裁切和半径由系统决定；隐藏句柄写入／回读只能证明属性已接受，不能替代实际圆角观感检查。
 
+## 右键菜单展示扩展
+
+[菜单扩展](../src/context-menu/README.md)使用宿主官方 `IExtension`；受管 DLL 位于 `config/extensions/KitContextMenu/KitContextMenu.dll`。宿主后台加载后，扩展转到现有 WPF Dispatcher，用公开的绑定目录、FindMenuItem 和 ItemsControl 所有者找到真实根菜单。仅向该根添加局部资源字典，不改全局样式，不复制菜单树，不访问私有字段，不替换点击处理。近期文件、蓝光标题、章节、轨道、配置方案、设备记忆及开关菜单的输入生命周期继续归宿主。
+
+扩展只给精确命令增加展示标记；互斥项用圆点，开关用勾选。自有附加属性不修改宿主 IsChecked/IsCheckable 或 Tag。动态轨道和设备的 Items 集合变更时补上标记列，宿主新建的容器继续继承局部样式。静态路径存在歧义时不猜测命令映射。原快捷键提示为回退值；每次打开优先读取 `user-data/mpvnet/shortcuts` 的已应用 actions，空 keys 清空显示，未知命令和动态时长保留宿主原值。
+
+公开 ShowMenu 事件在宿主实际打开前更新展示，Opened 为直接打开的补充。样式失败时移除自有资源和订阅并恢复原提示，父窗口释放时解除订阅。`user-data/mpvnet/context-menu` 仅发布 schema、status、style_version、source 原因码和根数量，不含个人路径。当前兼容宿主固定为 `7.1.2.0+96afc62165b5a1df186fc79c58813f37061ace9a`（内嵌.NET 10.0.1）；其他版本保留原菜单。程序集尚不能加载的宿主由其原扩展加载器处理错误，不承诺此时可发布状态。
+
+DLL 是可重建的受管运行资产，源码和源码摘要随变更一并校验；普通包构建不执行 SDK。更新它沿用安装器的播放器运行检查、摘要、备份和还原，不写个人设置。真实跨 DPI、边缘翻转与键鼠焦点须单独验收；读取显示器 DPI 并不等于通过这些验收。
+
 ## 验证层次
 
 Python 回归使用标准库，Lua 回归执行实际脚本并提供 mpv 替身；Windows helper 检查覆盖真实存储、控件或合成安装目录。字体替身、控件事件、真实播放器运行和用户体验分别提供不同证据，不能互相替代。测试组、环境条件及允许跳过的项目统一见[测试说明](../tests/README.md)。

@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/mpvnet-player/mpv.net/blob/96afc62165b5a1df186fc79c58813f37061ace9a/src/MpvNet/InputHelp.cs",
-  "description": "Unique native menu commands before reorganization. Only ordinary quit is removed by user choice; wrappers align actions with the kit. Subtitle size uses the existing kit step 0.05.",
+  "description": "Unique native menu commands before reorganization. Explicitly retired daily entries record their retained alternatives; stable shortcut actions remain compatible. Subtitle size uses the existing kit step 0.05.",
   "native_commands": [
     "ab-loop",
     "add audio-delay -0.1",
@@ -178,7 +178,12 @@
     "seek 300": "script-message-to playback_feedback seek 300"
   },
   "removed": {
-    "quit": "User requested no ordinary Exit menu item; quit-watch-later is retained."
+    "quit": "User requested no ordinary Exit menu item; quit-watch-later is retained.",
+    "script-message-to mpvnet show-media-info osd": "Covered by the accepted media information window; stable shortcut actions remain.",
+    "script-message-to mpvnet show-media-info msgbox": "Covered by the accepted media information window; stable shortcut actions remain.",
+    "script-message-to mpvnet edit-conf-file mpv.conf": "Available in settings advanced page; stable shortcut action remains.",
+    "script-message-to mpvnet edit-conf-file input.conf": "Available in settings advanced page; stable shortcut action remains.",
+    "script-message-to mpvnet open-conf-folder": "Available in settings advanced page; stable shortcut action remains."
   },
   "dynamic_labels": [
     "近期文件",
