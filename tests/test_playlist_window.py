@@ -50,6 +50,14 @@ class PlaylistWindow(unittest.TestCase):
         self.assertEqual(data['key_cases'], 7)
         self.assertTrue(data['local_keys_preserved'])
 
+    def test_menu_popups_cannot_replace_the_player_window(self):
+        data = self.run_fixture('playlist_parent_probe.ps1')
+        self.assertFalse(data['input_desktop_used'])
+        self.assertEqual(len(data['checks']), 10)
+        for name, passed in data['checks'].items():
+            with self.subTest(case=name):
+                self.assertTrue(passed, name)
+
     def test_actual_csharp_geometry(self):
         data = self.run_fixture('playlist_geometry.ps1')
         self.assertEqual(data['cases'], 10)

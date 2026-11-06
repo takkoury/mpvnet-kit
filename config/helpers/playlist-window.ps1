@@ -587,6 +587,7 @@ public static class PlaylistNative {
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumCallback cb, IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hwnd);
@@ -616,15 +617,10 @@ public static class PlaylistNative {
         return VisibleBounds(outer,frame,available);
     }
     public static IntPtr FindParent(uint pid, IntPtr preferred) {
-        uint preferredPid;
-        if (preferred != IntPtr.Zero && IsWindowVisible(preferred) && GetWindow(preferred, 4) == IntPtr.Zero) {
-            GetWindowThreadProcessId(preferred, out preferredPid);
-            if (preferredPid == pid) return preferred;
-        }
+        if (IsPlayerWindow(preferred,pid) && IsWindowVisible(preferred)) return preferred;
         IntPtr result = IntPtr.Zero; long area = -1;
         EnumWindows(delegate(IntPtr hwnd, IntPtr data) {
-            uint owner; GetWindowThreadProcessId(hwnd, out owner);
-            if (owner == pid && IsWindowVisible(hwnd) && GetWindow(hwnd, 4) == IntPtr.Zero) {
+            if (IsPlayerWindow(hwnd,pid) && IsWindowVisible(hwnd)) {
                 Rect rect; if (GetWindowRect(hwnd, out rect)) {
                     long current = (long)(rect.Right - rect.Left) * (rect.Bottom - rect.Top);
                     if (current > area) { area = current; result = hwnd; }
@@ -633,6 +629,13 @@ public static class PlaylistNative {
             return true;
         }, IntPtr.Zero);
         return result;
+    }
+    public static bool IsPlayerWindow(IntPtr hwnd, uint pid) {
+        if (hwnd==IntPtr.Zero || !IsWindow(hwnd) || !BelongsTo(hwnd,pid) || GetWindow(hwnd,4)!=IntPtr.Zero) return false;
+        long style=GetWindowLongPtr(hwnd,-16).ToInt64(), extended=GetWindowLongPtr(hwnd,-20).ToInt64();
+        // Menus can be visible, ownerless windows in the player's process.
+        // Do not reject WS_POPUP itself: borderless/fullscreen players use it too.
+        return (style & 0x40000000L)==0 && (extended & (0x80L | 0x08000000L))==0;
     }
 }
 public sealed class PlaylistFollower : IDisposable {
@@ -669,7 +672,9 @@ public sealed class PlaylistFollower : IDisposable {
     public void RefreshFrame() { Schedule(); }
     public void RefreshParent(IntPtr preferred) {
         if (disposed) return;
-        IntPtr found = PlaylistNative.FindParent(pid,preferred);
+        // Process.MainWindowHandle may temporarily identify a menu. Keep the
+        // confirmed player through menu, hide and minimize events; rediscover on destruction.
+        IntPtr found = PlaylistNative.IsPlayerWindow(Parent,pid) ? Parent : PlaylistNative.FindParent(pid,preferred);
         if (found != IntPtr.Zero && found != Parent) { Parent = found; PlaylistNative.SetWindowLongPtr(form.Handle,-8,Parent); }
         Follow();
     }
