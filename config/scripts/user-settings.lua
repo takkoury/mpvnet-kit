@@ -8,6 +8,7 @@ local parser=dofile(expand('script-modules/user-shortcuts.lua'))
 local paths=dofile(expand('script-modules/mpvnet-paths.lua'))
 local settings_path,local_path=expand('mpvnet-user.json'),expand('script-opts/mpvnet-local.conf')
 local storage,window=expand('helpers/settings-storage.ps1'),expand('helpers/settings-window.ps1')
+local compiled_window=expand('helpers/KitSettings.exe')
 local instance=string.format('%.0f-%.0f',mp.get_property_number('pid',0),mp.get_time()*1000000)
 local sequence,revision_number,local_number,session=0,0,0,0
 local revision,paths_revision='', ''
@@ -120,7 +121,9 @@ local function request_file(kind,text)
     return path
 end
 local function launch(helper,operation,path,callback)
-    local args={paths.powershell(),'-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',helper}
+    local compiled=helper==window and utils.file_info(compiled_window)
+    local args=compiled and compiled.is_file and {compiled_window}
+        or {paths.powershell(),'-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',helper}
     if operation then args[#args+1]='-Operation';args[#args+1]=operation end
     args[#args+1]='-RequestPath';args[#args+1]=path
     mp.command_native_async({name='subprocess',args=args,capture_stdout=true,capture_stderr=false,playback_only=false},function(ok,result)

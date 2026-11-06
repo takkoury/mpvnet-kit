@@ -539,7 +539,7 @@ public sealed partial class SettingsEditor : Window
         if (previewArea == null || validation) return;
         bool enabled = AppearancePage && !disconnected && !overlayOpen && search.Text.Trim().Length == 0;
         object position = SettingsDraft.Value(latest, "preview_subtitle_position");
-        string message = playerPreview.Update(this, previewArea, parent, enabled, fullPreview ? "full" : page,
+        string message = playerPreview.Update(this, previewArea, parent, playerOwner, enabled, fullPreview ? "full" : page,
             position == null ? 100 : Convert.ToDouble(position, CultureInfo.InvariantCulture));
         bool available = enabled && playerPreview.Visible;
         previewMessage.Text = message;

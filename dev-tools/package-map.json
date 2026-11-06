@@ -655,6 +655,18 @@
       "destination": "config/helpers/settings-window.cs",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-host.cs",
+      "destination": "config/helpers/settings-host.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/KitSettings.exe",
+      "destination": "config/helpers/KitSettings.exe",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     }
   ]
 }

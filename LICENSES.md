@@ -20,6 +20,8 @@
 以下清单对应 manifest 中 component 为 author 的文件；第三方归属文件分别按上表处理。后续新增或移植代码必须重新核对来源，不能仅凭路径推断许可。
 
 - `.gitattributes`
+- `config/helpers/settings-host.cs`
+- `config/helpers/KitSettings.exe`
 - `.gitignore`
 - `CHANGELOG.md`
 - `Install.cmd`

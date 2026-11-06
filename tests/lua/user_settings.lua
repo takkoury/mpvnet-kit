@@ -227,6 +227,23 @@ function shortcut_entry_lifecycle()
     host.send('open-shortcuts');count=#requests;host.event('shutdown')
     third.callback(true,{status=0});eq(#requests,count)
 end
+function compiled_window_launch_preserves_session_and_storage()
+    local executable=config..'helpers/KitSettings.exe'
+    files[executable]='compiled fixture'
+    local host=instance(104);local token=host.open();local first=requests[#requests]
+    eq(#first.args.args,3);eq(first.args.args[1],executable);eq(first.args.args[2],'-RequestPath')
+    local count=#requests;host.send('open-shortcuts');eq(#requests,count)
+    eq(host.state().editor_token,token);eq(host.state().open_page,'shortcuts')
+    save(host,'window','{"fullscreen":true}')
+    local storage=requests[#requests].args.args
+    assert(storage[1]~=executable)
+    eq(storage[7],config..'helpers/settings-storage.ps1');eq(storage[8],'-Operation')
+    writer('writer-ok')
+    host.send('editor-close',token);first.callback(true,{status=0})
+    files[executable]=nil
+    host.open();local fallback=requests[#requests].args.args
+    assert(fallback[1]~=executable);eq(fallback[7],config..'helpers/settings-window.ps1')
+end
 function open_failures_are_visible_and_retryable()
     local host=instance(102)
     local count=#requests;host.fail_ipc=true;host.open()

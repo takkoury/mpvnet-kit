@@ -37,10 +37,15 @@ try {
     [IO.File]::WriteAllText($request, (@{schema=1;pipe=$pipeName;parent_pid=$parentId;script=$scriptName;token=$token;
         settings_path=(Join-Path $ownedFolder 'mpvnet-user.json')} | ConvertTo-Json -Compress), $encoding)
     $start = New-Object Diagnostics.ProcessStartInfo
-    $start.FileName = 'powershell.exe'
-    $probe = Join-Path $PSScriptRoot 'window_ipc_capture.ps1'
-    $start.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $probe + '" -SourcePath "' + $SourcePath +
-        '" -RequestPath "' + $request + '" -EditorType ' + $editorType
+    if ([IO.Path]::GetExtension($SourcePath) -ieq '.exe') {
+        $start.FileName = $SourcePath
+        $start.Arguments = '-RequestPath "' + $request + '" -NoShow'
+    } else {
+        $start.FileName = 'powershell.exe'
+        $probe = Join-Path $PSScriptRoot 'window_ipc_capture.ps1'
+        $start.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $probe + '" -SourcePath "' + $SourcePath +
+            '" -RequestPath "' + $request + '" -EditorType ' + $editorType
+    }
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true

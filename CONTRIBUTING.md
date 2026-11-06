@@ -37,6 +37,19 @@
 
 ## 生成测试包
 
+### 设置窗口预编译
+
+普通包携带`config/helpers/KitSettings.exe`，使用Windows现有.NET Framework/WPF，用户无需安装SDK。设置窗口的C#或`src/settings-window/app.manifest`变更后，使用本机.NET 10 SDK及.NET Framework 4.7.2引用程序集离线重建；构建不下载或还原依赖。
+
+```powershell
+python -B dev-tools/build-settings-window.py --output D:/Builds/settings-window-check
+python -B dev-tools/build-settings-window.py --output D:/Builds/settings-window-check --apply
+```
+
+默认只校验源码和全新仓外输出位置；`--apply`才构建EXE及`build-evidence.json`。验证后将输出EXE复制到`config/helpers/KitSettings.exe`，与源码一同提交。构建记录源码、编译器及引用程序集摘要；相同输入可确定性重建。打包会拒绝缺少源码或源码摘要不匹配的EXE；普通打包不调用SDK。旧PowerShell窗口入口保留为源码开发及EXE缺失时的兼容路径，不用于正式包的常规打开。
+
+### 构建安装包
+
 在仓库根目录执行。将示例输出位置换成一个全新的仓外目录；不要指向播放器、源码检出或其他 Git 仓库。
 
 ```powershell

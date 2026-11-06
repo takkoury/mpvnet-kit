@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class UserSettings(unittest.TestCase):
+    def test_compiled_window_preserves_session_and_storage_with_source_fallback(self):
+        self.run_case('compiled_window_launch_preserves_session_and_storage')
+
     def test_open_failures_are_visible_and_retryable(self):
         self.run_case('open_failures_are_visible_and_retryable')
 

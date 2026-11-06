@@ -10,7 +10,17 @@ using System.Windows.Shell;
 // Closing guard; WindowChrome retains Windows caption and resize behavior.
 public sealed partial class SettingsEditor
 {
+    const int WindowStyleIndex = -16, WindowExtendedStyleIndex = -20;
+    const uint OwnerWindowCommand = 4;
+    const uint ChildWindowStyle = 0x40000000, ToolWindowStyle = 0x00000080, NoActivateStyle = 0x08000000;
+    [StructLayout(LayoutKind.Sequential)] struct OwnerWindowRect { public int Left, Top, Right, Bottom; }
+    delegate bool OwnerWindowCallback(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")] static extern bool EnumWindows(OwnerWindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] static extern uint GetWindowStyle(IntPtr window, int index);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out OwnerWindowRect rect);
     bool chromeConfigured;
     IntPtr playerOwner;
     DateTime lastOwnerAttempt = DateTime.MinValue;
@@ -97,15 +107,43 @@ public sealed partial class SettingsEditor
         lastOwnerAttempt = now;
         try {
             if (parent.HasExited) return;
-            parent.Refresh();
-            IntPtr candidate = parent.MainWindowHandle;
-            if (candidate == IntPtr.Zero) return;
+            uint parentPid = (uint)parent.Id;
+            IntPtr candidate = FindPlayerOwner(parentPid);
             uint pid;
-            if (GetWindowThreadProcessId(candidate, out pid) == 0 || pid != (uint)parent.Id) return;
+            if (candidate == IntPtr.Zero || GetWindowThreadProcessId(candidate, out pid) == 0 || pid != parentPid) return;
             interop.Owner = candidate;
             playerOwner = candidate;
         } catch (InvalidOperationException) { }
           catch (System.ComponentModel.Win32Exception) { }
           catch (ArgumentException) { }
+    }
+
+    static IntPtr FindPlayerOwner(uint parentPid)
+    {
+        // The player can also host visible input indicators and other auxiliary windows.
+        IntPtr selected = IntPtr.Zero;
+        long largestArea = 0;
+        EnumWindows(delegate(IntPtr window, IntPtr data) {
+            uint pid;
+            if (GetWindowThreadProcessId(window, out pid) == 0 || pid != parentPid ||
+                !IsWindowVisible(window) || GetWindow(window, OwnerWindowCommand) != IntPtr.Zero) return true;
+            OwnerWindowRect bounds;
+            if (!GetWindowRect(window, out bounds)) return true;
+            long area = OwnerWindowArea(GetWindowStyle(window, WindowStyleIndex),
+                GetWindowStyle(window, WindowExtendedStyleIndex), bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
+            if (area > largestArea) {
+                selected = window;
+                largestArea = area;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return selected;
+    }
+
+    static long OwnerWindowArea(uint style, uint extendedStyle, int width, int height)
+    {
+        if ((style & ChildWindowStyle) != 0 || (extendedStyle & (ToolWindowStyle | NoActivateStyle)) != 0)
+            return 0;
+        return width > 0 && height > 0 ? (long)width * height : 0;
     }
 }

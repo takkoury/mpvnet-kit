@@ -149,8 +149,16 @@ class SettingsWindow(unittest.TestCase):
                 parent_pid=os.getpid(), pipe='fixture-unused', validation_state=state() if initial is None else initial,
                 validation_steps=list(steps), validation_width=width, validation_height=height,
                 validation_render_path=str(Path(temp) / 'render.png') if render else '', **(entry or {})), ensure_ascii=False), encoding='utf-8')
-            result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
-                '-File', str(ROOT / 'config/helpers/settings-window.ps1'), '-RequestPath', str(request),
+            executable = os.environ.get('MPVNET_TEST_SETTINGS_EXECUTABLE')
+            if executable:
+                path = Path(executable)
+                if not path.is_absolute() or not path.is_file():
+                    raise RuntimeError('MPVNET_TEST_SETTINGS_EXECUTABLE must name an existing absolute path')
+                launcher = [str(path)]
+            else:
+                launcher = ['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+                            '-File', str(ROOT / 'config/helpers/settings-window.ps1')]
+            result = subprocess.run([*launcher, '-RequestPath', str(request),
                 '-ValidateOnly', '-NoShow'], capture_output=True, timeout=30)
             self.assertEqual(result.stderr, b'', result.stderr.decode('utf-8', errors='replace'))
             data = json.loads(result.stdout.decode('utf-8-sig'))
@@ -178,6 +186,17 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(loaded['notice'], '')
         failed = self.run_window([dict(op='disconnect')], initial={})
         self.assertIn('播放器连接中断', failed['notice'])
+
+    def test_compiled_host_rejects_invalid_startup_before_creating_window(self):
+        executable = ROOT / 'config/helpers/KitSettings.exe'
+        for arguments in ([], ['-Unexpected'], ['-RequestPath'], ['-NoShow', '-NoShow']):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run([str(executable), *arguments], capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr, b'')
+                data = json.loads(result.stdout.decode('utf-8-sig'))
+                self.assertFalse(data['ok'])
+                self.assertIn('设置窗口', data['error'])
 
     def test_search_all_pages_preserves_other_drafts(self):
         data = self.run_window([dict(op='edit', id='sub-scale', text='1.2'),

@@ -38,6 +38,16 @@ def _check_menu_asset(source, destination, data):
         raise ValueError('menu extension does not match its sources; rebuild KitContextMenu.dll')
 
 
+def _check_settings_asset(source, destination, data):
+    if destination.casefold() != 'config/helpers/kitsettings.exe':
+        return
+    spec = importlib.util.spec_from_file_location('kit_settings_build', Path(__file__).with_name('build-settings-window.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not module.matches_source_digest(data, module.source_digest(source)):
+        raise ValueError('settings executable does not match its sources; rebuild KitSettings.exe')
+
+
 def _relative(value):
     if not isinstance(value, str):
         raise ValueError('relative path must be a string: ' + repr(value))
@@ -210,6 +220,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
             raise ValueError('missing source file: ' + src)
         data = path.read_bytes()
         _check_menu_asset(source, dst, data)
+        _check_settings_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
     entries.sort(key=lambda x: x['path'])

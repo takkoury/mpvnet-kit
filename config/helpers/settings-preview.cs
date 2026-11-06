@@ -85,18 +85,17 @@ public sealed class SettingsPreview : IDisposable
         double w = width * scale, h = height * scale;
         return new Rect(bounds.X + (bounds.Width - w) / 2, bounds.Y + (bounds.Height - h) / 2, w, h);
     }
-    public string Update(Window window, FrameworkElement area, Process player, bool enabled, string mode = "full", double subtitlePosition = 100)
+    public string Update(Window window, FrameworkElement area, Process player, IntPtr handle,
+        bool enabled, string mode = "full", double subtitlePosition = 100)
     {
         if (disposed) return "预览已结束";
         if (!enabled || !window.IsVisible || window.WindowState == WindowState.Minimized || !area.IsVisible)
         { Hide(); return ""; }
         try
         {
-            player.Refresh();
-            IntPtr handle = player.MainWindowHandle;
             uint pid;
-            GetWindowThreadProcessId(handle, out pid);
-            if (handle == IntPtr.Zero || !IsWindow(handle) || pid != player.Id)
+            if (handle == IntPtr.Zero || !IsWindow(handle) ||
+                GetWindowThreadProcessId(handle, out pid) == 0 || pid != (uint)player.Id)
             { DisposeThumbnail(); return "等待播放器窗口…"; }
             if (IsIconic(handle) || !IsWindowVisible(handle))
             { Hide(); return "播放器已最小化或隐藏，恢复窗口后可继续预览。"; }

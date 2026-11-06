@@ -60,6 +60,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 `SettingsDisplay` 同属 lua，执行实际 ModernZ 的显隐、暂停及临时显示代码，覆盖续期、超时、手动显隐和媒体切换。`SettingsWindow` 另检查预览与保存区在宽窄窗口中不重叠。DWM 实际画面是否包含字幕与控制栏仍须用隔离播放器观察，不能由这些替身测试代替。
 
+设置窗口预编译资产由core中的`SettingsBuild`检查源码摘要、过期／缺失输入、输出路径隔离及打包不调用SDK。设置Lua回归另检查直接EXE启动、重复打开共享会话、保存仍走原storage helper以及EXE缺失的源码回退。设置`MPVNET_TEST_SETTINGS_EXECUTABLE`为已构建EXE的绝对路径后，`SettingsWindow`同一组隐藏WPF断言直接运行该EXE；非法路径会失败，不静默退回源码。`window_ipc.ps1 -Editor Settings -SourcePath <EXE> -Mode ClientClose/ParentExit`验证预编译入口的实际就绪、关闭、错误token和父退出；源入口原有IPC检查保留。
+
 ```powershell
 # 使用本机已有的 Lua 5.1 库，不由测试下载或安装。
 $env:MPVNET_TEST_LUA51 = 'C:/path/to/lua51.dll'

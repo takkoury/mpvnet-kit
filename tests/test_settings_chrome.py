@@ -70,6 +70,15 @@ public sealed partial class SettingsEditor : Window {
         buttons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         result["close_attempts"] = closeAttempts;
         result["final_native_handle"] = new WindowInteropHelper(this).Handle.ToInt64();
+        result["owner_areas"] = new Dictionary<string, long> {
+            {"player", OwnerWindowArea(0x16cf0000, 0x00050100, 1490, 837)},
+            {"input_indicator", OwnerWindowArea(0x96000000, 0x08080028, 70, 70)},
+            {"input_overlay", OwnerWindowArea(0x94000000, 0x08200008, 70, 70)},
+            {"tool", OwnerWindowArea(0x10000000, 0x00000080, 2000, 1500)},
+            {"child", OwnerWindowArea(0x50000000, 0, 2000, 1500)},
+            {"small_player", OwnerWindowArea(0x16cf0000, 0x00050100, 64, 36)},
+            {"empty", OwnerWindowArea(0x10000000, 0, 0, 0)}
+        };
         return result;
     }
 }
@@ -142,6 +151,17 @@ $result | ConvertTo-Json -Depth 5 -Compress
                 self.assertEqual(data['native_handle'], 0)
                 self.assertEqual(data['final_native_handle'], 0)
                 self.assertEqual(data['owner'], 0)
+
+    def test_owner_style_filter_and_size_scoring(self):
+        self.assertEqual(self.probes['True-True']['owner_areas'], {
+            'player': 1490 * 837,
+            'input_indicator': 0,
+            'input_overlay': 0,
+            'tool': 0,
+            'child': 0,
+            'small_player': 64 * 36,
+            'empty': 0,
+        })
 
 
 if __name__ == '__main__':
