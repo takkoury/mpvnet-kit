@@ -12,8 +12,12 @@ public sealed partial class SettingsEditor
 {
     const int WindowStyleIndex = -16, WindowExtendedStyleIndex = -20;
     const uint OwnerWindowCommand = 4;
-    const uint ChildWindowStyle = 0x40000000, ToolWindowStyle = 0x00000080, NoActivateStyle = 0x08000000;
+    const uint ChildWindowStyle = 0x40000000, ToolWindowStyle = 0x00000080, NoActivateStyle = 0x08000000, TopmostStyle = 0x00000008;
     [StructLayout(LayoutKind.Sequential)] struct OwnerWindowRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct OwnerWindowPoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct OwnerMonitorInfo {
+        public int Size; public OwnerWindowRect Monitor, Work; public uint Flags;
+    }
     delegate bool OwnerWindowCallback(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumWindows(OwnerWindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
@@ -21,6 +25,11 @@ public sealed partial class SettingsEditor
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] static extern uint GetWindowStyle(IntPtr window, int index);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out OwnerWindowRect rect);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out OwnerWindowPoint point);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(OwnerWindowPoint point, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref OwnerMonitorInfo info);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after,
+        int x, int y, int width, int height, uint flags);
     bool chromeConfigured;
     IntPtr playerOwner;
     DateTime lastOwnerAttempt = DateTime.MinValue;
@@ -95,15 +104,22 @@ public sealed partial class SettingsEditor
         System.Windows.Automation.AutomationProperties.SetName(maximizeCaption, name);
     }
 
-    void AttachPlayerOwner()
+    void AttachPlayerOwner(bool immediate = false)
     {
         // Handle is only read, never EnsureHandle: validation and hidden probes
         // must remain free of native windows and player-side effects.
-        if (validation || noShow || playerOwner != IntPtr.Zero) return;
+        if (validation || noShow) return;
         var interop = new WindowInteropHelper(this);
         if (interop.Handle == IntPtr.Zero) return;
+        uint ownerPid;
+        if (playerOwner != IntPtr.Zero && GetWindow(interop.Handle, OwnerWindowCommand) == playerOwner &&
+            GetWindowThreadProcessId(playerOwner, out ownerPid) != 0 && ownerPid == (uint)parent.Id)
+        {
+            if (immediate) MatchPlayerWindowBand(interop.Handle);
+            return;
+        }
         DateTime now = DateTime.UtcNow;
-        if (now - lastOwnerAttempt < TimeSpan.FromSeconds(1)) return;
+        if (!immediate && now - lastOwnerAttempt < TimeSpan.FromSeconds(1)) return;
         lastOwnerAttempt = now;
         try {
             if (parent.HasExited) return;
@@ -112,10 +128,48 @@ public sealed partial class SettingsEditor
             uint pid;
             if (candidate == IntPtr.Zero || GetWindowThreadProcessId(candidate, out pid) == 0 || pid != parentPid) return;
             interop.Owner = candidate;
-            playerOwner = candidate;
+            if (GetWindow(interop.Handle, OwnerWindowCommand) == candidate)
+            {
+                playerOwner = candidate;
+                MatchPlayerWindowBand(interop.Handle);
+            }
         } catch (InvalidOperationException) { }
           catch (System.ComponentModel.Win32Exception) { }
           catch (ArgumentException) { }
+    }
+
+    void MatchPlayerWindowBand(IntPtr handle)
+    {
+        // A precreated HWND keeps its old band when an owner is assigned later.
+        // Match this owner only; do not change WPF Topmost or activate/raise the owner.
+        bool ownerTopmost = (GetWindowStyle(playerOwner, WindowExtendedStyleIndex) & TopmostStyle) != 0;
+        bool windowTopmost = (GetWindowStyle(handle, WindowExtendedStyleIndex) & TopmostStyle) != 0;
+        if (ownerTopmost != windowTopmost)
+            SetWindowPos(handle, new IntPtr(ownerTopmost ? -1 : -2), 0, 0, 0, 0, 0x213); // NOMOVE | NOSIZE | NOACTIVATE | NOOWNERZORDER
+    }
+
+    void PositionPreparedWindow()
+    {
+        if (validation || noShow || WindowStartupLocation != WindowStartupLocation.CenterScreen) return;
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        OwnerWindowRect bounds; OwnerWindowPoint cursor;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out bounds) || !GetCursorPos(out cursor)) return;
+        var monitor = new OwnerMonitorInfo { Size = Marshal.SizeOf(typeof(OwnerMonitorInfo)) };
+        if (!GetMonitorInfo(MonitorFromPoint(cursor, 2), ref monitor)) return;
+        OwnerWindowRect target = CenterOnWorkArea(bounds, monitor.Work);
+        // Binding the owner before Show is required for the correct topmost band.
+        // Preserve CenterScreen's cursor-monitor placement using one native coordinate space.
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        if (!SetWindowPos(handle, IntPtr.Zero, target.Left, target.Top, 0, 0, 0x15)) // NOSIZE | NOZORDER | NOACTIVATE
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+    }
+
+    static OwnerWindowRect CenterOnWorkArea(OwnerWindowRect bounds, OwnerWindowRect work)
+    {
+        int width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top;
+        int left = work.Left + (work.Right - work.Left - width) / 2;
+        int top = work.Top + (work.Bottom - work.Top - height) / 2;
+        return new OwnerWindowRect { Left = left, Top = top, Right = left + width, Bottom = top + height };
     }
 
     static IntPtr FindPlayerOwner(uint parentPid)

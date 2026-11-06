@@ -767,10 +767,9 @@ public sealed partial class SettingsEditor : Window
         if (!ReadyToShow || validation || noShow) return;
         if (parent.HasExited) { CloseFromPlayer(); return; }
         showRequested = false;
+        if (startHidden && !shownOnce) PositionPreparedWindow();
+        AttachPlayerOwner(true);
         if (!IsVisible) Show();
-        // For an already-created HWND, WPF recalculates CenterScreen at Show.
-        // Keep its cursor-monitor placement before assigning the real owner.
-        if (startHidden && !shownOnce) AttachPlayerOwner();
         shownOnce = true;
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();

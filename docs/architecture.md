@@ -119,13 +119,13 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 路径仍只写 `script-opts/mpvnet-local.conf`，使用独立 revision，不提供双文件事务。[settings-storage.ps1](../config/helpers/settings-storage.ps1) 的 `SaveLocal` 只接受四个已知路径键，保留未知行、注释及未改行；空值删除覆盖，重复已知键或非法新路径拒绝保存。Capture 新任务重读输出根，已开始任务的 payload 保持；程序路径在实例启动时读取。
 
-窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。[settings-chrome.cs](../config/helpers/settings-chrome.cs)通过WindowChrome提供同底色标题栏、系统拖动／缩放和最大化／关闭按钮，ShowInTaskbar=false；按父PID枚举可见、无owner且非子窗／工具窗／不激活弹窗的窗口，选择最大有效窗口作为原生owner，不直接相信MainWindowHandle或使用Topmost。控制栏DWM预览使用同一已确认句柄，并再次核对有效性与PID，避免将输入提示窗当成播放器画面。验证和NoShow模式不创建窗口句柄。IPC中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)、[窗口](../tests/test_settings_window.py)及[标题栏](../tests/test_settings_chrome.py)。
+窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。[settings-chrome.cs](../config/helpers/settings-chrome.cs)通过WindowChrome提供同底色标题栏、系统拖动／缩放和最大化／关闭按钮，ShowInTaskbar=false；按父PID枚举可见、无owner且非子窗／工具窗／不激活弹窗的窗口，选择最大有效窗口作为原生owner，不直接相信MainWindowHandle。显示前设置owner，读回GW_OWNER后才缓存；成功绑定及显式唤回时，只有原生置顶层与父窗不同时才同步，SetWindowPos不激活、不抬升owner、不移动缩放，不设置独立WPF Topmost或循环抢前台。父窗取消置顶时由Windows同步退出置顶层。控制栏DWM预览使用同一已确认句柄，并再次核对有效性与PID，避免将输入提示窗当成播放器画面。验证和NoShow模式不创建窗口句柄。IPC中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)、[窗口](../tests/test_settings_window.py)及[标题栏](../tests/test_settings_chrome.py)。
 
 窗口创建前的IPC或请求文件失败会退休本次token，保留原状态错误并显示4秒中文提示；helper异常退出只在会话仍有效时提示，不回显其stdout诊断。用户已关闭窗口或播放器退出后的迟到结果保持静默，重试创建新会话时清除上一轮错误。正常打开、保存和关闭的接口保持。
 
 设置控制层优先直接启动`helpers/KitSettings.exe -RequestPath <临时请求>`，避免在每次打开时启动PowerShell并编译窗口。入口[settings-host.cs](../config/helpers/settings-host.cs)运行同一`SettingsEditor`，保持STA、会话校验、JSON错误与退出码。EXE缺失时仍可使用`settings-window.ps1`源码入口；源码入口不自动预备，已经启动后的失败不盲目再开第二个窗口。保存仍交给原控制层和storage helper。
 
-EXE存在时，控制层在初始化后延迟250ms预备一个新会话，使用`start_hidden=true`请求，保持`editor_visible=false`。窗口先载入匹配token的实时设置，在Hidden状态关联原生HWND、视觉树并完成布局，随后一次性发送`editor-prepared`；`editor-ready`只说明IPC已连接。预备期间不显示或激活窗口，也不取得预览租期。显式打开通过`editor_visible=true`快照及show消息传递意图，订阅前的点击也不丢失；实际Show沿WPF原有居中规则，再绑定已确认播放器owner。每个播放器最多一个此类进程。
+EXE存在时，控制层在初始化后延迟250ms预备一个新会话，使用`start_hidden=true`请求，保持`editor_visible=false`。窗口先载入匹配token的实时设置，在Hidden状态关联原生HWND、视觉树并完成布局，随后一次性发送`editor-prepared`；`editor-ready`只说明IPC已连接。预备期间不显示或激活窗口，也不取得预览租期。显式打开通过`editor_visible=true`快照及show消息传递意图，订阅前的点击也不丢失；首次Show前按鼠标所在屏幕工作区和原生窗口尺寸复现原居中位置，再绑定主窗并同步窗口层级，避免提前绑owner改变WPF所选屏幕。每个播放器最多一个此类进程。
 
 正常关闭仍退休旧token并结束旧进程，再预备全新的进程和模型，草稿不跨关闭保留。旧进程退出前的显式重开继续排队，不并发新窗口。预备失败静默且不自动循环重试，用户明确打开可重新尝试；已请求打开时的异常沿原中文反馈。父播放器退出取消待预备计时器，并清理对应进程及请求文件。
 

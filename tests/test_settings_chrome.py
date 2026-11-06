@@ -79,6 +79,17 @@ public sealed partial class SettingsEditor : Window {
             {"small_player", OwnerWindowArea(0x16cf0000, 0x00050100, 64, 36)},
             {"empty", OwnerWindowArea(0x10000000, 0, 0, 0)}
         };
+        Func<OwnerWindowRect,int[]> coordinates = r => new[] {r.Left,r.Top,r.Right,r.Bottom};
+        result["centered_bounds"] = new[] {
+            coordinates(CenterOnWorkArea(new OwnerWindowRect {Right=1560,Bottom=1170},
+                new OwnerWindowRect {Right=2560,Bottom=1368})),
+            coordinates(CenterOnWorkArea(new OwnerWindowRect {Right=1200,Bottom=800},
+                new OwnerWindowRect {Left=-1920,Right=0,Bottom=1040})),
+            coordinates(CenterOnWorkArea(new OwnerWindowRect {Left=30,Top=20,Right=830,Bottom=620},
+                new OwnerWindowRect {Left=1920,Top=40,Right=3840,Bottom=1080})),
+            coordinates(CenterOnWorkArea(new OwnerWindowRect {Right=1560,Bottom=1170},
+                new OwnerWindowRect {Right=1280,Bottom=720}))
+        };
         return result;
     }
 }
@@ -162,6 +173,12 @@ $result | ConvertTo-Json -Depth 5 -Compress
             'small_player': 64 * 36,
             'empty': 0,
         })
+
+    def test_prepared_window_uses_cursor_work_area_without_resizing(self):
+        self.assertEqual(self.probes['True-True']['centered_bounds'], [
+            [500, 99, 2060, 1269], [-1560, 120, -360, 920],
+            [2480, 260, 3280, 860], [-140, -225, 1420, 945],
+        ])
 
 
 if __name__ == '__main__':
