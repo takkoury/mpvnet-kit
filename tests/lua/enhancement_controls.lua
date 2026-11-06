@@ -56,8 +56,8 @@ end
 local function select(name) script_messages['set-preset'](name) end
 local function change(name, value) properties[name] = value; observers[name](name, value) end
 local function reason(name) return current().unavailable_reasons[name] end
-local function check_message(text)
-    eq(messages[#messages][1], 'ENHANCEMENT: ' .. text); eq(messages[#messages][2], 1, 'one-second plain-text OSD')
+local function check_message(text, duration)
+    eq(messages[#messages][1], text); eq(messages[#messages][2], duration or 4, 'feedback duration')
 end
 
 function initialization_and_no_video_reasons()
@@ -77,22 +77,32 @@ function sdr_settings_and_explicit_feedback()
     eq(current().desired, 'QUALITY'); eq(current().applied, 'QUALITY'); eq(current().applied_scope, 'options')
     eq(properties['options/scale'], 'ewa_lanczos'); eq(properties['options/deband'], false)
     eq(properties['options/deband-grain'], 3, 'preserve baseline when disabled')
-    check_message('SCALING SETTINGS APPLIED')
-    select('SMOOTH'); eq(properties['options/deband'], true); eq(properties['options/deband-threshold'], 32)
-    select('OFF'); eq(current().desired, 'OFF'); eq(properties['options/scale'], original.scale)
+    check_message('已选择高质量缩放', 2)
+    select('SMOOTH'); check_message('已选择去色带', 2); eq(properties['options/deband'], true); eq(properties['options/deband-threshold'], 32)
+    select('OFF'); check_message('画面设置已还原', 2); eq(current().desired, 'OFF'); eq(properties['options/scale'], original.scale)
     eq(properties['options/dscale'], '', 'native scaler inherit uses registered setter name')
     eq(properties['options/glsl-shaders'][1], 'baseline.glsl')
+    local routed, count = {}, #messages
+    host.commandv = function(...) routed[#routed+1] = {...} end
+    properties['user-data/mpvnet/feedback/ready'] = true
+    select('QUALITY'); select('unknown')
+    eq(#messages, count, 'ready coordinator receives feedback without duplicate native OSD')
+    eq(routed[1][1], 'script-message-to'); eq(routed[1][2], 'feedback_osd'); eq(routed[1][3], 'show')
+    eq(routed[1][4], '已选择高质量缩放'); eq(routed[1][5], '2')
+    eq(routed[2][4], '此增强不可用'); eq(routed[2][5], '4')
+    properties['user-data/mpvnet/feedback/ready'] = false
+    select('OFF'); check_message('画面设置已还原', 2)
 end
 
 function hdr_and_unknown_metadata()
     for _, params in ipairs({{gamma = 'pq'}, {gamma = 'hlg'}, {gamma = 'st2084'}, {gamma = 'bt.1886', sigpeak = 2}}) do
         load_file(params); eq(reason('ANIME_LIGHT'), 'hdr_source'); eq(current().available.QUALITY, true)
         local count = #writes; select('ANIME_LIGHT'); eq(#writes, count)
-        eq(current().desired, 'OFF'); eq(current().applied, 'OFF'); check_message('HDR SOURCE')
+        eq(current().desired, 'OFF'); eq(current().applied, 'OFF'); check_message('此增强不支持 HDR 视频')
     end
     for _, params in ipairs({{}, {gamma = 'auto'}}) do
         load_file(params); eq(reason('ANIME_LIGHT'), 'metadata_unknown')
-        select('ANIME_LIGHT'); check_message('SOURCE METADATA UNKNOWN')
+        select('ANIME_LIGHT'); check_message('无法增强\n无法识别视频色彩')
     end
     properties['video-params'] = nil; observers['video-params']()
     eq(reason('ANIME_LIGHT'), 'no_video')
@@ -100,11 +110,11 @@ end
 
 function validation_and_shader_gates()
     opts.anime_verified = false; load_file(); eq(reason('ANIME_LIGHT'), 'anime_unverified')
-    select('ANIME_LIGHT'); check_message('ANIME VALIDATION NOT ENABLED')
+    select('ANIME_LIGHT'); check_message('Anime4K 尚未启用')
     opts.anime_verified = true; missing_shaders['Anime4K_Restore_CNN_VL.glsl'] = true
     change('video-params', {gamma = 'bt.1886'})
     eq(current().available.ANIME_LIGHT, true); eq(reason('ANIME_STRONG'), 'shader_missing')
-    select('ANIME_STRONG'); check_message('SHADER MISSING')
+    select('ANIME_STRONG'); check_message('缺少增强文件')
 end
 
 function failed_write_restores_previous_settings()
@@ -114,7 +124,7 @@ function failed_write_restores_previous_settings()
     eq(current().desired, 'QUALITY'); eq(current().applied, 'QUALITY')
     eq(current().error_reason, 'settings_failed'); eq(current().error_preset, 'SMOOTH')
     eq(properties['options/deband'], false); eq(properties['options/scale'], 'ewa_lanczos')
-    check_message('SETTINGS FAILED')
+    check_message('无法应用增强设置')
     select('SMOOTH'); eq(current().error_reason, nil); eq(current().desired, 'SMOOTH')
 end
 
@@ -123,7 +133,7 @@ function snapshot_and_rollback_failures()
     eq(current().error_reason, 'settings_failed'); eq(current().desired, 'OFF'); eq(#writes, 0)
     read_failure = nil; failures['file-local-options/deband'] = 2; select('SMOOTH')
     eq(current().error_reason, 'rollback_failed'); eq(current().applied, nil); eq(current().desired, 'OFF')
-    check_message('ROLLBACK FAILED')
+    check_message('画面设置还原失败')
     read_failure = 'options/scale'; load_file(); eq(current().ready, false)
     eq(reason('OFF'), 'settings_failed'); eq(current().applied, nil)
 end
@@ -156,7 +166,7 @@ function renderer_error_and_lifecycle()
     load_file(); select('ANIME_LIGHT')
     events['log-message']({level = 'error', prefix = 'vo/gpu-next', text = 'shader compile failed'})
     eq(current().desired, 'OFF'); eq(current().applied, 'OFF'); eq(current().error_reason, 'renderer_error')
-    check_message('RENDERER ERROR')
+    check_message('画面增强失败')
     local count, write_count = #messages, #writes
     events['end-file'](); eq(#messages, count); eq(#writes, write_count)
     events['start-file'](); eq(current().error_reason, nil)

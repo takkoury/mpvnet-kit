@@ -49,6 +49,9 @@ class SubtitleControls(unittest.TestCase):
     def test_single_actions_preserve_active_mode(self):
         self.run_case('single_actions_preserve_active_mode')
 
+    def test_persistent_mode_and_ready_feedback_routing(self):
+        self.run_case('persistent_mode_and_ready_feedback_routing')
+
     def test_single_actions_without_primary_subtitle_are_noops(self):
         self.run_case('single_actions_without_primary_subtitle_are_noops')
 

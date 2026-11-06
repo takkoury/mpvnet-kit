@@ -8,6 +8,21 @@ local position_owner
 -- User-confirmed steps; no settings file is written by these actions.
 local delay_step, position_step, scale_step = 0.1, 1, 0.05
 
+local function show(text, duration)
+    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
+        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
+    else
+        mp.osd_message(text, duration)
+    end
+end
+
+local function status(text)
+    mp.set_property_native('user-data/mpvnet/feedback/subtitle', text or '')
+    -- An explicit adjustment replaces the preceding short message immediately;
+    -- when it expires, the same value remains in the persistent status layer.
+    if text then show(text, 1.5) end
+end
+
 local function ordinary_tracks()
     local tracks = {}
     for _, track in ipairs(mp.get_property_native("track-list", {})) do
@@ -26,7 +41,7 @@ local function primary_track()
 end
 
 local function no_subtitle()
-    mp.osd_message("NO SUBTITLE", 1)
+    show("无可用字幕", 4)
 end
 
 local function select_subtitle()
@@ -53,14 +68,16 @@ end
 
 local function exit_mode()
     adjusting = false
+    status()
     for _, name in ipairs({"adjust-up", "adjust-down", "adjust-larger", "adjust-smaller"}) do
         mp.remove_key_binding(name)
     end
 end
 
 local function show_adjustment()
-    mp.osd_message(string.format("SUB ADJUST: POS %.0f%% / SIZE ×%.2f", position,
-        mp.get_property_number("sub-scale", 1)), 1)
+    local text = string.format("字幕位置 %.0f%%\n字号 ×%.2f", position,
+        mp.get_property_number("sub-scale", 1))
+    if adjusting then status(text) else show(text, 1.5) end
 end
 
 local function prepare_adjustment()
@@ -102,7 +119,7 @@ end
 local function toggle_adjustment()
     if adjusting then
         exit_mode()
-        mp.osd_message("SUB ADJUST: OFF", 1)
+        show("已退出字幕调整", 1.5)
         return
     end
     if not prepare_adjustment() then return end
@@ -111,7 +128,7 @@ local function toggle_adjustment()
     mp.add_forced_key_binding("DOWN", "adjust-down", function() adjust_position(position_step) end, {repeatable = true})
     mp.add_forced_key_binding("WHEEL_UP", "adjust-larger", function() adjust_scale(scale_step) end, {repeatable = true})
     mp.add_forced_key_binding("WHEEL_DOWN", "adjust-smaller", function() adjust_scale(-scale_step) end, {repeatable = true})
-    mp.osd_message("SUB ADJUST: ON", 1)
+    status("已进入字幕调整")
 end
 
 local function reset_for_file()
@@ -129,20 +146,20 @@ local function reset_adjustment()
     if position_owner then position_owner.invalidate() end
     local had_adjustment = saved_adjustment ~= nil
     reset_for_file()
-    mp.osd_message(had_adjustment and "SUB ADJUST: RESET" or "SUB ADJUST: NO CHANGES", 1)
+    show(had_adjustment and "字幕位置、字号已还原" or "无可还原的字幕调整", had_adjustment and 2 or 4)
 end
 
 local function delay(amount)
     local value = amount and mp.get_property_number("sub-delay", 0) + amount or 0
     if math.abs(value) < 0.00001 then value = 0 end
     mp.set_property_number("sub-delay", value)
-    mp.osd_message(string.format("SUB DELAY: %+.1f SEC", value), 1)
+    show(string.format("字幕延迟 %+.1f 秒", value), 1.5)
 end
 
 mp.add_key_binding(nil, "toggle", function()
     local visible = not mp.get_property_bool("sub-visibility", true)
     mp.set_property_bool("sub-visibility", visible)
-    mp.osd_message(visible and "SUB ON" or "SUB OFF", 1)
+    show(visible and "字幕已开启" or "字幕已关闭", 1.5)
 end)
 mp.add_key_binding(nil, "select", select_subtitle)
 mp.add_key_binding(nil, "cycle-next", function() cycle_subtitle(1) end)
@@ -163,7 +180,7 @@ mp.add_key_binding(nil, "copy", function()
     if not text or not text:match("%S") then no_subtitle(); return end
     -- Use the native API's write result; never read or clear the clipboard first.
     local ok, err = mp.set_property("clipboard/text", text)
-    mp.osd_message(ok and "SUB COPIED" or "SUB COPY FAILED", 1)
+    show(ok and "字幕已复制" or "字幕复制失败", ok and 2 or 4)
     if not ok then mp.msg.warn("Subtitle clipboard write failed: " .. tostring(err)) end
 end)
 mp.register_event("start-file", reset_for_file)

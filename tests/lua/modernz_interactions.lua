@@ -149,7 +149,7 @@ function speed_anchor_wheel()
     assert(send_mouse("wheel_down", "press"), "speed anchor must receive wheel down")
     eq(properties.speed, 1, "configured wheel down reaches real add_speed")
     eq(#commands, 2, "exactly two speed commands")
-    eq(messages[1], "SPEED: ×1.25"); eq(messages[2], "SPEED: ×1.0")
+    eq(messages[1], "倍速 ×1.25"); eq(messages[2], "倍速 ×1.0")
 end
 
 function popup_body_does_not_route_wheel()

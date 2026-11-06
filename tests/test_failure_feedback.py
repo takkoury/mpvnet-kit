@@ -22,7 +22,9 @@ class PlaybackEndFeedback(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lua = load_lua51()
-        cls.source = fragment(PLAYBACK.read_text(encoding='utf-8'),
+        playback = PLAYBACK.read_text(encoding='utf-8')
+        cls.show = fragment(playback, 'local function show(text, duration)', 'local paths =')
+        cls.source = fragment(playback,
                               'mp.register_event("end-file", function(event)',
                               'mp.register_event("file-loaded", function()')
 
@@ -34,8 +36,9 @@ local reload_marks = {mark=5}
 local releases = 0
 local function release_hold() releases = releases + 1 end
 local mp = {
+ get_property_native=function() return false end,
  register_event=function(name,fn) assert(name=='end-file');callback=fn end,
- osd_message=function(text,duration) assert(duration==1);messages[#messages+1]=text end,
+ osd_message=function(text,duration) assert(duration==4);messages[#messages+1]=text end,
 }
 '''
         body = '\ncallback(%s)\n' % event
@@ -46,15 +49,15 @@ local mp = {
             body += 'assert(reload_pending and reload_marks.mark==5)\n'
         else:
             body += 'assert(not reload_pending and reload_marks==nil)\n'
-        self.lua.execute(prelude + self.source + body, 'playback/end-feedback')
+        self.lua.execute(prelude + self.show + self.source + body, 'playback/end-feedback')
 
     def test_error_feedback_is_actionable_without_echoing_backend_data(self):
         self.check_event("{reason='error',error='unrecognized file format'}",
-                         'UNSUPPORTED FORMAT · TRY ANOTHER FILE')
+                         '不支持此格式\n请换一个文件')
         self.check_event("{reason='error',file_error='unrecognized file format'}",
-                         'UNSUPPORTED FORMAT · TRY ANOTHER FILE')
+                         '不支持此格式\n请换一个文件')
         self.check_event("{reason='error',error='https://private.test/video?token=secret'}",
-                         'PLAYBACK FAILED · CHECK FILE OR URL')
+                         '播放失败\n请检查文件或网址')
 
     def test_normal_stop_eof_and_quit_remain_silent(self):
         for reason in ('stop', 'eof', 'quit', 'redirect'):
@@ -126,7 +129,10 @@ local reply, callback, callback_ok = nil, nil, false
 local helper, powershell = 'helper', 'powershell'
 local payload_available = true
 local clipboard
+local statuses={}
 local mp = {
+    get_property_native=function() return nil end,
+    set_property_native = function(k,v) statuses[k]=v;return true end,
     osd_message = function(text) messages[#messages+1] = text end,
     msg = {warn = function(text) warnings[#warnings+1] = text end},
     get_property_number = function() return 123 end,
@@ -148,73 +154,75 @@ local function eq(a,b) assert(a==b, tostring(a)..' ~= '..tostring(b)) end
 
     def test_capture_reason_messages_and_cleanup(self):
         cases = {
-            'ffmpeg-missing': 'FFMPEG NOT FOUND', 'access-denied': 'ACCESS DENIED',
-            'clipboard': 'CLIPBOARD FAILED', 'save': 'CANNOT SAVE FILE',
-            'encode-mp4': 'MP4 ENCODING FAILED', 'encode-webp': 'WEBP ENCODING FAILED',
-            'encode-gif': 'GIF ENCODING FAILED', 'cancelled': 'CANCELLED',
-            'file-missing': 'FILE NOT FOUND', 'invalid-range': 'INVALID RANGE',
-            'invalid-path': 'INVALID PATH', 'directory': 'FOLDER UNAVAILABLE',
-            'temporary-file': 'TEMP UNAVAILABLE · CHECK TEMP FOLDER',
-            'no-video': 'NO VIDEO · OPEN A VIDEO',
-            'stream-unavailable': 'STREAM NOT EXPORTABLE · TRY ANOTHER VIDEO',
+            'ffmpeg-missing': '未找到 FFmpeg', 'access-denied': '权限不足',
+            'clipboard': '复制失败', 'save': '无法保存文件',
+            'encode-mp4': 'MP4 生成失败', 'encode-webp': 'WebP 生成失败',
+            'encode-gif': 'GIF 生成失败', 'cancelled': '操作已取消',
+            'file-missing': '找不到文件', 'invalid-range': '片段范围无效',
+            'invalid-path': '输出路径无效', 'directory': '文件夹不可用',
+            'temporary-file': '请检查临时文件夹',
+            'no-video': '请先打开视频',
+            'stream-unavailable': '此视频无法导出片段\n请换一个视频',
         }
         for reason, message in cases.items():
             with self.subTest(reason=reason):
                 self.run_capture('''
-run({action='clip'}, 'SUCCESS', 'CLIP FAILED', function() error('failure called done') end)
+run({action='clip'}, 'SUCCESS', '导出失败', function() error('failure called done') end)
 eq(busy, true)
 reply = {ok=false, reason=%s, phase='mp4'}
 callback(false, {status=1,stdout='mock'})
-eq(messages[1], %s)
+eq(messages[#messages], %s)
 eq(busy, false); eq(pending_payload,nil); eq(pending_job,nil)
 eq(removed[1], 'owned-payload.json'); eq(#removed,1)
-''' % (json.dumps(reason), json.dumps('CLIP FAILED · '+message, ensure_ascii=False)))
+''' % (json.dumps(reason), json.dumps(message if reason in ('clipboard','cancelled','encode-mp4','encode-webp','encode-gif','stream-unavailable') else ('无法导出' if reason=='ffmpeg-missing' else '导出失败')+('：' if reason=='access-denied' else '\n')+message, ensure_ascii=False)))
 
     def test_unknown_or_malformed_failure_does_not_echo_details(self):
         for data in ('{ok=false,reason="https://private.test/?token=secret",phase="private-path"}', 'true', 'nil'):
             with self.subTest(reply=data):
                 self.run_capture('''
-run({action='clip'}, 'SUCCESS', 'CLIP FAILED')
+run({action='clip'}, 'SUCCESS', '导出失败')
 reply = %s
 callback(false, {status=1,stdout='private'})
-eq(messages[1], 'CLIP FAILED'); eq(warnings[1], 'Capture failed: worker')
+eq(messages[#messages], '导出失败'); eq(warnings[1], 'Capture failed: worker')
 eq(busy,false); eq(pending_payload,nil)
 ''' % data)
 
     def test_success_and_old_helper_fallback(self):
         self.run_capture('''
 local done=false
-run({action='clip'}, 'CLIP SAVED', 'CLIP FAILED', function() done=true end)
+run({action='clip'}, 'CLIP SAVED', '导出失败', function() done=true end)
 reply={ok=true}; callback(true, {status=0,stdout='mock'})
-eq(done,true); eq(messages[1],'CLIP SAVED'); eq(#warnings,0); eq(busy,false)
-run({action='clip'}, 'CLIP SAVED', 'CLIP FAILED')
+eq(done,true); eq(messages[#messages],'CLIP SAVED'); eq(#warnings,0); eq(busy,false)
+run({action='clip'}, 'CLIP SAVED', '导出失败')
 reply={ok=false,phase='ffmpeg'}; callback(false,{status=1,stdout='mock'})
-eq(messages[2],'CLIP FAILED · FFMPEG NOT FOUND')
+eq(messages[#messages],'无法导出\\n未找到 FFmpeg')
 ''')
 
     def test_temp_failure_and_folder_state_isolation(self):
         self.run_capture('''
 payload_available=false; pending_png='owned.png'
-run({action='screenshot'}, 'SUCCESS', 'SCREENSHOT FAILED')
-eq(messages[1],'SCREENSHOT FAILED · TEMP UNAVAILABLE · CHECK TEMP FOLDER'); eq(busy,false)
+run({action='screenshot'}, 'SUCCESS', '无法截图')
+eq(messages[#messages],'无法截图\\n请检查临时文件夹'); eq(busy,false)
 eq(removed[1],'owned.png'); eq(callback,nil)
 payload_available=true; busy=true; pending_job='existing-job'
 open_folder(); reply={ok=false,reason='directory'}; callback(false,{status=1,stdout='mock'})
-eq(messages[2],'CAPTURE FOLDER FAILED · FOLDER UNAVAILABLE')
+eq(messages[#messages],'无法打开输出文件夹\\n文件夹不可用')
 eq(busy,true); eq(pending_job,'existing-job')
 ''')
 
     def test_explicit_clipboard_url_rejection_and_success(self):
-        source = self.prelude + self.clipboard_source
-        for value, message in ((None, 'NO URL IN CLIPBOARD'), ('   ', 'NO URL IN CLIPBOARD'),
-                               ('file:///private/video.mkv', 'INVALID URL'),
-                               ('https://example.test/a\nhttps://example.test/b', 'INVALID URL'),
-                               ('not a URL', 'INVALID URL')):
+        source = (self.prelude + '\nmp.get_property_native=function() return false end\n'
+                  + fragment(PLAYBACK.read_text(encoding='utf-8'), 'local function show(text, duration)', 'local paths =')
+                  + self.clipboard_source)
+        for value, message in ((None, '剪贴板中没有网址'), ('   ', '剪贴板中没有网址'),
+                               ('file:///private/video.mkv', '剪贴板网址无效'),
+                               ('https://example.test/a\nhttps://example.test/b', '剪贴板网址无效'),
+                               ('not a URL', '剪贴板网址无效')):
             with self.subTest(value=value):
                 self.lua.execute(source + '''
 clipboard=%s; bindings['clipboard-url']()
-eq(messages[1],%s); eq(#commands,0)
-''' % ('nil' if value is None else json.dumps(value), json.dumps(message)))
+eq(messages[#messages],%s); eq(#commands,0)
+''' % ('nil' if value is None else json.dumps(value), json.dumps(message, ensure_ascii=False)))
         self.lua.execute(source + '''
 clipboard='  https://example.test/video?x=1  '; bindings['clipboard-url']()
 eq(#messages,0); eq(#commands,1); eq(commands[1][2],'loadfile')

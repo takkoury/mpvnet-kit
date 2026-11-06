@@ -42,7 +42,7 @@ local mp = {
         return 'paths.lua'
     end,
     command_native_async=function(_, fn) calls[#calls+1]=payload; callback=fn end,
-    set_property_native=function(_, value) state=value; states[#states+1]=value end,
+    set_property_native=function(name, value) native[name]=value;if name=='user-data/mpvnet/capture' then state=value;states[#states+1]=value end end,
     osd_message=function(text) messages[#messages+1]=text end,
     add_key_binding=function(_, name, fn) bindings[name]=fn end,
     register_script_message=function(name, fn) messages[name]=fn end,
@@ -83,15 +83,16 @@ end
     def test_selected_format_is_frozen_and_latest_copy_is_independent(self):
         self.run_case('''
 clip('gif');eq(calls[1].clipboard_format,'gif');eq(state.busy,true)
+eq(native['user-data/mpvnet/feedback/capture'],'正在导出片段…')
 eq(state.a,nil);eq(state.pending_clip.start,1);eq(state.pending_clip.finish,2)
 eq(state.pending_clip.media_generation,state.media_generation)
 messages['set-default-format']('mp4');eq(state.clipboard_format,'mp4')
 eq(state.pending_clip.start,1);eq(state.pending_clip.finish,2)
 finish('gif','output.gif');eq(state.latest_format,'gif');eq(state.busy,false)
 eq(state.pending_clip,nil)
-eq(messages[#messages],'CLIP SAVED · GIF COPIED')
+eq(messages[#messages],'GIF 已保存并复制')
 bindings['copy-latest']();eq(calls[2].action,'copy');eq(calls[2].file,'output.gif')
-finish('gif','output.gif');eq(messages[#messages],'GIF COPIED')
+finish('gif','output.gif');eq(messages[#messages],'GIF 已复制')
 eq(bindings['copy-webp'],nil);eq(bindings['copy-gif'],nil);eq(bindings['copy-mp4'],nil)
 ''')
 
@@ -103,10 +104,20 @@ eq(state.busy,false);eq(state.latest_format,'webp');eq(state.pending_clip,nil)
 bindings['copy-latest']();eq(calls[3].file,'old.webp')
 ''')
 
+    def test_finished_callback_cannot_retire_a_new_task_status(self):
+        self.run_case('''
+clip('gif');local old=callback;finish('gif','old.gif')
+clip('mp4');local current=callback
+reply={ok=false,reason='encode-mp4'};old(false,{status=1,stdout='reply'})
+eq(state.busy,true);eq(native['user-data/mpvnet/feedback/capture'],'正在导出片段…')
+eq(state.latest_format,'gif');eq(callback,current)
+events.shutdown();eq(native['user-data/mpvnet/feedback/capture'],'')
+''')
+
     def test_copy_without_output_or_while_busy_does_not_start_worker(self):
         self.run_case('''
-bindings['copy-latest']();eq(messages[#messages],'NO CLIP');eq(#calls,0)
-clip('webp');bindings['copy-latest']();eq(messages[#messages],'CAPTURE BUSY');eq(#calls,1)
+bindings['copy-latest']();eq(messages[#messages],'暂无可复制的片段');eq(#calls,0)
+clip('webp');bindings['copy-latest']();eq(messages[#messages],'正在处理，请稍候');eq(#calls,1)
 ''')
 
     def test_zero_start_and_invalid_b_preserve_visible_a(self):
@@ -114,16 +125,16 @@ clip('webp');bindings['copy-latest']();eq(messages[#messages],'CAPTURE BUSY');eq
 eq(state.media_generation,0);eq(state.pending_clip,nil)
 time=0;bindings['clip-point']();eq(state.a,0);eq(state.pending_clip,nil)
 time=0;bindings['clip-point']();eq(state.a,0);eq(#calls,0)
-eq(messages[#messages],'CLIP B MUST BE AFTER A')
+eq(messages[#messages],'片段终点要晚于起点')
 time=-1;bindings['clip-point']();eq(state.a,0);eq(#calls,0)
 time=2;bindings['clip-point']();eq(state.a,nil);eq(state.pending_clip.start,0)
 eq(state.pending_clip.finish,2);eq(state.pending_clip.media_generation,0)
-time=3;bindings['clip-point']();eq(#calls,1);eq(messages[#messages],'CAPTURE BUSY')
+time=3;bindings['clip-point']();eq(#calls,1);eq(messages[#messages],'正在处理，请稍候')
 eq(state.pending_clip.start,0);eq(state.pending_clip.finish,2)
 finish('webp','zero.webp');eq(state.pending_clip,nil);eq(state.busy,false)
 events['start-file']();time=2;bindings['clip-point']()
 time=1;bindings['clip-point']();eq(state.a,2);eq(#calls,1)
-eq(messages[#messages],'CLIP B MUST BE AFTER A')
+eq(messages[#messages],'片段终点要晚于起点')
 ''')
 
     def test_payload_failures_clear_frozen_range_and_release_busy(self):
@@ -137,7 +148,7 @@ eq(state.latest_format,'webp');eq(state.has_clip,true)
 local exporting=states[#states-1]
 eq(exporting.busy,true);eq(exporting.pending_clip.start,1)
 eq(exporting.pending_clip.finish,2)
-eq(messages[#messages],'CLIP FAILED · TEMP UNAVAILABLE · CHECK TEMP FOLDER')
+eq(messages[#messages],'导出失败\\n请检查临时文件夹')
 payload_failure=nil;clip('mp4');eq(#calls,2);eq(state.busy,true)
 finish('mp4','new.mp4');eq(state.pending_clip,nil)
 ''' % failure)
@@ -146,16 +157,16 @@ finish('mp4','new.mp4');eq(state.pending_clip,nil)
         self.run_case('''
 native['video-out-params']=nil
 bindings['screenshot']()
-eq(messages[#messages],'SCREENSHOT FAILED · NO VIDEO · OPEN A VIDEO')
+eq(messages[#messages],'无法截图\\n请先打开视频')
 eq(#calls,0);eq(screenshot_calls,0);eq(state.busy,false)
 native['video-out-params']={}
 temp=nil;bindings['screenshot']()
-eq(messages[#messages],'SCREENSHOT FAILED · TEMP UNAVAILABLE · CHECK TEMP FOLDER')
+eq(messages[#messages],'无法截图\\n请检查临时文件夹')
 eq(#calls,0);eq(screenshot_calls,0);eq(state.busy,false)
 temp='TEMP';bindings['screenshot']()
 eq(screenshot_calls,1);eq(#calls,1);eq(state.busy,true)
 reply={ok=true};callback(true,{status=0,stdout='reply'})
-eq(messages[#messages],'SCREENSHOT SAVED');eq(state.busy,false)
+eq(messages[#messages],'截图已保存');eq(state.busy,false)
 ''')
 
     def test_idle_window_with_video_output_params_does_not_attempt_screenshot(self):
@@ -164,7 +175,7 @@ eq(messages[#messages],'SCREENSHOT SAVED');eq(state.busy,false)
         self.run_case('''
 native['idle-active']=true;native['video-out-params']={}
 bindings['screenshot']()
-eq(messages[#messages],'SCREENSHOT FAILED · NO VIDEO · OPEN A VIDEO')
+eq(messages[#messages],'无法截图\\n请先打开视频')
 eq(#calls,0);eq(screenshot_calls,0);eq(state.busy,false)
 native['idle-active']=false;bindings['screenshot']()
 eq(screenshot_calls,1);eq(#calls,1);eq(state.busy,true)
@@ -172,10 +183,10 @@ eq(screenshot_calls,1);eq(#calls,1);eq(state.busy,true)
 
     def test_unexportable_video_or_audio_preserves_a_and_can_retry(self):
         for tracks, message in (
-            ('{}', 'NO VIDEO · OPEN A VIDEO'),
-            ("{{type='video',id=1}}", 'STREAM NOT EXPORTABLE · TRY ANOTHER VIDEO'),
-            ("{{type='video',id=1,['ff-index']=-1}}", 'STREAM NOT EXPORTABLE · TRY ANOTHER VIDEO'),
-            ("{{type='video',id=1,['ff-index']=0},{type='audio',id=2}}", 'STREAM NOT EXPORTABLE · TRY ANOTHER VIDEO'),
+            ('{}', '导出失败\n请先打开视频'),
+            ("{{type='video',id=1}}", '此视频无法导出片段\n请换一个视频'),
+            ("{{type='video',id=1,['ff-index']=-1}}", '此视频无法导出片段\n请换一个视频'),
+            ("{{type='video',id=1,['ff-index']=0},{type='audio',id=2}}", '此视频无法导出片段\n请换一个视频'),
         ):
             with self.subTest(tracks=tracks):
                 self.run_case('''
@@ -184,7 +195,7 @@ eq(messages[#messages],%s)
 eq(#calls,0);eq(state.a,1);eq(state.busy,false);eq(state.pending_clip,nil)
 tracks={{type='video',id=1,['ff-index']=0}}
 bindings['clip-point']();eq(#calls,1);eq(state.a,nil);eq(state.busy,true)
-''' % (tracks, json.dumps('CLIP FAILED · ' + message, ensure_ascii=False)))
+''' % (tracks, json.dumps(message, ensure_ascii=False)))
 
     def test_media_changes_hide_ranges_without_interrupting_worker(self):
         self.run_case('''
@@ -196,12 +207,14 @@ local old_callback=callback
 events['end-file']();eq(state.media_generation,3)
 eq(state.a,nil);eq(state.pending_clip,nil);eq(state.busy,true)
 events['start-file']();eq(state.media_generation,4);eq(state.busy,true)
+eq(native['user-data/mpvnet/feedback/capture'],'正在导出片段…')
 bindings['clip-point']();eq(#calls,1);eq(state.a,nil)
-eq(messages[#messages],'CAPTURE BUSY')
+eq(messages[#messages],'正在处理，请稍候')
 reply={ok=true,files={gif='previous-media.gif'}}
 old_callback(true,{status=0,stdout='reply'})
 eq(state.busy,false);eq(state.pending_clip,nil);eq(state.media_generation,4)
 eq(state.latest_format,'gif');eq(state.has_clip,true)
+eq(native['user-data/mpvnet/feedback/capture'],'')
 time=0;bindings['clip-point']();eq(state.a,0)
 bindings['copy-latest']();eq(calls[2].file,'previous-media.gif')
 finish('gif','previous-media.gif');eq(state.a,0);eq(state.pending_clip,nil)

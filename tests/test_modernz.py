@@ -31,6 +31,7 @@ class ModernzInteractions(unittest.TestCase):
             fragment(source, 'local function prepare_elements()', '--\n-- Element Rendering'),
             fragment(playlist, 'local function queue()', 'local function find_id('),
             fragment(playlist, 'local function step(direction)', 'local function extension_sets()'),
+            fragment(feedback, 'local function show(text, duration)', 'local paths ='),
             fragment(feedback, 'local function show_speed()', 'local seek_timer ='),
             fragment(source, 'close_popover = function()', 'local function enhancement_ready('),
             fragment(source, 'local function update_popover()', '-- Window Controls'),

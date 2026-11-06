@@ -38,7 +38,7 @@ PROFILES = {
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',
         'test_control_tooltips.ControlTooltips', 'test_enhancement_controls.EnhancementControls',
         'test_enhancement_controls.ModernzEnhancementFooter',
-        'test_failure_feedback.PlaybackEndFeedback', 'test_failure_feedback.FailureFeedback',
+        'test_feedback_osd.FeedbackOSD', 'test_failure_feedback.PlaybackEndFeedback', 'test_failure_feedback.FailureFeedback',
         'test_failure_feedback.VideoRestore',
         'test_failure_feedback.DanmakuFailureFeedback', 'test_modernz.ModernzInteractions',
         'test_playlist_controls.PlaylistControls', 'test_responsive_osc.ResponsiveOsc',

@@ -63,10 +63,11 @@ local function mode_on()
     eq(forced['adjust-up'].key,'UP');eq(forced['adjust-down'].key,'DOWN')
     eq(forced['adjust-larger'].key,'WHEEL_UP');eq(forced['adjust-smaller'].key,'WHEEL_DOWN')
 end
-local function mode_off() eq(next(forced),nil) end
+local function mode_off() eq(next(forced),nil);eq(properties['user-data/mpvnet/feedback/subtitle'] or '', '') end
 local function move_and_scale()
     forced['adjust-up'].fn();forced['adjust-larger'].fn()
     eq(properties['sub-pos'],93);eq(properties['sub-scale'],1.3)
+    eq(properties['user-data/mpvnet/feedback/subtitle'],'字幕位置 93%\n字号 ×1.30')
 end
 local function assert_reset(pos, scale)
     eq(properties['sub-pos'],pos);eq(properties['sub-scale'],scale);mode_off()
@@ -74,7 +75,7 @@ local function assert_reset(pos, scale)
     eq(commands[1][1],'script-message-to');eq(commands[1][2],'modernz')
     eq(commands[1][3],'subtitle-adjust-reset');eq(commands[1][4],pos)
     eq(#writes,2);eq(writes[1][1],'sub-pos');eq(writes[2][1],'sub-scale')
-    eq(#messages,1);eq(messages[1][1],'SUB ADJUST: RESET');eq(messages[1][2],1)
+    eq(#messages,1);eq(messages[1][1],'字幕位置、字号已还原');eq(messages[1][2],2)
     unchanged_unrelated()
 end
 function repeated_entry_keeps_first_baseline()
@@ -103,7 +104,7 @@ function no_record_does_not_write_properties()
     properties.sid='no';clear_output();bindings['reset-adjustment']()
     eq(properties['sub-pos'],80);eq(properties['sub-scale'],1.25);eq(properties.sid,'no')
     eq(#writes,0);eq(#commands,0);mode_off()
-    eq(#messages,1);eq(messages[1][1],'SUB ADJUST: NO CHANGES');eq(messages[1][2],1)
+    eq(#messages,1);eq(messages[1][1],'无可还原的字幕调整');eq(messages[1][2],4)
     unchanged_unrelated()
 end
 function reentry_after_reset_captures_new_baseline()
@@ -134,7 +135,7 @@ end
 function normal_exit_keeps_working_adjustments()
     bindings['adjust-mode']();move_and_scale();clear_output();bindings['adjust-mode']()
     mode_off();eq(properties['sub-pos'],93);eq(properties['sub-scale'],1.3)
-    eq(#writes,0);eq(#commands,0);eq(#messages,1);eq(messages[1][1],'SUB ADJUST: OFF')
+    eq(#writes,0);eq(#commands,0);eq(#messages,1);eq(messages[1][1],'已退出字幕调整')
     unchanged_unrelated()
 end
 function single_actions_keep_mode_off_and_share_baseline()
@@ -157,16 +158,29 @@ function single_actions_preserve_active_mode()
     eq(properties['sub-scale'],1.25);forced['adjust-up'].fn();eq(properties['sub-pos'],93)
     clear_output();bindings['reset-adjustment']();assert_reset(94,1.25)
 end
+function persistent_mode_and_ready_feedback_routing()
+    properties['user-data/mpvnet/feedback/ready']=true
+    bindings['adjust-mode']()
+    eq(properties['user-data/mpvnet/feedback/subtitle'],'已进入字幕调整')
+    eq(commands[#commands][2],'feedback_osd');eq(commands[#commands][5],'1.5');eq(#messages,0)
+    bindings['size-up']()
+    eq(properties['user-data/mpvnet/feedback/subtitle'],'字幕位置 94%\n字号 ×1.30')
+    events['start-file']()
+    eq(properties['user-data/mpvnet/feedback/subtitle'],'');mode_off()
+    clear_output();bindings['size-up']()
+    eq(properties['user-data/mpvnet/feedback/subtitle'],'')
+    eq(commands[#commands][2],'feedback_osd');eq(commands[#commands][5],'1.5')
+end
 function single_actions_without_primary_subtitle_are_noops()
     properties.sid=2
     for _, name in ipairs({'position-up','position-down','size-up','size-down'}) do
         clear_output();bindings[name]();mode_off();eq(#writes,0);eq(#commands,0)
-        eq(#messages,1);eq(messages[1][1],'NO SUBTITLE')
+        eq(#messages,1);eq(messages[1][1],'无可用字幕')
         eq(properties['sub-pos'],80);eq(properties['sub-scale'],1.25);eq(properties.sid,2)
         unchanged_unrelated()
     end
     clear_output();bindings['reset-adjustment']();eq(#writes,0);eq(#commands,0)
-    eq(messages[1][1],'SUB ADJUST: NO CHANGES')
+    eq(messages[1][1],'无可还原的字幕调整')
 end
 
 function selection_binding_forwards_without_property_writes()

@@ -21,6 +21,16 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
+### 操作反馈与持续状态
+
+[feedback-osd.lua](../config/scripts/feedback-osd.lua)协调播放、字幕、截图／片段和增强的已有反馈。各控制器持有动作结果和中文文案；协调器通过`feedback_osd/show(text, seconds)`接收1.5／2／4秒短消息，先暂时撤下自身持续文字，再交给原生`mp.osd_message`。尚未发布`user-data/mpvnet/feedback/ready=true`时，控制器直接用原生短消息回退。
+
+持续状态分别由Capture写`user-data/mpvnet/feedback/capture`、字幕控制器写`subtitle`，只包含固定中文及字幕数值，不含媒体路径。导出开始／终止更新Capture槽；换媒体不取消已有导出。字幕进入／调整更新字幕槽，退出／还原／媒体结束清除；模式外单次调整只显示短消息。显式进入或调整也发送短反馈以即时替换上一条，随后同一状态保留。各槽可并存，真实任务与媒体状态仍属于原模块。
+
+协调器借用原生`osd-msg1`承载持续文字，保留并拼接用户原值；临时隐藏时恢复原值。只在当前值仍等于自己上次写入的值时恢复，外部改动后本轮停止写入，所有持续槽清空后才允许新一轮借用。`osd-level`不为1、控制台或自有选择器打开时只让出自身持续文字，不改用户OSD等级。重复短消息使旧计时回调失效；任务结束后计时器不得恢复已清除状态；退出仅清理自有计时和选项借用。
+
+当前固定核心把`osd-msg1`与其他原生短消息分行组合，未公开原生消息正文／剩余时长。协调器到期只恢复持续选项，不重发或清空原生消息；本批之外的提示、20秒属性详情及stats可能与持续文字分行并存，保持原时长和关闭方式。不拦截任意用户命令，不靠轮询`show-text`抢占其他脚本。真实呈现与跨DPI需候选播放器试用，逻辑回归见[反馈协调](../tests/test_feedback_osd.py)。
+
 ### 轨道、章节与音频设备选择器
 
 [track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。音轨只读audio轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。

@@ -1,6 +1,14 @@
 -- Optional per-file rendering presets. No color, VO, hardware-decoding or FPS changes.
 local mp = require('mp')
 local utils = require('mp.utils')
+local function show(text, duration)
+    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
+        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
+    else
+        mp.osd_message(text, duration)
+    end
+end
+
 local options = require('mp.options')
 local msg = require('mp.msg')
 
@@ -16,17 +24,17 @@ local chains = {
         'Anime4K_Upscale_CNN_x2_VL.glsl', 'Anime4K_AutoDownscalePre_x2.glsl',
         'Anime4K_AutoDownscalePre_x4.glsl', 'Anime4K_Upscale_CNN_x2_M.glsl'},
 }
-local labels = {OFF = 'ORIGINAL', QUALITY = 'SCALING', SMOOTH = 'DEBAND', ANIME_LIGHT = 'ANIME4K-L',
-    ANIME_STRONG = 'ANIME4K-S'}
+local labels = {OFF = '原始画面', QUALITY = '高质量缩放', SMOOTH = '去色带', ANIME_LIGHT = 'Anime4K-L',
+    ANIME_STRONG = 'Anime4K-S'}
 local desired, applied, baseline = 'OFF', 'OFF', nil
 local ready, last_error, shutting_down = false, nil, false
 local error_reason, error_preset = nil, nil
 local reason_text = {
-    initializing = 'INITIALIZING', no_video = 'NO VIDEO', renderer_unsupported = 'RENDERER UNSUPPORTED',
-    hdr_source = 'HDR SOURCE', metadata_unknown = 'SOURCE METADATA UNKNOWN',
-    anime_unverified = 'ANIME VALIDATION NOT ENABLED', shader_missing = 'SHADER MISSING',
-    settings_failed = 'SETTINGS FAILED', rollback_failed = 'ROLLBACK FAILED',
-    renderer_error = 'RENDERER ERROR', unavailable = 'UNAVAILABLE',
+    initializing = '增强功能尚未就绪', no_video = '无可增强的画面', renderer_unsupported = '当前显示方式不支持增强',
+    hdr_source = '此增强不支持 HDR 视频', metadata_unknown = '无法增强\n无法识别视频色彩',
+    anime_unverified = 'Anime4K 尚未启用', shader_missing = '缺少增强文件',
+    settings_failed = '无法应用增强设置', rollback_failed = '画面设置还原失败',
+    renderer_error = '画面增强失败', unavailable = '此增强不可用',
 }
 
 local function clone(value)
@@ -101,8 +109,8 @@ local function publish()
     })
 end
 
-local function feedback(text)
-    if not shutting_down then mp.osd_message('ENHANCEMENT: ' .. text, 1) end
+local function feedback(text, duration)
+    if not shutting_down then show(text, duration or 4) end
 end
 
 -- Set only file-local options: mpv restores the original values when this file ends.
@@ -168,13 +176,13 @@ local function apply(name, quiet, remember)
     error_reason, error_preset = nil, nil
     if remember then desired = name end
     publish()
-    if not quiet then feedback(labels[name] .. ' SETTINGS APPLIED') end
+    if not quiet then feedback(name == 'OFF' and '画面设置已还原' or ('已选择' .. labels[name]), 2) end
     return true
 end
 
 mp.register_script_message('set-preset', function(name)
     name = tostring(name or ''):upper()
-    if not labels[name] then feedback('UNAVAILABLE'); return end
+    if not labels[name] then feedback(reason_text.unavailable); return end
     apply(name, false, true)
 end)
 
