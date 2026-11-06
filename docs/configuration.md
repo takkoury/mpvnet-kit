@@ -1,6 +1,6 @@
 # 配置说明
 
-版本范围：本文适用于 v0.4.0。常用设置中心及下文标明的新默认不包含在 v0.3.0 中；使用旧版时请以随包指南为准。版本变化见[变更记录](../CHANGELOG.md)。
+本指南适用于当前开发候选，包含 v0.4.0 发行后的调整。使用 v0.4.0 或更早的发行包时，请查阅对应包内的指南。各版本变化见[变更记录](../CHANGELOG.md)。
 
 ## 常用设置
 
@@ -70,8 +70,9 @@
 | [mpv.conf](../config/mpv.conf) | mpv 播放、渲染、OSD、目录队列 | 每行 `参数=值` |
 | [mpvnet.conf](../config/mpvnet.conf) | mpv.net 宿主进程行为 | 每行 `参数=值` |
 | `mpvnet-user.json` | 常用设置和用户快捷键覆盖；运行时创建，不随包提供 | 从设置窗口保存，不纳入受管安装清单 |
-| [input.conf](../config/input.conf) | 项目默认键盘、视频区鼠标与禁用键 | 高级修改；每行 `键 命令` |
+| [input.conf](../config/input.conf) | 默认快捷键、视频区鼠标动作、禁用键和右键菜单 | 高级修改；每行 `键 命令` |
 | [modernz.conf](../config/script-opts/modernz.conf) | 控制栏外观、按钮、鼠标命令 | 不带 `modernz-` 前缀的选项名 |
+| [stats.conf](../config/script-opts/stats.conf) | 原生播放统计的字体、颜色和图表外观 | 高级修改；每行 `参数=值` |
 | [thumbfast.conf](../config/script-opts/thumbfast.conf) | 缩略图子播放器 | 不带脚本前缀的选项名 |
 | [bilibiliAssert.conf](../config/script-opts/bilibiliAssert.conf) | 弹幕显示与转换器 | 注意大小写和文件名 |
 | [enhancement-controls.conf](../config/script-opts/enhancement-controls.conf) | Anime4K 档可用开关 | 当前只有 `anime_verified` |
@@ -108,7 +109,7 @@
 | 参数 | 作用 | 当前默认与来源 | 可选值或边界 | 修改示例 |
 | --- | --- | --- | --- | --- |
 | `capture_root` | 截图和片段根目录 | 空值；example 模板 | 空值使用 Windows Pictures KnownFolder 下 Capture；非空为绝对目录 | `capture_root=D:\Media\Capture` |
-| `ffmpeg_path` | 片段导出的 FFmpeg | 空值；example 模板 | 空值检查 PATH；非空为可执行文件绝对路径，不能附参数 | `ffmpeg_path=C:\Apps\FFmpeg\bin\ffmpeg.exe` |
+| `ffmpeg_path` | 用于导出片段和提取字幕行的 FFmpeg | 空值；example 模板 | 空值检查 PATH；非空为可执行文件绝对路径，不能附参数 | `ffmpeg_path=C:\Apps\FFmpeg\bin\ffmpeg.exe` |
 | `python_path` | 弹幕转换用 Python | 空值；example 模板 | 空值沿用 bilibiliAssert 的 python_path；非空优先 | `python_path=C:\Apps\Python\python.exe` |
 | `mpv_path` | 缩略图使用的播放器 | 空值；example 模板 | 非空优先于 thumbfast 选项；须为可执行文件路径 | `mpv_path=C:\Apps\mpv.net\mpvnet.exe` |
 
@@ -122,9 +123,9 @@
 
 缩略图的回退顺序是：本机 `mpv_path` → thumbfast 非空且非 `mpv` 的显式路径 → frontend 提供的进程路径 → 当前播放器自身 PID 的可执行文件 → portable 配置父目录的 `mpvnet.exe` → 原值。发现发生在初始化阶段，不会持续扫描其他播放器进程。
 
-PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有对应的本机可调字段。FFmpeg 只在片段导出时检查；源 PNG 和打开 Capture 目录不依赖 FFmpeg。弹幕需要 Python 能运行随包转换脚本，并能访问对应弹幕数据；网页入口由用户自己的浏览器和外部调用组件提供，本包没有 Cookie 配置入口。
+PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有对应的本机可调字段。片段导出和字幕行选择按需调用 FFmpeg。源 PNG 和打开 Capture 目录不依赖 FFmpeg。弹幕需要 Python 能运行随包转换脚本，并能访问对应弹幕数据；网页入口由用户自己的浏览器和外部调用组件提供，本包没有 Cookie 配置入口。
 
-当前兼容实现仅开放 Python 转换：`use_python=no` 会提示 `DANMAKU LOAD FAILED` 并停止该次转换。源码保留的旧 EXE 调用分支不会被这个开关启用；请保持 `use_python=yes`。
+弹幕转换使用 Python，请保留 `use_python=yes`。设为 `no` 会提示“弹幕加载失败”并停止本次转换。
 
 ## 4. 播放、音频、字幕与弹幕
 
@@ -340,7 +341,7 @@ v0.4.0 显式设置下表中的音轨语言、字幕语言和字幕显隐默认�
 
 用户快捷键及独立用户配置机制自 v0.3.0 提供；v0.4.0 将快捷键编辑内嵌到“常用设置 > 快捷键”，日常优先使用此入口。当前动作目录有 195 项，默认仍为 40 个全局键盘映射；没有默认键的动作可按需录入。
 
-从“工具与设置 > 常用设置…”进入快捷键页。页内顶部可选择功能分类，并筛选全部、已绑定、未绑定和已修改；搜索可匹配动作、分组或当前／默认按键。“已修改”表示与默认键位不同，不等于尚未保存。重复的“用户快捷键”菜单项已移除；既有“打开快捷键设置”用户绑定仍可直达该页，窗口已打开时复用并保留其他分类草稿。保存或确认对话框尚未结束时，会在当前操作结束后再切换。
+从“工具与设置 > 常用设置…”进入快捷键页。页内顶部可选择功能分类，并筛选全部、已绑定、未绑定和已修改；搜索可匹配动作、分组或当前／默认按键。“已修改”表示与默认键位不同，不等于尚未保存。既有“打开快捷键设置…”用户绑定仍可直达该页，窗口已打开时会保留其他分类的草稿。保存或确认对话框尚未结束时，会在当前操作结束后再切换。
 
 点击行内键帽或“添加按键”开始录入，再按所需组合键；已有一个按键时，可用“添加”设置第二个，每项最多两个。展开行右侧的详情可查看默认键位、移除按键或恢复此项；只有偏离默认时才显示“恢复此项”。按 Esc 可取消录入。移除全部按键只取消快捷键，不关闭该功能；切换分类、搜索、筛选或移开键盘焦点会取消录入。
 
@@ -354,7 +355,7 @@ v0.4.0 显式设置下表中的音轨语言、字幕语言和字幕显隐默认�
 
 保留鼠标、Esc、上下方向键、Delete、Ctrl+F、Alt+F4和界面占用键；不录入任意mpv命令，不改变系统快捷键。普通ASCII字母/数字/常见标点、功能键及组合键可用；特殊键盘布局和跨DPI仍需实际体验。Playlist读取同一映射，搜索框文字输入、搜索和删除等局部用途保持优先。
 
-图形安装器和命令行维护工具在安装、更新及还原时均保留 `mpvnet-user.json`。退回 v0.3.0 后仍可使用该版支持的快捷键设置，新增常用设置不会应用；更早且不支持用户快捷键的版本也不应用其中的快捷键覆盖，但文件仍保留。请按[安装指南](installation.md#3-图形安装)更新或还原，无需清空配置目录。原生快捷键编辑器仍作为高级入口保留；它直接修改 `input.conf`，这类修改可能阻止后续自动更新。
+图形安装器和命令行维护工具在安装、更新及还原时均保留 `mpvnet-user.json`。退回 v0.3.0 后仍可使用该版支持的快捷键设置，常用设置覆盖需在支持它的版本中使用。请按[安装指南](installation.md#3-图形安装)更新或还原。“工具与设置 > 配置 > 原生快捷键编辑器（高级）…”直接修改 `input.conf`，这类修改可能阻止后续自动更新。
 
 ### input.conf（高级）
 

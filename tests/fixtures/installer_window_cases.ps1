@@ -8,10 +8,15 @@ $script:fixtureTarget = Join-Path $FixtureRoot '配置 空格/长路径用于检
 $script:fixturePlayer = Join-Path $FixtureRoot 'mpvnet.exe'
 [IO.File]::WriteAllText($script:fixturePlayer, 'Fixture only; never execute.')
 $env:MPVNET_HOME = $script:fixtureTarget
-function Get-FixtureFingerprint {
-    $items=Get-ChildItem -LiteralPath $script:fixtureTarget -File -Recurse | Sort-Object FullName
-    return (@($items|ForEach-Object {$_.FullName.Substring($script:fixtureTarget.Length)+':'+(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}) -join "`n")
+function Get-FixtureFingerprint([string]$Root = $script:fixtureTarget) {
+    if (-not (Test-Path -LiteralPath $Root)) { return '' }
+    $items=Get-ChildItem -LiteralPath $Root -File -Recurse -Force | Sort-Object FullName
+    return (@($items|ForEach-Object {$_.FullName.Substring($Root.Length)+':'+(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}) -join "`n")
 }
+$script:expectedNoticePath = Join-Path $PackageRoot 'docs/upgrade-notice.txt'
+$script:expectedNotice = if (Test-Path -LiteralPath $script:expectedNoticePath) {
+    [IO.File]::ReadAllText($script:expectedNoticePath).Trim().Replace("`r`n", "`n")
+} else { '' }
 if($UpgradeFrom) {
     Import-Module (Join-Path $SourceRoot 'tools/maintenance.psm1') -Force
     & (Get-Module maintenance) {Set-Item Function:script:Get-MaintenanceRunningPlayers {@()}}
@@ -159,10 +164,16 @@ $hook = @'
                     1 {
                         Assert-Fixture ($script:plan.action -eq 'update' -and $script:installButton.Enabled) 'Upgrade state missing'
                         Save-InstallerSnapshot
+                        $backupBeforeCancel=Get-FixtureFingerprint (Join-Path $script:fixtureRoot 'backups')
                         [FixtureMessageBox]::Answer=[Windows.Forms.DialogResult]::No
                         Invoke-FixtureClick $script:installButton
                         Assert-Fixture (-not $script:busy -and (Get-FixtureFingerprint) -ceq $script:upgradeBaseline) 'Update cancel wrote files'
-                        if($script:plan.releaseNotice){Assert-Fixture ([FixtureMessageBox]::LastMessage.Replace("`r`n","`n").Contains($script:plan.releaseNotice.Replace("`r`n","`n"))) 'Upgrade notice missing from confirmation'}
+                        Assert-Fixture ((Get-FixtureFingerprint (Join-Path $script:fixtureRoot 'backups')) -ceq $backupBeforeCancel) 'Update cancel changed backups'
+                        if($script:expectedNotice) {
+                            Assert-Fixture ($script:plan.releaseNotice.Replace("`r`n","`n") -ceq $script:expectedNotice) 'Plan lost packaged upgrade notice'
+                            Assert-Fixture ([FixtureMessageBox]::LastMessage.Replace("`r`n","`n").Contains($script:expectedNotice)) 'Upgrade notice missing from confirmation'
+                        }
+                        Assert-Fixture ([FixtureMessageBox]::DefaultCancel) 'Update confirmation lost default cancel'
                         [FixtureMessageBox]::Answer=[Windows.Forms.DialogResult]::Yes
                         Invoke-FixtureClick $script:installButton;$script:fixtureStage++
                         $script:fixtureChecks.Add('update confirmation contains release notice, cancel preserves all files, real apply started')
@@ -172,9 +183,12 @@ $hook = @'
                         Assert-Fixture ((Get-FixtureFingerprint) -cne $script:upgradeBaseline) 'Update did not change runtime files'
                         Save-InstallerSnapshot
                         $beforeRestore=Get-FixtureFingerprint
+                        $backupBeforeCancel=Get-FixtureFingerprint (Join-Path $script:fixtureRoot 'backups')
                         [FixtureMessageBox]::Answer=[Windows.Forms.DialogResult]::No
                         Invoke-FixtureClick $script:restoreButton
                         Assert-Fixture (-not $script:busy -and (Get-FixtureFingerprint) -ceq $beforeRestore) 'Restore cancel wrote files'
+                        Assert-Fixture ((Get-FixtureFingerprint (Join-Path $script:fixtureRoot 'backups')) -ceq $backupBeforeCancel) 'Restore cancel changed backups'
+                        if($script:expectedNotice) { Assert-Fixture (-not [FixtureMessageBox]::LastMessage.Replace("`r`n","`n").Contains($script:expectedNotice)) 'Restore unexpectedly shows upgrade notice' }
                         [FixtureMessageBox]::Answer=[Windows.Forms.DialogResult]::Yes
                         Invoke-FixtureClick $script:restoreButton;$script:fixtureStage++
                     }
@@ -215,6 +229,7 @@ $hook = @'
                     Invoke-FixtureClick $script:installButton
                     Assert-Fixture (-not $script:busy -and -not $script:installed -and [FixtureMessageBox]::Confirmations -eq 1) 'Simulated No did not cancel'
                     Assert-Fixture ([FixtureMessageBox]::DefaultCancel -and [FixtureMessageBox]::LastMessage.Contains($script:targetBox.Text) -and [FixtureMessageBox]::LastDetails.Contains($script:fixturePlayer)) 'Real confirmation lost default cancel, target or full details'
+                    if($script:expectedNotice) { Assert-Fixture ([FixtureMessageBox]::LastDetails.Replace("`r`n","`n").Contains($script:expectedNotice)) 'Fresh install details lost upgrade notice' }
                     [IO.File]::WriteAllText((Join-Path $script:fixtureTarget 'unknown.txt'), 'preserve unknown fixture')
                     Invoke-FixtureClick $script:recheckButton; $script:fixtureStage++
                 }

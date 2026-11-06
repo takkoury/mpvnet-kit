@@ -31,7 +31,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 协调器借用原生`osd-msg1`承载持续文字，保留并拼接用户原值；临时隐藏时恢复原值。只在当前值仍等于自己上次写入的值时恢复，外部改动后本轮停止写入，所有持续槽清空后才允许新一轮借用。`osd-level`不为1、控制台或自有选择器打开时只让出自身持续文字，不改用户OSD等级。重复短消息使旧计时回调失效；任务结束后计时器不得恢复已清除状态；退出仅清理自有计时和选项借用。
 
-当前固定核心把`osd-msg1`与其他原生短消息分行组合，未公开原生消息正文／剩余时长。协调器到期只恢复持续选项，不重发或清空原生消息；本批之外的提示、20秒属性详情及stats可能与持续文字分行并存，保持原时长和关闭方式。不拦截任意用户命令，不靠轮询`show-text`抢占其他脚本。真实呈现与跨DPI需候选播放器试用，逻辑回归见[反馈协调](../tests/test_feedback_osd.py)。
+当前固定核心把`osd-msg1`与其他原生短消息分行组合，未公开原生消息正文／剩余时长。协调器到期只恢复持续选项，不重发或清空原生消息；未纳入反馈协议的提示、20秒属性详情及stats可能与持续文字分行并存，保持原时长和关闭方式。不拦截任意用户命令，不靠轮询`show-text`抢占其他脚本。真实呈现与跨DPI需在目标环境分别验证，逻辑回归见[反馈协调](../tests/test_feedback_osd.py)。
 
 ### 轨道、章节与音频设备选择器
 
@@ -45,7 +45,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 现有mp.input.select由console固定渲染并强制单行，不能承接已确认双行条目；经能力检查和用户明确同意后采用独立渲染。面板只在打开期间启用自己的exclusive输入section，临时借用input-ime、cursor-autohide与window-dragging，关闭时仅在属性仍为自己的值时恢复。控制台打开时立即释放面板输入与绘制，IME旧值延后到控制台关闭再按所有权条件恢复，避免跨脚本观察次序覆盖控制台输入。
 
-面板发布`user-data/mpvnet/track-selector/open`及无搜索内容的status诊断（类型／阶段／尺寸）。ModernZ只在此期间暂停自己的鼠标section与绘制，后续mouse／resize事件不能重新抢输入；关闭后重建原显示与输入区域，不改visibility偏好。`audio.select`稳定ID及旧原生音轨命令的快捷键目录映射保留；ModernZ识别旧精确音轨命令并转到新入口，不改任意用户命令。控制台直接调用原生select或屏幕内原生总菜单仍属M2-F入口收口，不全局劫持console。真实输入法组合、宿主拖窗、鼠标焦点及跨DPI仍需用户试用，mock与headless输入检查分别留证。
+面板发布`user-data/mpvnet/track-selector/open`及无搜索内容的status诊断（类型／阶段／尺寸）。ModernZ只在此期间暂停自己的鼠标section与绘制，后续mouse／resize事件不能重新抢输入；关闭后按原visibility偏好重建显示与输入区域。快捷键目录保留既有动作ID及对应的旧命令别名。ModernZ将已替换选择器的旧精确`select`命令转到相应的新入口；从控制台直接调用的原生命令仍由核心处理。mock与无界面输入检查的证据和真实输入法组合、宿主拖窗、鼠标焦点及跨DPI试用分别记录。
 
 视频轨选择同样由`track_selection/select-video`复用面板：过滤video轨，保留真实ID、图像／封面与已知尺寸／帧率；选择当前轨或关闭项写vid=no，其他写目标vid。双行布局沿用音轨，元信息为分辨率／格式／帧率或图像类型／来源，未知值不补造，细节按需显示。成功提交后递增`user-data/mpvnet/video-selection-revision`；playback-feedback的audio-only恢复记录绑定这一代次，明确新选轨使旧记录失效，避免异步清理消息误删较新的恢复记录。audio-only以当前可见视频为优先，关闭后恢复其自身记录；显式选择器关闭后无有效记录时仍按既有auto恢复。此修正不改aid、音量、设备或长期配置。
 
@@ -101,11 +101,11 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 [stats.conf](../config/script-opts/stats.conf)只设置原生stats脚本支持的字体/等宽数字字体、文字颜色/透明度、描边/阴影和图表颜色/边框。使用Microsoft YaHei UI与Consolas，字号20沿原生默认；ASS颜色为BGR，图表BB8712对应套件强调色#1287BB。统计仍叠加画面，不增加外层窗口或固定背景面板，深色图表底色与文字描边用于可读性。
 
-原生stats.lua仍由宿主核心提供，发行包不复制或修改它；页面0–5、字段/顺序、图表开关、采样、分页/滚动/搜索和Tab/数字键/Esc均保持。没有设置custom_header、persistent_overlay、vidscale或任何功能选项，不改变其他OSD样式。已有同名个人stats.conf按安装器的未知/修改文件保护处理，不自动接管；本批不做个人部署。样式配置加载与原生输出对照、实际窗口验收分别记录。
+原生stats.lua仍由宿主核心提供，页面0–5、字段/顺序、图表开关、采样、分页/滚动/搜索和Tab/数字键/Esc均保持。没有设置custom_header、persistent_overlay、vidscale或任何功能选项，不改变其他OSD样式。已有同名个人stats.conf按安装器的未知/修改文件保护处理。样式配置加载与原生输出对照、实际窗口验收分别记录。
 
 ### 常用设置基础
 
-[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。其他原生入口替换与菜单统一仍属后续批次。
+[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。高级配置编辑器和原生快捷键编辑器仍由宿主承载。
 
 `mpvnet-user.json` 继续使用 schema 1 和平面 `settings` 对象。字段类型、数值范围、选项、搜索词、分组和时机由 Lua 模型定义；窗口按元数据构造控件并持各页草稿和载入 revision。模型复用原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。false、0、空字符串是显式值，保存请求中的 null 表示删除覆盖；新字段即使等于当前默认也保留显式选择，只有原有两项缩放继续沿用等默认省略的兼容行为。恢复默认先改草稿，保存后删除覆盖，不写受管配置。
 
@@ -135,7 +135,7 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 菜单只保留常用设置入口，移除重复的用户快捷键项；稳定动作`tools.shortcuts-editor`及`user_shortcuts/open`仍兼容已有用户绑定，显示名改为“打开快捷键设置…”。该入口转发固定消息`user_settings/open-shortcuts`，由设置控制层持有唯一日常编辑窗口，不再从此入口启动旧独立Editor。控制层在初始请求和设置总线发布会话内`open_page`／`open_serial`，只接受快捷键目标，启动期间的重复请求不会因窗口尚未开始观察而丢失。窗口按序号消费一次，清除全局搜索并定位快捷键，保留各页草稿；普通设置入口只唤回已有窗口。保存、内部确认层、原生路径选择器或关闭流程期间保留待跳转请求，由后续Tick在安全时机处理，不改变快捷键保存token。
 
-关闭通知携带最后收到的导航序号。Lua仅将窗口尚未见过的新请求留到旧helper退出后重开；关闭确认中已收到并随关闭放弃的请求不重放。token退休后到进程退出之间的请求同样排队，禁止并存两个设置helper。缺少关闭序号的旧通知仍按原关闭语义处理。旧快捷键helper的Save接口和兼容Editor代码暂留，日常入口统一不等于本批删除兼容文件或完成M2-F所有原生入口替换。
+关闭通知携带最后收到的导航序号。Lua仅将窗口尚未见过的新请求留到旧helper退出后重开；关闭确认中已收到并随关闭放弃的请求不重放。token退休后到进程退出之间的请求同样排队，禁止并存两个设置helper。缺少关闭序号的旧通知仍按原关闭语义处理。快捷键helper继续提供保存接口及旧独立Editor兼容代码，日常编辑由设置窗口负责。
 
 缩放编辑使用百分比滑块；模型发布常用滑块范围和步长，底层存储合法范围保持。窗口载入时仅夹紧滑块手柄，不夹紧草稿或保存值；超范围配置继续显示原百分比，用户主动操作才换成常用范围内值。字幕标签使用“字幕缩放”，保留“字号”等搜索别名。正式设置页仅使用controlbar模式显示源客户区底部35%区域，保留全宽；几何模块的旧subtitles/full模式保留回归兼容，不再作为字幕页的日常预览。几何只依赖容器、源尺寸、模式与位置，OSC缩放值不参与自动适配。实际客户区裁切经窗口外框、客户区原点及 DWM 源纹理尺寸映射到rcSource。纯几何检查见 [SettingsPreviewGeometry](../tests/test_settings_preview.py)。
 
