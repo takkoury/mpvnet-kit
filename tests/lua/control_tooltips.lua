@@ -5,13 +5,20 @@ local osc_styles = {tooltip = "{\\fs14}", tooltip_box = "{\\1c&H000000&}"}
 local osc_param = {playresx = 1280, playresy = 720}
 local bidi = {fsi = "", pdi = ""}
 local drawn, measurements, measure_unavailable
+local pending_download
+local function get_ytdl_format() return "--test-format" end
+local function exec(_, callback) pending_download = callback end
+local msg = {info = function() end}
 local mp = {
     get_property_native = function(name, default) local value = properties[name]; if value == nil then return default end; return value end,
     get_property_bool = function(name, default) local value = properties[name]; if value == nil then return default end; return value end,
     get_property_number = function(name, default) return properties[name] or default end,
+    set_property_bool = function(name, value) properties[name] = value end,
+    osd_message = function(...) commands[#commands + 1] = {"osd_message", ...} end,
     command = function(value) commands[#commands + 1] = value end,
     commandv = function(...) commands[#commands + 1] = {...} end,
     command_native = function(value)
+        if value[1] == "expand-path" then return "fixture-download" end
         assert(value[1] == "escape-ass")
         assert(#value == 2, "escape-ass requires exactly one text argument")
         return value[2]:gsub("\\", "\\\\"):gsub("{", "\\{")
@@ -108,6 +115,42 @@ local function fixture()
     measurements, measure_unavailable = 0, false
     osc_param.playresx, osc_param.playresy = 1280, 720
     build_controls()
+end
+
+function replay_and_optional_download_feedback()
+    fixture()
+    eq(user_opts.download_button, false)
+    state.eof_reached = true
+    elements.play_pause.eventresponder.mbtn_left_up()
+    eq(table.concat(commands[1], "|"), "no-osd|seek|0|absolute-percent")
+    eq(properties.pause, false)
+    eq(table.concat(commands[2], "|"), "osd_message|从头播放|1.5")
+    commands = {}
+    properties["osd-level"] = 1
+    properties["user-data/mpvnet/feedback/ready"] = true
+    local function feedback(text, seconds)
+        eq(table.concat(commands[#commands], "|"), "script-message-to|feedback_osd|show|" .. text .. "|" .. seconds)
+    end
+    elements.download.eventresponder.mbtn_left_up(); feedback("开始下载", "1.5")
+    eq(state.downloading, true)
+    elements.download.eventresponder.mbtn_left_up(); feedback("正在下载", "1.5")
+    pending_download(false, {}, "untrusted raw error"); feedback("下载失败", "4")
+    eq(state.downloading, false)
+    elements.download.eventresponder.mbtn_left_up()
+    pending_download(true); feedback("下载完成", "2")
+    eq(state.downloaded_once, true)
+    elements.download.eventresponder.mbtn_left_up(); feedback("已下载", "1.5")
+    properties["osd-level"] = 0
+    local count = #commands
+    elements.download.eventresponder.mbtn_left_up(); eq(#commands, count)
+    eq(user_opts.shuffle_button, false)
+    elements.shuffle.eventresponder.mbtn_left_up()
+    eq(#commands, count + 1); eq(commands[#commands], "playlist-shuffle")
+    properties["osd-level"] = 1
+    elements.shuffle.eventresponder.mbtn_left_up()
+    eq(commands[#commands], "playlist-unshuffle")
+    eq(table.concat(commands[#commands - 1], "|"),
+        "script-message-to|feedback_osd|show|已恢复播放顺序|1.5")
 end
 
 function configured_hints_and_dispatch()

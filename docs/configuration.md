@@ -407,7 +407,7 @@ v0.4.0 显式设置下表中的音轨语言、字幕语言和字幕显隐默认�
 | `vol_ctrl_wheel_down_command` | `no-osd add volume -5` | 音量图标；例如 `vol_ctrl_wheel_down_command=ignore` 可禁用该动作 |
 | `vol_ctrl_wheel_up_command` | `no-osd add volume 5` | 音量图标；例如 `vol_ctrl_wheel_up_command=ignore` 可禁用该动作 |
 | `vol_ctrl_mbtn_right_command` | `no-osd set volume 100` | 音量图标；例如 `vol_ctrl_mbtn_right_command=ignore` 可禁用该动作 |
-| `vol_ctrl_mbtn_mid_command` | `script-binding select/select-aid` | 音量图标；例如 `vol_ctrl_mbtn_mid_command=ignore` 可禁用该动作 |
+| `vol_ctrl_mbtn_mid_command` | `script-binding track_selection/select-audio` | 音量图标；例如 `vol_ctrl_mbtn_mid_command=ignore` 可禁用该动作 |
 | `volumebar_wheel_down_command` | `no-osd add volume -5` | 音量条；例如 `volumebar_wheel_down_command=ignore` 可禁用该动作 |
 | `volumebar_wheel_up_command` | `no-osd add volume 5` | 音量条；例如 `volumebar_wheel_up_command=ignore` 可禁用该动作 |
 | `info_mbtn_left_command` | `script-binding playback_feedback/media-info` | 信息按钮；例如 `info_mbtn_left_command=ignore` 可禁用该动作 |

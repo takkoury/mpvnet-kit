@@ -3,7 +3,8 @@
 -- High-performance on-the-fly thumbnailer
 --
 -- Built for easy integration in third-party UIs.
--- Local derivative 2026-10-10: machine-neutral Windows backend discovery only.
+-- Local derivative 2026-10-10: machine-neutral Windows backend discovery.
+-- Local derivative 2026-11-06: concise Chinese startup feedback.
 
 --[[
 This Source Code Form is subject to the terms of the Mozilla Public
@@ -439,6 +440,15 @@ end
 
 local activity_timer
 
+local function startup_feedback()
+    local text = "缩略图启动失败\n请检查进度预览程序路径"
+    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
+        mp.commandv('script-message-to', 'feedback_osd', 'show', text, '4')
+    else
+        mp.osd_message(text, 4)
+    end
+end
+
 local function spawn(time)
     if disabled then return end
 
@@ -532,18 +542,18 @@ local function spawn(time)
                                     force_disabled = true
                                     info(real_w or effective_w, real_h or effective_h)
                                 end
-                                mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
+                                startup_feedback()
                                 mp.commandv("script-message-to", "implay", "show-message", "thumbfast initial setup", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
                             end
                         else
-                            mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
+                            startup_feedback()
                             if os_name == "windows" and frontend_path == nil then
-                                mp.commandv("script-message-to", "mpvnet", "show-text", "thumbfast: ERROR! set a valid mpv_path in thumbfast.conf", 5000, 20)
-                                mp.commandv("script-message", "mpv.net", "show-text", "thumbfast: ERROR! set a valid mpv_path in thumbfast.conf", 5000, 20)
+                                mp.commandv("script-message-to", "mpvnet", "show-text", "缩略图启动失败\n请检查进度预览程序路径", 4000, 20)
+                                mp.commandv("script-message", "mpv.net", "show-text", "缩略图启动失败\n请检查进度预览程序路径", 4000, 20)
                             end
                         end
                     else
-                        mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
+                        startup_feedback()
                         -- found ImPlay but not defined in config
                         mp.commandv("script-message-to", "implay", "show-message", "thumbfast", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
                     end

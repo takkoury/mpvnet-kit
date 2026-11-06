@@ -6,6 +6,8 @@ The modified Lua script remains under [LGPL-2.1](LICENSE); its original introduc
 
 ## Local modifications
 
+2026-11-06: translate remaining visible control, More-menu and enhancement text into Chinese; fit and wrap CJK text on UTF-8 boundaries without changing popup geometry. Route existing action feedback through the kit coordinator with native fallback, and avoid exposing download paths or backend errors in OSD. Existing options, command aliases, layouts and default-disabled download behavior remain.
+
 2026-10-18: keep Previous/Next available at nonempty playlist boundaries and preserve wheel actions on the Speed anchor while its popover is open.
 
 2026-10-18: escape and fit chapter-preview metadata while preserving configured ASS styles, preview ordering and the independent thumbnail anchor.

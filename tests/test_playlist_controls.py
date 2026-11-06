@@ -26,6 +26,9 @@ class PlaylistControls(unittest.TestCase):
     def test_worker_failure_and_cancellation(self):
         self.run_case('worker_failure_and_cancellation')
 
+    def test_failure_uses_shared_feedback_when_ready(self):
+        self.run_case('failure_uses_shared_feedback_when_ready')
+
     def test_success_and_shutdown_are_silent(self):
         self.run_case('success_and_shutdown_are_silent')
 

@@ -430,8 +430,8 @@ local language = {
         file_loop_disable = "单文件循环已关闭",
         playlist_loop_enable = "列表循环已开启",
         playlist_loop_disable = "列表循环已关闭",
-        shuffle = "Shuffle playlist on",
-        unshuffle = "Shuffle playlist off",
+        shuffle = "已打乱播放列表",
+        unshuffle = "已恢复播放顺序",
         speed_control = "播放倍速",
         screenshot = "截图与片段",
         stats_info = "媒体信息",
@@ -439,10 +439,12 @@ local language = {
         buffering = "缓冲中",
         zoom_in = "放大画面",
         zoom_out = "缩小画面",
-        download = "Download",
-        download_in_progress = "Download in progress",
-        downloading = "Downloading",
-        downloaded = "Already downloaded",
+        download = "下载",
+        download_in_progress = "正在下载",
+        downloading = "开始下载",
+        downloaded = "已下载",
+        download_complete = "下载完成",
+        download_failed = "下载失败",
         menu = "菜单",
     },
 }
@@ -1458,13 +1460,29 @@ local function enhancement_ready(preset)
     return state.enhancement.available and state.enhancement.available[preset] == true
 end
 
-local enhancement_reasons = {
-    initializing = "Initializing", no_video = "No video", renderer_unsupported = "GPU required",
-    hdr_source = "SDR only", metadata_unknown = "Unknown source",
-    anime_unverified = "Validation required", shader_missing = "Shader missing",
-    settings_failed = "Settings failed", rollback_failed = "Rollback failed",
-    renderer_error = "Renderer error", unavailable = "Unavailable",
+local enhancement_presets = {
+    {"OFF", "原始画面"}, {"QUALITY", "高质量缩放"}, {"SMOOTH", "去色带"},
+    {"ANIME_LIGHT", "Anime4K-L"}, {"ANIME_STRONG", "Anime4K-S"},
 }
+
+local enhancement_reasons = {
+    initializing = "增强尚未就绪", no_video = "无可增强的画面", renderer_unsupported = "当前显示方式不支持增强",
+    hdr_source = "不支持 HDR 视频", metadata_unknown = "无法识别视频色彩",
+    anime_unverified = "Anime4K 尚未启用", shader_missing = "缺少增强文件",
+    settings_failed = "无法应用增强设置", rollback_failed = "画面设置还原失败",
+    renderer_error = "画面增强失败", unavailable = "此增强不可用",
+}
+
+local function fit_popover_label(text, style, width)
+    if estimate_text_width(text, style, true) <= width then return text end
+    if estimate_text_width("…", style, true) > width then return "" end
+    repeat
+        local shortened, removed = text:gsub("[\1-\127\194-\244][\128-\191]*$", "")
+        if removed == 0 then return "…" end
+        text = shortened
+    until text == "" or estimate_text_width(text .. "…", style, true) <= width
+    return text .. "…"
+end
 
 local function enhancement_footer_reason(preset)
     local value = state.enhancement
@@ -1478,23 +1496,26 @@ local function enhancement_footer_reason(preset)
     return reason and (enhancement_reasons[reason] or enhancement_reasons.unavailable)
 end
 
+local enhancement_footer_style = "{\\bord0\\shad0\\q2}"
+
 local function enhancement_footer_geometry(popup, reason)
     if not reason then return end
     local base = popup.rows_body
     local max_width = math.min(224, osc_param.playresx - 16)
     if max_width < 40 then return end
+    local style = osc_styles.tooltip .. enhancement_footer_style
     local width = math.min(max_width, math.max(base.x2 - base.x1,
-        estimate_text_width(reason, osc_styles.tooltip, true) + 20))
+        estimate_text_width(reason, style, true) + 20))
     local fs, lines = user_opts.tooltip_font_size, {}
-    local style = osc_styles.tooltip
-    -- These are fixed ASCII labels. Split long words too, so narrow windows cannot leak text past the box.
+    -- Split long words on UTF-8 boundaries so CJK labels stay intact on narrow canvases.
     local line = ""
     for word in reason:gmatch("%S+") do
         local candidate = line == "" and word or line .. " " .. word
         if estimate_text_width(candidate, style, true) <= width - 20 then line = candidate
         else
             if line ~= "" then lines[#lines + 1] = line; line = "" end
-            for char in word:gmatch(".") do
+            for char in word:gmatch("[\1-\127\194-\244][\128-\191]*") do
+                if estimate_text_width(char, style, true) > width - 20 then return end
                 if line ~= "" and estimate_text_width(line .. char, style, true) > width - 20 then
                     lines[#lines + 1] = line; line = ""
                 end
@@ -1567,9 +1588,9 @@ local function render_enhancement_footer(ass)
         ass:append("{\\rDefault}")
         ass:pos(geometry.x + geometry.width / 2, geometry.y + 6 + (i - 1) * (geometry.fs + 4))
         ass:an(8)
-        ass:append(osc_styles.tooltip .. "{\\bord0\\shad0}")
+        ass:append(osc_styles.tooltip .. enhancement_footer_style)
         ass_append_alpha(ass, {0, 255, 0, 255}, 0)
-        ass:append("{\\q2}" .. line)
+        ass:append(line)
     end
 end
 
@@ -2552,14 +2573,22 @@ local function check_path_url()
     end
 end
 
-local function download_done(success, _, error)
+local function show_feedback(text, duration, minimum_osd_level)
+    if minimum_osd_level and mp.get_property_number("osd-level", 0) < minimum_osd_level then return end
+    if mp.get_property_native("user-data/mpvnet/feedback/ready") == true then
+        mp.commandv("script-message-to", "feedback_osd", "show", text, tostring(duration))
+    else
+        mp.osd_message(text, duration)
+    end
+end
+
+local function download_done(success)
     if success then
-        local path = mp.command_native({"expand-path", user_opts.download_path})
-        mp.commandv("show-text", "Download saved to " .. path, "-1", "1")
+        show_feedback(locale.download_complete, 2, 1)
         state.downloaded_once = true
         msg.info("Download completed")
     else
-        mp.commandv("show-text", "Download failed - " .. (error or "Unknown error"), "-1", "1")
+        show_feedback(locale.download_failed, 4, 1)
         msg.info("Download failed")
     end
     state.downloading = false
@@ -2664,34 +2693,33 @@ function responsive_osc.entries(page)
                 source = source}
         end
     elseif page == "vol_ctrl" then
-        list[#list + 1] = {label = "Volume", kind = "volume", enabled = r.sources.vol_ctrl.enabled}
-        action("Mute / unmute", "vol_ctrl", "mbtn_left_up", true)
-        action("Volume 100%", "vol_ctrl", "mbtn_right_up", true)
-        action("Audio tracks", "vol_ctrl", "shift+mbtn_left_down")
-        action("Volume +5", "vol_ctrl", "wheel_up_press", true)
-        action("Volume −5", "vol_ctrl", "wheel_down_press", true)
+        list[#list + 1] = {label = locale.volume, kind = "volume", enabled = r.sources.vol_ctrl.enabled}
+        action("静音 / 取消静音", "vol_ctrl", "mbtn_left_up", true)
+        action("音量 100%", "vol_ctrl", "mbtn_right_up", true)
+        action("选择音轨", "vol_ctrl", "shift+mbtn_left_down")
+        action("音量 +5", "vol_ctrl", "wheel_up_press", true)
+        action("音量 −5", "vol_ctrl", "wheel_down_press", true)
     elseif page == "sub_track" then
-        action("Toggle subtitles", "sub_track", "mbtn_left_up", true)
-        action("Select subtitles", "sub_track", "shift+mbtn_left_down")
-        action("Adjust subtitles", "sub_track", "mbtn_right_up")
+        action("显示 / 隐藏字幕", "sub_track", "mbtn_left_up", true)
+        action("选择字幕", "sub_track", "shift+mbtn_left_down")
+        action("调整字幕", "sub_track", "mbtn_right_up")
     elseif page == "screenshot" then
-        action("Screenshot PNG", "screenshot", "mbtn_left_up")
-        action(state.capture.a and "Set B / export clip" or "Set clip A", "screenshot", "mbtn_right_up")
+        action("截图 PNG", "screenshot", "mbtn_left_up")
+        action(state.capture.a and "标记 B 点并导出" or "标记 A 点", "screenshot", "mbtn_right_up")
         for _, entry in ipairs({{"WebP", "webp"}, {"GIF", "gif"}, {"MP4", "mp4"}}) do
             command(entry[1], {"script-message-to", "capture_controls", "set-default-format", entry[2]},
                 (state.capture.clipboard_format or "webp") == entry[2])
         end
-        action("Capture folder", "screenshot", "shift+mbtn_left_down")
-        command("Copy latest clip", {"script-binding", "capture_controls/copy-latest"})
+        action("打开输出目录", "screenshot", "shift+mbtn_left_down")
+        command("复制最近的片段", {"script-binding", "capture_controls/copy-latest"})
     elseif page == "speed" then
         for _, entry in ipairs({{2, "2.0"}, {1.5, "1.5"}, {1.25, "1.25"}, {1, "1.0"}, {0.75, "0.75"}, {0.5, "0.5"}}) do
             command("× " .. entry[2], {"script-message-to", "playback_feedback", "set-speed", entry[1]}, state.speed == entry[1])
         end
-        action("Speed +0.25", "speed", "wheel_up_press", true)
-        action("Speed −0.25", "speed", "wheel_down_press", true)
+        action("倍速 +0.25", "speed", "wheel_up_press", true)
+        action("倍速 −0.25", "speed", "wheel_down_press", true)
     elseif page == "enhancement" then
-        for _, entry in ipairs({{"OFF", "Original"}, {"QUALITY", "Scaling"}, {"SMOOTH", "Deband"},
-            {"ANIME_LIGHT", "Anime4K-L"}, {"ANIME_STRONG", "Anime4K-S"}}) do
+        for _, entry in ipairs(enhancement_presets) do
             command(entry[2], {"script-message-to", "enhancement_controls", "set-preset", entry[1]},
                 state.enhancement.applied == entry[1], enhancement_ready(entry[1]), enhancement_footer_reason(entry[1]))
             list[#list].preset = entry[1]
@@ -2831,7 +2859,7 @@ function responsive_osc.setup_more()
         local row = new_element(name, "button")
         row.popover, row.styledown, row.hover_pad = "more", false, 0
         local layout = add_layout(name)
-        layout.layer, layout.style = 82, osc_styles.time .. "{\\fs14}"
+        layout.layer, layout.style = 82, osc_styles.time .. "{\\fs14\\q2}"
         layout.button.hoverstyle = osc_styles.element_hover:gsub("\\fscx%d+\\fscy%d+", "")
         return row
     end
@@ -2839,11 +2867,11 @@ function responsive_osc.setup_more()
     popup.header = header
     header.content = function()
         local page = state.more_page or "root"
-        local label = page == "root" and "More" or "‹ More"
+        local label = page == "root" and "更多" or "‹ 更多"
         if #popup.entries > popup.visible_rows then
             label = label .. "  " .. (state.more_scroll + 1) .. "–" .. (state.more_scroll + popup.visible_rows) .. "/" .. #popup.entries
         end
-        return label
+        return fit_popover_label(label, header.layout.style, width - 20)
     end
     header.eventresponder.mbtn_left_up = function() if state.more_page ~= "root" then responsive_osc.open("root") end end
     for i = 1, capacity do
@@ -2854,13 +2882,7 @@ function responsive_osc.setup_more()
             if not entry then return "" end
             local label = entry.label
             if entry.enabled == false and entry.reason and state.more_page ~= "enhancement" then label = label .. " · " .. entry.reason end
-            local style = row.layout.style
-            if estimate_text_width(label, style, true) > width - 20 then
-                while #label > 0 and estimate_text_width(label .. "…", style, true) > width - 20 do
-                    label = label:gsub("[\1-\127\194-\244][\128-\191]*$", "")
-                end
-                label = label .. "…"
-            end
+            label = fit_popover_label(label, row.layout.style, width - 20)
             return (entry.enabled == false and "{\\1c&H888888&}" or entry.selected and "{\\1c&HBB8712&}" or "") .. label
         end
         row.tooltipF = function()
@@ -2972,9 +2994,7 @@ local function setup_local_popovers()
     if popup then
         popup.rows_body = {x1 = x, y1 = y, x2 = x + width, y2 = y + height}
         popup.enhancement_rows = {}
-        for i, entry in ipairs({{"OFF", "Original"}, {"QUALITY", "Scaling"},
-            {"SMOOTH", "Deband"},
-            {"ANIME_LIGHT", "Anime4K-L"}, {"ANIME_STRONG", "Anime4K-S"}}) do
+        for i, entry in ipairs(enhancement_presets) do
             local preset, label = entry[1], entry[2]
             local ne = new_element("popover_enhancement_" .. i, "button")
             ne.popover = "enhancement"
@@ -2984,7 +3004,9 @@ local function setup_local_popovers()
                 local available = enhancement_ready(preset)
                 local selected = available and state.enhancement.applied == preset
                 local color = not available and "888888" or (selected and osc_color_convert("#1287bb"))
-                return (color and "{\\1c&H" .. color .. "&}" or "") .. label
+                local layout = ne.layout
+                return (color and "{\\1c&H" .. color .. "&}" or "")
+                    .. fit_popover_label(label, layout.style, layout.geometry.w - 8)
             end
             ne.eventresponder.mbtn_left_up = function()
                 if enhancement_ready(preset) then
@@ -2995,7 +3017,7 @@ local function setup_local_popovers()
             local lo = add_layout(ne.name)
             lo.geometry = {x = x + width / 2, y = y + (i - 0.5) * height / 5, an = 5, w = width - 12, h = height / 5}
             lo.layer = 82
-            lo.style = osc_styles.time .. "{\\fs14}"
+            lo.style = osc_styles.time .. "{\\fs14\\q2}"
             lo.button.hoverstyle = osc_styles.element_hover:gsub("\\fscx%d+\\fscy%d+", "")
             ne.hover_pad = 0
         end
@@ -3165,29 +3187,33 @@ layouts["default"] = function ()
         if available then tools[#tools + 1] = {name = name, label = label,
             w = button_width or 24, slot = math.max(45, (button_width or 24) + 12), style = style or osc_styles.control_3} end
     end
-    tool("info", "Media info", user_opts.info_button)
-    tool("sub_track", "Subtitles", user_opts.subtitles_button)
-    tool("vol_ctrl", "Volume", user_opts.volume_control)
-    tool("enhancement", "Enhancement", user_opts.enhancement_button)
+    tool("info", locale.stats_info, user_opts.info_button)
+    tool("sub_track", locale.subtitle, user_opts.subtitles_button)
+    tool("vol_ctrl", locale.volume, user_opts.volume_control)
+    tool("enhancement", "画面增强", user_opts.enhancement_button)
     local speed_width = math.max(42, estimate_text_width(elements.speed.content(), osc_styles.speed, true))
-    tool("speed", "Speed", user_opts.speed_button, osc_styles.speed, speed_width)
-    tool("download", "Download", user_opts.download_button and state.is_url)
-    tool("screenshot", "Capture", user_opts.screenshot_button)
-    tool("ontop", "Pin window", user_opts.ontop_button and not (window_controls_enabled() and user_opts.ontop_in_topbar and state.ontop))
-    tool("playlist", "Playlist", user_opts.playlist_button and (not user_opts.hide_empty_playlist_button or state.playlist_count > 1))
-    tool("cache_info", "Cache info", user_opts.cache_info, osc_styles.cache, user_opts.cache_info_speed and 70 or 45)
+    tool("speed", locale.speed_control, user_opts.speed_button, osc_styles.speed, speed_width)
+    tool("download", locale.download, user_opts.download_button and state.is_url)
+    tool("screenshot", locale.screenshot, user_opts.screenshot_button)
+    tool("ontop", locale.ontop, user_opts.ontop_button and not (window_controls_enabled() and user_opts.ontop_in_topbar and state.ontop))
+    tool("playlist", locale.playlist, user_opts.playlist_button and (not user_opts.hide_empty_playlist_button or state.playlist_count > 1))
+    tool("cache_info", "缓存信息", user_opts.cache_info, osc_styles.cache, user_opts.cache_info_speed and 70 or 45)
+    local transport_labels = {}
     local function playback(name, label, available)
         elements[name].visible = false
-        if available then transport[#transport + 1] = {name = name, label = label, w = name == "play_pause" and 45 or 30} end
+        if available then
+            transport[#transport + 1] = {name = name, w = name == "play_pause" and 45 or 30}
+            transport_labels[name] = label
+        end
     end
     local chapters = user_opts.chapter_skip_buttons and #state.chapter_list > 0
-    playback("playlist_prev", "Previous media", user_opts.track_nextprev_buttons)
-    playback("chapter_prev", "Previous chapter", chapters)
-    playback("jump_backward", "Back 10 seconds", user_opts.jump_buttons)
-    playback("play_pause", "Play / pause", true)
-    playback("jump_forward", "Forward 10 seconds", user_opts.jump_buttons)
-    playback("chapter_next", "Next chapter", chapters)
-    playback("playlist_next", "Next media", user_opts.track_nextprev_buttons)
+    playback("playlist_prev", "上一个文件", user_opts.track_nextprev_buttons)
+    playback("chapter_prev", "上一章节", chapters)
+    playback("jump_backward", "后退 " .. user_opts.jump_amount .. " 秒", user_opts.jump_buttons)
+    playback("play_pause", "播放 / 暂停", true)
+    playback("jump_forward", "前进 " .. user_opts.jump_amount .. " 秒", user_opts.jump_buttons)
+    playback("chapter_next", "下一章节", chapters)
+    playback("playlist_next", "下一个文件", user_opts.track_nextprev_buttons)
     local function span(list)
         if #list == 0 then return 0 end
         return (#list - 1) * 60 + math.max(list[1].w, list[#list].w)
@@ -3246,9 +3272,7 @@ layouts["default"] = function ()
     end end
     for _, name in ipairs({"playlist_prev", "chapter_prev", "jump_backward", "jump_forward", "chapter_next", "playlist_next"}) do
         if hidden[name] then
-            local labels = {playlist_prev = "Previous media", playlist_next = "Next media", chapter_prev = "Previous chapter",
-                chapter_next = "Next chapter", jump_backward = "Back 10 seconds", jump_forward = "Forward 10 seconds"}
-            r.overflow[#r.overflow + 1] = {name = name, label = labels[name], reason = hidden[name]}
+            r.overflow[#r.overflow + 1] = {name = name, label = transport_labels[name], reason = hidden[name]}
         end
     end
     local function place(name, x, y, w, h, style)
@@ -4221,7 +4245,7 @@ local function osc_init()
         if state.eof_reached then
             mp.commandv("no-osd", "seek", 0, "absolute-percent")
             mp.set_property_bool("pause", false)
-            mp.osd_message("PLAY", 1)
+            show_feedback("从头播放", 1.5)
         else
             mp.command(user_opts.play_pause_mbtn_left_command)
         end
@@ -4430,7 +4454,7 @@ local function osc_init()
     ne = new_element("shuffle", "button")
     ne.content = function() return state.shuffled and icons.shuffle_on or icons.shuffle_off end
     ne.eventresponder["mbtn_left_up"] = function()
-        mp.commandv("show-text", state.shuffled and locale.unshuffle or locale.shuffle, "-1", "1")
+        show_feedback(state.shuffled and locale.unshuffle or locale.shuffle, 1.5, 1)
         state.shuffled = not state.shuffled
         mp.command("playlist-" .. (state.shuffled and "shuffle" or "unshuffle"))
     end
@@ -4465,11 +4489,11 @@ local function osc_init()
         local localpath = mp.command_native({"expand-path", user_opts.download_path})
 
         if state.downloaded_once then
-            mp.commandv("show-text", locale.downloaded, "-1", "1")
+            show_feedback(locale.downloaded, 1.5, 1)
         elseif state.downloading then
-            mp.commandv("show-text", locale.download_in_progress, "-1", "1")
+            show_feedback(locale.download_in_progress, 1.5, 1)
         else
-            mp.commandv("show-text", locale.downloading .. "...", "-1", "1")
+            show_feedback(locale.downloading, 1.5, 1)
             state.downloading = true
             local command = {
                 "yt-dlp",
@@ -5591,7 +5615,8 @@ local function visibility_mode(mode, no_osd)
     mp.set_property_native("user-data/osc/visibility", mode)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
-        mp.osd_message("OSC visibility: " .. mode)
+        local labels = {auto = "控制栏自动显示", always = "控制栏始终显示", never = "控制栏已隐藏"}
+        show_feedback(labels[mode], 1.5)
     end
 
     -- Reset the input state on a mode change. The input state will be
@@ -5682,7 +5707,7 @@ local function idlescreen_visibility(mode, no_osd)
     mp.set_property_native("user-data/osc/idlescreen", user_opts.idlescreen)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
-        mp.osd_message("OSC logo visibility: " .. tostring(mode))
+        show_feedback(user_opts.idlescreen and "空闲画面已开启" or "空闲画面已关闭", 1.5)
     end
 
     request_tick()

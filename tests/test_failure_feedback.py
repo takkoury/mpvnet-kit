@@ -240,30 +240,36 @@ class DanmakuFailureFeedback(unittest.TestCase):
         cls.lua = load_lua51()
         cls.source = DANMAKU.read_text(encoding='utf-8')
         cls.prelude = r'''
-local messages, logs, calls, removed = {}, {}, {}, {}
+local messages, logs, calls, removed, durations, commands = {}, {}, {}, {}, {}, {}
+local properties, events = {}, {}
+local tracks, file_meta = {}, nil
 local callback = nil
 local media_path = 'https://private.test/video?token=secret'
 local mp = {
     get_property=function(name, default)
         if name=='path' then return media_path end
         if name=='pid' then return '123' end
+        if properties[name]~=nil then return properties[name] end
         return default
     end,
     get_property_number=function(_, default) return default end,
-    get_property_native=function(name) return name=='track-list' and {} or nil end,
+    get_property_native=function(name) if name=='track-list' then return tracks end;return properties[name] end,
+    set_property=function(name,value) properties[name]=value;return true end,
+    set_property_native=function(name,value) properties[name]=value;return true end,
+    commandv=function(...) local args={...};commands[#commands+1]=args;if args[1]=='sub-add' then tracks[#tracks+1]={type='sub',id=7,title='Bilibili Danmaku'} end;return true end,
     get_time=function() return 1 end,
     get_script_directory=function() return 'private-script-path' end,
     command_native=function() return 'paths.lua' end,
     command_native_async=function(command, fn) calls[#calls+1]=command;callback=fn;return {} end,
     abort_async_command=function() end,
-    osd_message=function(text) messages[#messages+1]=text end,
+    osd_message=function(text,duration) messages[#messages+1]=text;durations[#durations+1]=duration end,
     msg={info=function(text) logs[#logs+1]=text end},
-    register_event=function() end, observe_property=function() end,
+    register_event=function(name,fn) events[name]=fn end, observe_property=function() end,
     register_script_message=function() end, add_key_binding=function() end,
 }
 package.loaded['mp']=mp
 package.loaded['mp.utils']={join_path=function(a,b) return a..'/'..b end,
-    file_info=function() return nil end}
+    file_info=function() return file_meta end}
 package.loaded['mp.options']={read_options=function() end}
 local dofile=function() return {options={python_path=''}} end
 local os={time=function() return 1 end,getenv=function() return 'owned-temp' end,
@@ -276,18 +282,18 @@ local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 
     def test_only_explicit_spawn_failure_points_to_python_path(self):
         for success, result, expected in (
-            ('true', "{status=-3,error_string='init'}", 'DANMAKU LOAD FAILED · PYTHON CANNOT START · CHECK PYTHON PATH'),
-            ('true', "{status=1,error_string='',stdout='HTTP 403 private URL'}", 'DANMAKU LOAD FAILED'),
-            ('true', "{status=2,error_string='',stdout='conversion failed'}", 'DANMAKU LOAD FAILED'),
-            ('true', "{status=-2,error_string='killed'}", 'DANMAKU LOAD FAILED'),
-            ('false', 'nil', 'DANMAKU LOAD FAILED'),
+            ('true', "{status=-3,error_string='init'}", '弹幕加载失败\n请检查 Python 路径'),
+            ('true', "{status=1,error_string='',stdout='HTTP 403 private URL'}", '弹幕加载失败'),
+            ('true', "{status=2,error_string='',stdout='conversion failed'}", '弹幕加载失败'),
+            ('true', "{status=-2,error_string='killed'}", '弹幕加载失败'),
+            ('false', 'nil', '弹幕加载失败'),
         ):
             with self.subTest(result=result):
                 self.run_case('''
 Danmaku_process('123');eq(#calls,1)
 callback(%s,%s,'private-path https://private.test/?token=secret')
-eq(messages[#messages],%s)
-eq(#removed,1)
+eq(messages[#messages],%s);eq(durations[#durations],4)
+eq(properties['user-data/mpvnet/feedback/danmaku'],'');eq(#removed,1)
 for _,text in ipairs(messages) do assert(not text:find('private',1,true)) end
 for _,text in ipairs(logs) do assert(not text:find('private',1,true)) end
 ''' % (success, result, json.dumps(expected, ensure_ascii=False)))
@@ -301,8 +307,129 @@ eq(#messages,count);eq(#logs,0);eq(#removed,1)
 assert(removed[1]:find('owned-temp/bilibili-',1,true)==1)
 ''')
 
+    def test_replacement_callback_cannot_clear_current_loading(self):
+        self.run_case("""
+Danmaku_process('123');local old=callback
+Danmaku_process('456');local newest=callback
+local count=#messages
+old(true,{status=-3,error_string='init'})
+eq(#messages,count);eq(properties['user-data/mpvnet/feedback/danmaku'],'正在加载弹幕…')
+newest(false,{status=1});eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+eq(messages[#messages],'弹幕加载失败');eq(durations[#durations],4)
+""")
+
+    def test_success_log_osd_never_exposes_path_and_toggle_is_short(self):
+        self.run_case("""
+o.log_osd=true;file_meta={is_file=true,size=2400}
+properties.sid='1';properties['secondary-sid']='no'
+Danmaku_process('123');eq(messages[1],'正在加载弹幕…');eq(durations[1],1.5)
+callback(true,{status=0})
+eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+eq(messages[#messages],'弹幕已加载');eq(durations[#durations],2)
+eq(properties.sid,'1');eq(properties['secondary-sid'],7)
+local count=#messages;Danmaku_toggle();eq(#messages,count+1)
+eq(messages[#messages],'弹幕已关闭');eq(durations[#durations],1.5)
+for _,text in ipairs(messages) do assert(not text:find('owned-temp',1,true));assert(not text:find('private',1,true)) end
+""")
+
+    def test_end_file_shutdown_and_media_mismatch_end_only_owned_status(self):
+        self.run_case("""
+Danmaku_process('123');local old=callback
+media_path='new-media';old(true,{status=0})
+eq(properties['user-data/mpvnet/feedback/danmaku'],'');eq(#commands,0)
+Danmaku_process('456');old=callback;events['end-file']()
+eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+old(false,nil);eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+Danmaku_process('789');old=callback;events.shutdown();local count=#messages
+old(false,nil);eq(#messages,count);eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+""")
+
+    def test_ready_coordinator_and_occupied_slot_do_not_start_worker(self):
+        self.run_case("""
+properties['user-data/mpvnet/feedback/ready']=true;properties['secondary-sid']='3'
+Danmaku_process('123');eq(#calls,0);eq(#messages,0)
+eq(commands[1][2],'feedback_osd');eq(commands[1][4],'次字幕已占用，无法加载弹幕');eq(commands[1][5],'4')
+""")
+
+    def test_ready_loading_is_only_state_and_clears_on_media_end(self):
+        self.run_case("""
+properties['user-data/mpvnet/feedback/ready']=true
+Danmaku_process('123');eq(#messages,0);eq(#commands,0)
+eq(properties['user-data/mpvnet/feedback/danmaku'],'正在加载弹幕…')
+events['end-file']();eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+eq(#commands,0);eq(#messages,0)
+""")
+
+    def test_worker_completion_rechecks_new_subtitle_slot_owner(self):
+        self.run_case("""
+file_meta={is_file=true,size=2400};Danmaku_process('123')
+properties['secondary-sid']='3';properties['secondary-sub-visibility']=true
+properties['secondary-sub-ass-override']='force'
+callback(true,{status=0})
+eq(#commands,0);eq(properties['secondary-sid'],'3')
+eq(properties['secondary-sub-visibility'],true);eq(properties['secondary-sub-ass-override'],'force')
+eq(messages[#messages],'次字幕已占用，无法加载弹幕');eq(durations[#durations],4)
+""")
+
+    def test_rejected_subtitle_assignment_does_not_report_success(self):
+        self.run_case("""
+file_meta={is_file=true,size=2400};properties['secondary-sid']='no'
+local set=mp.set_property_native
+mp.set_property_native=function(name,value) if name=='secondary-sid' then return false end;return set(name,value) end
+Danmaku_process('123');callback(true,{status=0})
+eq(messages[#messages],'弹幕加载失败');eq(durations[#durations],4)
+eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+for _,text in ipairs(messages) do assert(text~='弹幕已加载') end
+""")
+
     def test_complete_lua_syntax(self):
         self.lua.check_syntax(DANMAKU)
+
+
+class ThumbnailFeedback(unittest.TestCase):
+    def test_windows_compatibility_messages_keep_failure_context(self):
+        source = (ROOT / 'config/scripts/thumbfast.lua').read_text(encoding='utf-8')
+        helper = fragment(source, 'local function startup_feedback()', 'local function spawn(time)')
+        callback = fragment(source, '    subprocess(args, true,', '\nend\n\nlocal function run(command)')
+        load_lua51().execute('''
+local options={mpv_path='mpv'}
+local properties={['current-vo']='gpu-next'}
+local spawn_waiting,spawn_working=true,false
+local os_name,frontend_path='windows',nil
+local called,commands=nil,{}
+local mp={get_property_native=function() return true end,
+ commandv=function(...) commands[#commands+1]={...} end,
+ msg={error=function() end}}
+local function subprocess(_,_,cb) called=cb end
+''' + helper + callback + '''
+called(false,{status=1})
+assert(#commands==3)
+assert(commands[1][2]=='feedback_osd' and commands[1][5]=='4')
+for i=2,3 do
+ assert(commands[i][4]=='缩略图启动失败\\n请检查进度预览程序路径')
+ assert(commands[i][5]==4000 and commands[i][6]==20)
+end
+''', 'thumbnail/windows-failure')
+
+    def test_startup_failure_routes_safe_text_and_preserves_fallback(self):
+        lua = load_lua51()
+        path = ROOT / 'config/scripts/thumbfast.lua'
+        source = path.read_text(encoding='utf-8')
+        helper = fragment(source, 'local function startup_feedback()', 'local function spawn(time)')
+        lua.execute('''
+local ready=false
+local messages,commands={},{}
+local mp={get_property_native=function() return ready end,
+ osd_message=function(t,d) messages[#messages+1]={t,d} end,
+ commandv=function(...) commands[#commands+1]={...} end}
+''' + helper + '''
+startup_feedback()
+assert(messages[1][1]=='缩略图启动失败\\n请检查进度预览程序路径' and messages[1][2]==4)
+ready=true;startup_feedback();assert(#messages==1)
+assert(commands[1][2]=='feedback_osd' and commands[1][5]=='4')
+''', 'thumbnail/feedback')
+        lua.check_syntax(path)
+        self.assertNotIn('thumbfast: ERROR!', source)
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell helper checks')

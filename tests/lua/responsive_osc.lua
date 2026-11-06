@@ -21,8 +21,10 @@ local function show_wc() end
 local function hide_osc() end
 local function hide_wc() end
 local function estimate_text_width(text, style)
-    local fs = tonumber((style or ""):match("\\fs(%d+)")) or 14
-    return #text * fs * 0.45
+    local fs = tonumber((style or ""):match(".*\\fs(%d+)")) or 14
+    local narrow = select(2, text:gsub("[\1-\127\194-\223][\128-\191]*", ""))
+    local wide = select(2, text:gsub("[\224-\244][\128-\191]*", ""))
+    return (narrow * 0.45 + wide) * fs
 end
 local function osc_color_convert(color) return color:sub(6, 7) .. color:sub(4, 5) .. color:sub(2, 3) end
 local function observe_cached(name, callback) observers[name] = callback end
@@ -248,28 +250,28 @@ function capture_actions()
     local popup = state.local_popovers.more
     eq(#popup.entries, 7, "PNG, A/B, three formats, directory and latest clip")
     click(entry_row("GIF")); eq(commands[1][3], "set-default-format"); eq(commands[1][4], "gif")
-    open("screenshot"); click(entry_row("Set clip A")); eq(command_strings[1], "script-binding capture_controls/clip-point")
-    state.capture.a = 10; open("screenshot"); click(entry_row("Set B / export clip"))
+    open("screenshot"); click(entry_row("标记 A 点")); eq(command_strings[1], "script-binding capture_controls/clip-point")
+    state.capture.a = 10; open("screenshot"); click(entry_row("标记 B 点并导出"))
     eq(command_strings[2], "script-binding capture_controls/clip-point")
-    open("screenshot"); click(entry_row("Screenshot PNG")); eq(command_strings[3], "script-binding capture_controls/screenshot")
-    open("screenshot"); click(entry_row("Capture folder")); eq(command_strings[4], "script-binding capture_controls/open-folder")
+    open("screenshot"); click(entry_row("截图 PNG")); eq(command_strings[3], "script-binding capture_controls/screenshot")
+    open("screenshot"); click(entry_row("打开输出目录")); eq(command_strings[4], "script-binding capture_controls/open-folder")
     open(); click(entry_row("screenshot"), "shift+mbtn_left"); eq(command_strings[5], "script-binding capture_controls/open-folder")
     click(entry_row("screenshot"), "mbtn_right"); eq(command_strings[6], "script-binding capture_controls/clip-point")
-    open("screenshot"); click(entry_row("Copy latest clip")); eq(commands[2][2], "capture_controls/copy-latest")
+    open("screenshot"); click(entry_row("复制最近的片段")); eq(commands[2][2], "capture_controls/copy-latest")
 end
 
 function other_actions()
     fixture(320,200); open("vol_ctrl")
-    click(entry_row("Mute / unmute")); eq(command_strings[1], "no-osd cycle mute")
-    click(entry_row("Volume 100%")); eq(command_strings[2], "no-osd set volume 100")
-    click(entry_row("Volume +5")); eq(command_strings[3], "no-osd add volume 5")
-    click(entry_row("Volume −5")); eq(command_strings[4], "no-osd add volume -5")
-    click(entry_row("Audio tracks")); eq(command_strings[5], "script-binding track_selection/select-audio")
-    open("sub_track"); click(entry_row("Toggle subtitles")); eq(command_strings[6], "script-binding subtitle_controls/toggle")
-    click(entry_row("Select subtitles")); eq(command_strings[7], "script-binding subtitle_controls/select")
-    open("sub_track"); click(entry_row("Adjust subtitles")); eq(command_strings[8], "script-binding subtitle_controls/adjust-mode")
+    click(entry_row("静音 / 取消静音")); eq(command_strings[1], "no-osd cycle mute")
+    click(entry_row("音量 100%")); eq(command_strings[2], "no-osd set volume 100")
+    click(entry_row("音量 +5")); eq(command_strings[3], "no-osd add volume 5")
+    click(entry_row("音量 −5")); eq(command_strings[4], "no-osd add volume -5")
+    click(entry_row("选择音轨")); eq(command_strings[5], "script-binding track_selection/select-audio")
+    open("sub_track"); click(entry_row("显示 / 隐藏字幕")); eq(command_strings[6], "script-binding subtitle_controls/toggle")
+    click(entry_row("选择字幕")); eq(command_strings[7], "script-binding subtitle_controls/select")
+    open("sub_track"); click(entry_row("调整字幕")); eq(command_strings[8], "script-binding subtitle_controls/adjust-mode")
     open("speed"); click(entry_row("× 1.25")); eq(commands[1][4], 1.25)
-    click(entry_row("Speed +0.25")); eq(command_strings[9], "script-message-to playback_feedback add-speed 0.25")
+    click(entry_row("倍速 +0.25")); eq(command_strings[9], "script-message-to playback_feedback add-speed 0.25")
     empty_commands(); click(state.local_popovers.more.rows[1], "mbtn_right")
     eq(#commands, 1, "speed page right reset exactly once"); eq(commands[1][4], 1); eq(commands[1][5], "quiet")
 end
@@ -299,13 +301,13 @@ function more_tooltips()
     end
     open(); eq(entry_row("vol_ctrl").tooltipF(), "中键选择音轨 · 右键100%")
     eq(entry_row("info").tooltipF(), nil, "simple root entry already has its name")
-    open("vol_ctrl"); eq(entry_row("Volume 100%").tooltipF(), nil)
-    eq(entry_row("Audio tracks").tooltipF(), nil)
-    open("sub_track"); eq(entry_row("Select subtitles").tooltipF(), nil)
-    eq(entry_row("Adjust subtitles").tooltipF(), nil)
-    open("screenshot"); eq(entry_row("Screenshot PNG").tooltipF(), nil)
+    open("vol_ctrl"); eq(entry_row("音量 100%").tooltipF(), nil)
+    eq(entry_row("选择音轨").tooltipF(), nil)
+    open("sub_track"); eq(entry_row("选择字幕").tooltipF(), nil)
+    eq(entry_row("调整字幕").tooltipF(), nil)
+    open("screenshot"); eq(entry_row("截图 PNG").tooltipF(), nil)
     state.capture.a = 2; open("screenshot")
-    eq(entry_row("Set B / export clip").tooltipF(), nil)
+    eq(entry_row("标记 B 点并导出").tooltipF(), nil)
     open()
     state.responsive.sources.vol_ctrl.tooltipF = function() return nil end
     eq(entry_row("vol_ctrl").tooltipF(), nil, "nil result must not fall back to the function object")
@@ -319,8 +321,8 @@ function enhancement_page()
     local row = entry_row("ANIME_LIGHT"); move(row)
     assert(popup.footer, "same panel footer explains disabled preset")
     eq(row.tooltipF(), nil, "no enhancement tooltip bubble")
-    assert(not row.content():find("SDR only", 1, true), "reason is outside fixed option row")
-    eq(popup.footer.lines[1], "SDR only")
+    assert(not row.content():find("不支持 HDR 视频", 1, true), "reason is outside fixed option row")
+    eq(popup.footer.lines[1], "不支持 HDR 视频")
     local y = row.hitbox.y1
     click(row); eq(#commands, 0, "disabled preset inert")
     move(entry_row("QUALITY")); eq(popup.footer, nil); near(row.hitbox.y1, y, "footer preserves row geometry")

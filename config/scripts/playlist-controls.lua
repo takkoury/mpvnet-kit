@@ -1,6 +1,14 @@
 -- One queue authority; the side window sends IDs, never cached queue indexes.
 local mp = require('mp')
 local utils = require('mp.utils')
+local function feedback(text)
+    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
+        mp.commandv('script-message-to', 'feedback_osd', 'show', text, '4')
+    else
+        mp.osd_message(text, 4)
+    end
+end
+
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local helper = mp.command_native({'expand-path', '~~/helpers/playlist-window.ps1'})
 local powershell = paths.powershell()
@@ -148,7 +156,7 @@ local function action(received_token, operation, id, target_id, side)
     if received_token ~= token or closing then return end
     if operation == 'append' then
         local files = utils.parse_json(id or '')
-        if type(files) ~= 'table' then mp.osd_message('NO SUPPORTED FILES', 1); return end
+        if type(files) ~= 'table' then feedback('没有可添加的媒体文件'); return end
         local sets = extension_sets()
         local kind = media_kind(mp.get_property('path'), sets)
         local supported, appended = 0, 0
@@ -163,8 +171,8 @@ local function action(received_token, operation, id, target_id, side)
                 end
             end
         end
-        if supported == 0 then mp.osd_message('NO SUPPORTED FILES', 1)
-        elseif appended == 0 then mp.osd_message('PLAYLIST APPEND FAILED', 1) end
+        if supported == 0 then feedback('没有可添加的媒体文件')
+        elseif appended == 0 then feedback('添加到播放列表失败') end
         return
     end
     local entries = queue()
@@ -196,7 +204,7 @@ local function open_failed(phase, owns_payload)
     wanted = false
     publish()
     mp.msg.warn('Playlist window failed: ' .. phase)
-    mp.osd_message('PLAYLIST OPEN FAILED', 1)
+    feedback('无法打开播放列表')
 end
 
 local function start_window()
@@ -258,7 +266,7 @@ local function start_window()
                     .. '/' .. tostring(tonumber(data and data.error_line) or 0)
                     .. '/' .. member_type .. '.' .. member
                     .. ' / parameter=' .. parameter .. ' / callers=' .. table.concat(callers, ','))
-                if show_failure then mp.osd_message('PLAYLIST OPEN FAILED', 1) end
+                if show_failure then feedback('无法打开播放列表') end
             end
         end
     end)

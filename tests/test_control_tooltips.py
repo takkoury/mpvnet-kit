@@ -21,6 +21,7 @@ class ControlTooltips(unittest.TestCase):
             fragment(source, 'local user_opts = {', 'local osc_param = {'), typed_configuration(ROOT / 'config/script-opts/modernz.conf'),
             fragment(source, 'local language = {', 'local bidi = {'),
             'local locale = language.default', prelude,
+            fragment(source, 'local function show_feedback(', 'local function new_element('),
             fragment(source, 'local function mult_alpha(', '-- draw tooltip background box and label'),
             fragment(source, '-- Button hints use a small self-drawn mouse,', 'local function ass_draw_cir_cw('),
             fragment(source, 'local function new_element(', 'local function add_layout('),
@@ -31,7 +32,9 @@ class ControlTooltips(unittest.TestCase):
             fragment(source, '    --fullscreen\n', '    --screenshot\n'),
             fragment(source, '    --sub_track\n', '    --volumebar\n'),
             fragment(source, '    --screenshot\n', '    --file_loop\n'),
+            fragment(source, '    --shuffle\n', '    -- Rendering presets'),
             fragment(source, '    --speed\n', '    --download\n'),
+            fragment(source, '    --download\n', '    -- cache info\n'),
             fragment(source, '    -- Time codes display\n', '    -- load layout\n'), 'end',
             'local function render_hint(element)\nlocal elem_ass = new_ass()\n',
             fragment(source, '            local seeking_with_force_tooltip =', '        end\n\n        master_ass:merge(elem_ass)'),
@@ -43,6 +46,9 @@ class ControlTooltips(unittest.TestCase):
 
     def test_configured_hints_and_dispatch(self):
         self.run_case('configured_hints_and_dispatch')
+
+    def test_replay_and_optional_download_feedback(self):
+        self.run_case('replay_and_optional_download_feedback')
 
     def test_title_local_network_and_custom_bindings(self):
         self.run_case('title_and_custom_bindings')

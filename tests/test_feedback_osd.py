@@ -49,6 +49,14 @@ handlers.show('成功','2');status('capture','');timers[1].fn()
 eq(props['osd-msg1'],'字幕调整');status('subtitle','');eq(props['osd-msg1'],'')
 ''')
 
+    def test_danmaku_loading_has_its_own_slot(self):
+        self.run_case('''
+status('capture','导出中');status('danmaku','正在加载弹幕…');status('subtitle','字幕调整')
+eq(props['osd-msg1'],'导出中\\n正在加载弹幕…\\n字幕调整')
+handlers.show('倍速','1.5');status('danmaku','');timers[1].fn()
+eq(props['osd-msg1'],'导出中\\n字幕调整')
+''')
+
     def test_external_native_message_is_never_cleared_or_replayed(self):
         self.run_case('''
 status('capture','导出中');handlers.show('倍速','1.5')

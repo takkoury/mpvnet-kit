@@ -6,7 +6,11 @@ local state = {enhancement = {}, mouse_in_window = true, osc_visible = true, pop
 local elements, observers, commands, areas, bindings, close_popover = {}, {}, {}, {}, {}, nil
 local mouse_x, mouse_y, ticks = 0, 0, 0
 local function get_virt_mouse_pos() return mouse_x, mouse_y end
-local function estimate_text_width(text) return #text * 7 end
+local function estimate_text_width(text)
+    local narrow = select(2, text:gsub("[\1-\127\194-\223][\128-\191]*", ""))
+    local wide = select(2, text:gsub("[\224-\244][\128-\191]*", ""))
+    return narrow * 7 + wide * 14
+end
 local function request_tick() ticks = ticks + 1 end
 local function set_virt_mouse_area(x1, y1, x2, y2, name) areas[name] = {x1, y1, x2, y2} end
 local function window_controls_enabled() return false end
@@ -71,9 +75,8 @@ function normal_panel_has_only_five_options()
     eq(popup.body.x2 - popup.body.x1, 104); eq(popup.body.y2 - popup.body.y1, 160)
     local ass = render_footer(); eq(#ass.text, 0, 'normal panel has no status disclosure')
     has(popup.enhancement_rows[1].element.content(), 'bb8712')
-    for _, row in ipairs(popup.enhancement_rows) do
-        local text = row.element.content()
-        assert(not text:find('Current:', 1, true)); assert(not text:find('Selected:', 1, true))
+    for i, label in ipairs({'原始画面', '高质量缩放', '去色带', 'Anime4K-L', 'Anime4K-S'}) do
+        eq(popup.enhancement_rows[i].element.content():gsub('{[^}]+}', ''), label)
     end
 end
 
@@ -84,7 +87,7 @@ function disabled_row_hover_explains_gate_without_click()
     eq(row.enabled, false)
     process_event('mbtn_left', 'down'); process_event('mbtn_left', 'up')
     eq(#commands, 0, 'disabled click is guarded')
-    local ass, text = render_footer(); has(text, 'SDR only')
+    local ass, text = render_footer(); has(text, '不支持 HDR 视频')
     assert(not text:find('Current:', 1, true)); assert(not text:find('Selected:', 1, true))
     eq(#ass.rectangles, 1, 'footer draws a divider'); eq(#ass.shapes, 0, 'footer has no separate background')
     eq(ass.positions[2][1], popup.body.x1 + (popup.body.x2 - popup.body.x1) / 2)
@@ -105,8 +108,8 @@ function footer_keeps_rows_and_hover_stable()
     for i = 1, 3 do process_event('mouse_move'); same_box(popup.body, first) end
     mouse_x, mouse_y = (popup.body.x1 + popup.body.x2) / 2, popup.footer.y + 12
     process_event('mouse_move'); eq(state.popover, 'enhancement'); same_box(popup.body, first)
-    has(select(2, render_footer()), 'SDR only')
-    hover_row(popup, 5); has(select(2, render_footer()), 'Validation required')
+    has(select(2, render_footer()), '不支持 HDR 视频')
+    hover_row(popup, 5); has(select(2, render_footer()), 'Anime4K 尚未启用')
     hover_row(popup, 2); eq(popup.footer, nil)
     for i, row in ipairs(popup.enhancement_rows) do same_box(row.element.hitbox, boxes[i]) end
     same_box(popup.body, popup.rows_body)
@@ -140,13 +143,13 @@ end
 function long_reason_wraps_and_narrow_canvas_stays_inside()
     for _, size in ipairs({{1280, 720}, {320, 300}, {180, 360}, {96, 500}}) do
         osc_param.playresx, osc_param.playresy = size[1], size[2]
-        local _, popup = fixture({ready = true, available = {}, unavailable_reasons = {ANIME_STRONG = 'anime_unverified'}}, 120)
+        local _, popup = fixture({ready = true, available = {}, unavailable_reasons = {ANIME_STRONG = 'renderer_unsupported'}}, 120)
         hover_row(popup, 5)
         local geometry = assert(popup.footer)
         assert(popup.body.x1 >= 8 and popup.body.x2 <= size[1] - 8)
         assert(popup.body.y1 >= 8 and popup.body.y2 <= size[2] - 8)
         for _, line in ipairs(geometry.lines) do assert(estimate_text_width(line) <= geometry.width - 20) end
-        has(table.concat(geometry.lines, ''):gsub(' ', ''), 'Validationrequired')
+        eq(table.concat(geometry.lines, ''), '当前显示方式不支持增强')
         if size[1] == 96 then assert(#geometry.lines > 1, 'narrow footer wraps') end
         same_box(popup.background.hitbox, popup.body)
     end
@@ -166,15 +169,15 @@ end
 function legacy_fields_and_failure_reason()
     local _, popup = fixture({desired = 'SMOOTH', applied = 'QUALITY', available = {QUALITY = true}})
     eq(popup.footer, nil, 'unavailable desired state does not add a normal disclosure')
-    hover_row(popup, 3); has(select(2, render_footer()), 'Unavailable')
-    state.enhancement = {ready = false}; popup.update(); has(select(2, render_footer()), 'Initializing')
+    hover_row(popup, 3); has(select(2, render_footer()), '此增强不可用')
+    state.enhancement = {ready = false}; popup.update(); has(select(2, render_footer()), '增强尚未就绪')
     state.enhancement = {desired = 'QUALITY', available = {QUALITY = true}, error_reason = 'rollback_failed',
         error_preset = 'SMOOTH', error = '{untrusted raw host error}'}
-    popup.update(); local _, text = render_footer(); has(text, 'Rollback failed')
+    popup.update(); local _, text = render_footer(); has(text, '画面设置还原失败')
     assert(not text:find('untrusted', 1, true), 'raw error is not rendered as ASS')
-    hover_row(popup, 2); has(select(2, render_footer()), 'Rollback failed')
+    hover_row(popup, 2); has(select(2, render_footer()), '画面设置还原失败')
     state.enhancement = {available = {QUALITY = true}, error = '{raw error}'}
-    popup.update(); has(select(2, render_footer()), 'Settings failed')
+    popup.update(); has(select(2, render_footer()), '无法应用增强设置')
 end
 
 function status_observer_is_silent_and_updates_rows()
@@ -182,7 +185,7 @@ function status_observer_is_silent_and_updates_rows()
     observers['user-data/mpvnet/enhancement']('', {desired = 'QUALITY', applied = 'QUALITY',
         available = {QUALITY = true}, error_reason = 'settings_failed', error_preset = 'QUALITY'})
     eq(popup.enhancement_rows[2].element.enabled, true); eq(#commands, 0); eq(ticks, 1)
-    has(select(2, render_footer()), 'Settings failed')
+    has(select(2, render_footer()), '无法应用增强设置')
     observers['user-data/mpvnet/enhancement']('', nil)
     eq(popup.enhancement_rows[2].element.enabled, false); eq(#commands, 0); eq(ticks, 2); eq(popup.footer, nil)
 end

@@ -1,11 +1,12 @@
 -- Own only the persistent OSD option. Native messages retain their own lifetime.
 local mp = require('mp')
 local root = 'user-data/mpvnet/feedback/'
-local states = {capture = '', subtitle = ''}
+local owners = {'capture', 'danmaku', 'subtitle'}
+local states = {capture = '', danmaku = '', subtitle = ''}
 local original, owned, lost, timer, serial, stopping = nil, nil, false, nil, 0, false
 
 local function has_states()
-    return states.capture ~= '' or states.subtitle ~= ''
+    return states.capture ~= '' or states.danmaku ~= '' or states.subtitle ~= ''
 end
 
 local function current()
@@ -32,8 +33,11 @@ local function render()
     if not has_states() then release(); lost = false; return end
     if lost then return end
     if owned == nil then original = current(); owned = original end
-    local text = states.capture
-    if states.subtitle ~= '' then text = text .. (text ~= '' and '\n' or '') .. states.subtitle end
+    local lines = {}
+    for _, owner in ipairs(owners) do
+        if states[owner] ~= '' then lines[#lines + 1] = states[owner] end
+    end
+    local text = table.concat(lines, '\n')
     -- Escape property expansion in plain status text, preserving the user's prefix.
     local value = suspended() and original or (original .. (original ~= '' and '\n' or '') .. text:gsub('%$', '$$'))
     if value ~= owned then
@@ -66,7 +70,7 @@ mp.register_script_message('show', function(text, seconds)
     mp.osd_message(text, duration)
 end)
 
-for _, owner in ipairs({'capture', 'subtitle'}) do
+for _, owner in ipairs(owners) do
     local key = owner
     mp.observe_property(root .. key, 'native', function(_, value) status(key, value) end)
 end

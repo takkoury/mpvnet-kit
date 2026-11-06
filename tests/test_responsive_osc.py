@@ -20,6 +20,7 @@ class ResponsiveOsc(unittest.TestCase):
             '-- SOURCE FUNCTIONS ARE INSERTED HERE\n', 1)
         cls.source = '\n'.join([
             fragment(source, 'local user_opts = {', 'local osc_param = {'), typed_configuration(ROOT / 'config/script-opts/modernz.conf'), prelude,
+            fragment(source, 'local language = {', 'local bidi = {'), 'local locale = language.default',
             fragment(source, 'local function ass_draw_rr_h_cw(', 'local function get_hidetimeout()'),
             fragment(source, 'local function scale_value(', '-- returns the position of an object'),
             fragment(source, 'local function get_time_codes_width()', 'local function mult_alpha('),

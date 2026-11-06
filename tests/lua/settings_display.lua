@@ -70,6 +70,28 @@ local function fixture(mode,keep)
     visibility_mode(user_opts.visibility,true)
 end
 local function eq(a,b) assert(a==b,'expected '..tostring(b)..', got '..tostring(a)) end
+function explicit_mode_feedback()
+    fixture('auto')
+    local spoken, commands = {}, {}
+    mp.osd_message = function(...) spoken[#spoken+1]={...} end
+    mp.commandv = function(...) commands[#commands+1]={...} end
+    properties['osd-level']=1
+    manual_visibility_mode('cycle')
+    eq(properties['user-data/osc/visibility'],'always')
+    eq(spoken[1][1],'控制栏始终显示'); eq(spoken[1][2],1.5)
+    properties['user-data/mpvnet/feedback/ready']=true
+    manual_visibility_mode('cycle')
+    eq(properties['user-data/osc/visibility'],'never')
+    eq(table.concat(commands[1],'|'),'script-message-to|feedback_osd|show|控制栏已隐藏|1.5')
+    idlescreen_visibility('no')
+    eq(properties['user-data/osc/idlescreen'],false)
+    eq(commands[2][4],'空闲画面已关闭')
+    properties['osd-level']=0
+    idlescreen_visibility('cycle')
+    eq(properties['user-data/osc/idlescreen'],true)
+    eq(#spoken,1); eq(#commands,2)
+end
+
 local function send(operation,token) messages['settings-display-preview'](token or 'editor-1',operation) end
 local function advance(value)
     now=value

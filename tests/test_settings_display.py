@@ -21,11 +21,12 @@ class SettingsDisplay(unittest.TestCase):
             fragment(source, 'local function get_hidetimeout()', 'local function cache_enabled()'),
             fragment(source, 'local function show_bar(', 'local function update_tracklist('),
             fragment(source, 'local function set_bar_visible(', '-- use_down:'),
+            fragment(source, 'local function show_feedback(', 'local function download_done('),
             fragment(source, 'local function show_wc()', 'local function handle_touch('),
             fragment(source, 'local function do_enable_keybindings()', 'local function render()'),
             'local function autohide()\nlocal now=mp.get_time()\n' +
             fragment(source, '    -- autohide\n', '    -- actual rendering\n') + '\nend',
-            fragment(source, 'local function always_on(', 'local function idlescreen_visibility('),
+            fragment(source, 'local function always_on(', 'local function apply_pause_policy('),
             fragment(source, 'local function apply_pause_policy(', 'mp.add_key_binding(nil, "progress-toggle"'),
             fragment(source, 'mp.register_event("shutdown", function()', 'mp.observe_property("track-list"'),
             fragment(source, 'observe_cached("idle-active", function()', 'mp.observe_property("display-fps"'),
@@ -45,6 +46,9 @@ class SettingsDisplay(unittest.TestCase):
 
     def test_modes_keep_the_bottom_bar_visible_without_changing_visibility(self):
         self.run_case('modes_and_mouse_leave')
+
+    def test_explicit_modes_use_chinese_feedback_without_changing_values(self):
+        self.run_case('explicit_mode_feedback')
 
     def test_lease_cancels_an_already_running_fade_out(self):
         self.run_case('lease_cancels_fade_out')
