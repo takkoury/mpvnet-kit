@@ -145,6 +145,25 @@ class SettingsStorage(unittest.TestCase):
         self.assertTrue(self.save('SaveLocal', values={'mpv_path': 'C:\\新目录\\mpvnet.exe'})['ok'])
         self.assertTrue(self.local.read_bytes().endswith(b'unknown-without-equals\r\nmpv_path=C:\\' + '新目录'.encode('utf-8') + b'\\mpvnet.exe\r\n'))
 
+    def test_local_full_page_save_preserves_legacy_unc_until_cleared(self):
+        unc = r'\\server\share\旧目录'
+        raw = (f'\ufeff# 本机配置\r\ncapture_root={unc}\r\nfuture = x # 原文\r\n'
+               'ffmpeg_path=\r\npython_path=C:\\old.exe\r\n# tail')
+        self.local.write_bytes(raw.encode('utf-8'))
+        values = dict(capture_root=unc, ffmpeg_path='', python_path=r'C:\new.exe', mpv_path='')
+        result = self.save('SaveLocal', values=values)
+        self.assertTrue(result['ok'], result)
+        saved = raw.replace('python_path=C:\\old.exe', 'python_path=C:\\new.exe')
+        self.assertEqual(self.local.read_bytes(), saved.encode('utf-8'))
+
+        values['capture_root'] = ''
+        result = self.save('SaveLocal', expected_text=raw, values=values)
+        self.assertTrue(result['conflict'], result)
+        self.assert_preserved(self.local, saved.encode('utf-8'), result)
+        result = self.save('SaveLocal', values=values)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(self.local.read_bytes(), saved.replace(f'capture_root={unc}\r\n', '').encode('utf-8'))
+
     def test_local_delete_does_not_touch_other_lines_or_json(self):
         raw = b'# capture_root=D:\\example\r\ncapture_root=D:\\old\r\npython_path=C:\\python.exe\n# tail'
         self.local.write_bytes(raw)
@@ -188,6 +207,9 @@ class SettingsStorage(unittest.TestCase):
             with self.subTest(target=target):
                 self.assertFalse(self.save('SaveLocal', settings_path=str(target))['ok'])
                 self.assertFalse(target.exists())
+        result = self.save('SaveLocal', settings_path=r'\\server\share\script-opts\mpvnet-local.conf')
+        self.assertFalse(result['ok'], result)
+        self.assertIn('本地绝对路径', result['error'])
         self.assertFalse(self.save('SaveLocal', schema=2)['ok'])
         self.assertFalse(self.local.exists())
 

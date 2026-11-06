@@ -108,7 +108,7 @@ public sealed class ShortcutEditor : Window
     readonly Process parent; readonly string token;
     readonly List<ActionRow> rows=new List<ActionRow>(),visibleRows=new List<ActionRow>();
     readonly Dictionary<string,string[]> draft=new Dictionary<string,string[]>(StringComparer.Ordinal),baseline=new Dictionary<string,string[]>(StringComparer.Ordinal);
-    readonly List<object> sent=new List<object>();
+    readonly List<object> validationCommands;
     readonly Dictionary<string,Button> categoryButtons=new Dictionary<string,Button>(),filterButtons=new Dictionary<string,Button>();
     readonly DispatcherTimer timer=new DispatcherTimer();
     Dictionary<string,object> latest;
@@ -123,6 +123,7 @@ public sealed class ShortcutEditor : Window
     public ShortcutEditor(Dictionary<string, object> input, bool validate, bool hidden)
     {
         request = input; validation = validate; noShow = hidden;
+        if (validation) validationCommands = new List<object>();
         UserPreferencesStorage.Schema(input);
         token = UserPreferencesStorage.String(input, "token");
         if (token.Length < 1 || token.Length > 256 || token.Any(Char.IsControl)) throw new InvalidDataException("无效的窗口连接。");
@@ -569,8 +570,12 @@ public sealed class ShortcutEditor : Window
     }
     void Send(object[] command)
     {
-        sent.Add(command);
-        if (!validation) writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence }));
+        if (validationCommands != null)
+        {
+            validationCommands.Add(command);
+            return;
+        }
+        writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence }));
     }
     void Tick(object sender, EventArgs e)
     {
@@ -693,7 +698,7 @@ public sealed class ShortcutEditor : Window
 
         result["visible_order"]=visibleRows.Select(x=>x.Id).ToArray();result["visible_rows"]=visibleRows.Count;
         result["dirty"]=Dirty;result["dirty_count"]=DirtyCount;result["modified_count"]=ModifiedCount;result["can_save"]=save.IsEnabled;result["save_label"]=save.Content;
-        result["stale"]=stale;result["saving"]=saving;result["status"]=status.Text;result["status_color"]=status.Foreground.ToString();result["commands"]=sent.ToArray();result["revision"]=revision;
+        result["stale"]=stale;result["saving"]=saving;result["status"]=status.Text;result["status_color"]=status.Foreground.ToString();result["commands"]=validationCommands.ToArray();result["revision"]=revision;
         result["close_enabled"]=!saving;result["close_attempts"]=closeAttempts.ToArray();result["discard_checks"]=discardChecks;result["reset_confirmations"]=resetConfirmations;
         result["categories"]=categoryButtons.ToDictionary(x=>x.Key,x=>x.Key=="all"?rows.Count:rows.Count(row=>row.Group==x.Key));result["category"]=category;result["filter"]=activeFilter;
         result["capture_id"]=captureId;result["capture_index"]=capture;result["expanded_id"]=expandedId;result["empty_visible"]=emptyState.Visibility==Visibility.Visible;

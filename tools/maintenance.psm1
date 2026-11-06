@@ -569,12 +569,9 @@ function Invoke-KitMaintenance {
     if ($Operation -eq 'Restore') { if (-not $state.view.canRestore) { throw ('无法还原上一步。' + $state.view.reason) } }
     elseif (-not $state.view.eligible) { throw $state.view.reason }
     if (($Operation -eq 'Recover') -ne [bool]$state.pending) { throw '当前状态与所选操作不一致，请重新检查。' }
-    $locks = @{}; $mutex = $null; $ownsMutex = $false
+    $locks = @{}; $mutex = $null
     try {
-        $name = 'Local\mpvnet-kit-maintenance-' + (Get-MaintenanceHashParts @($state.context.target.ToLowerInvariant()))
-        $mutex = New-Object Threading.Mutex($false, $name)
-        try { $ownsMutex = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $ownsMutex = $true }
-        if (-not $ownsMutex) { throw '另一个安装器正在维护此配置目录，请待其结束后重新检查。' }
+        $mutex = Enter-KitMaintenanceMutex $state.context.target
         Add-MaintenancePlanLocks $state $locks
         $current = Get-MaintenanceState $PlayerPath $ConfigDirectory $BackupRoot $PackageRoot
         $currentToken = if ($Operation -eq 'Restore') { $current.view.restorePlanToken } else { $current.view.planToken }
@@ -592,8 +589,7 @@ function Invoke-KitMaintenance {
         return Invoke-MaintenanceApply $state $PlayerPath $ConfigDirectory $locks
     } finally {
         foreach ($handle in $locks.Values) { $handle.Dispose() }
-        if ($ownsMutex) { $mutex.ReleaseMutex() }
-        if ($mutex) { $mutex.Dispose() }
+        Exit-KitMaintenanceMutex $mutex
     }
 }
 function Write-KitMaintenanceResult($Value, [ValidateSet('Json', 'Text')][string]$OutputFormat = 'Json', [switch]$Details) {

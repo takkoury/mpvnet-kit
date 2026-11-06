@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 import unittest
 
 from support.install_fixtures import (create_fixture_root, checked_fixture_root, package_directory, powershell_path, load_release_files, run_recorded)
@@ -269,6 +270,7 @@ Import-Module (Join-Path $PackageRoot 'tools/maintenance.psm1')
  $script:FixtureWrites=0; $script:FixtureAfterWrites=$AfterWrites
  Set-Item Function:script:Write-MaintenanceTargetFile {
   param($Path,$Bytes,$ExpectedHash)
+  if ($script:FixtureAfterWrites -eq 0) { [Environment]::Exit(77) }
   & $script:FixtureOriginalWriter $Path $Bytes $ExpectedHash
   $script:FixtureWrites++
   if ($script:FixtureWrites -eq $script:FixtureAfterWrites) { [Environment]::Exit(77) }
@@ -442,6 +444,92 @@ if (-not $failure) { throw 'Enumeration failure was ignored' }
             capture_output=True, timeout=60)
         self.assertEqual(restored.returncode, 0, restored.stderr.decode('utf-8', errors='replace'))
         self.assertEqual(files(self.target), before)
+
+    def legacy_command(self, operation, backup_manifest=None, package=None):
+        args = [str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                str(self.package / ('tools/' + operation + '.ps1'))]
+        if operation == 'restore':
+            args += ['-BackupManifest', backup_manifest]
+        else:
+            args += ['-PlayerPath', str(self.player), '-ConfigDirectory', str(self.target),
+                     '-BackupRoot', str(self.backup), '-PackageRoot', str(package or self.package)]
+        return args + ['-Apply']
+
+    def test_legacy_writers_refuse_pending_before_first_write_without_changing_backup(self):
+        self.user_state()
+        installed = self.install()
+        prior = files(self.target)
+        package = self.updated_package()
+        plan = self.invoke(package=package)
+        self.interrupt('Apply', plan['planToken'], package=package, after_writes=0)
+        interrupted = files(self.target), files(self.backup)
+        for operation in ('install', 'restore'):
+            # Install is deliberately a no-op candidate: pending recovery still wins.
+            result = subprocess.run(self.legacy_command(operation, installed['backupManifest']),
+                                    capture_output=True, timeout=60)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('未完成的维护操作', result.stdout.decode('utf-8-sig'))
+            self.assertEqual((files(self.target), files(self.backup)), interrupted)
+        recovery = self.invoke(package=package)
+        self.invoke('Recover', recovery['planToken'], package=package)
+        self.assertEqual(files(self.target), prior)
+
+    def test_legacy_and_unified_writers_share_target_mutex(self):
+        self.user_state()
+        installed = self.install()
+        package = self.updated_package()
+        plan = self.invoke(package=package)
+        before = files(self.target), files(self.backup)
+        holder = self.case / 'hold-target.ps1'
+        ready = self.case / 'mutex-ready.txt'
+        holder.write_text('''param($Module,$Target,$Ready)
+$ErrorActionPreference='Stop'
+Import-Module $Module
+$mutex=Enter-KitMaintenanceMutex $Target
+try { [IO.File]::WriteAllText($Ready,'locked'); [void][Console]::ReadLine() }
+finally { Exit-KitMaintenanceMutex $mutex }
+''', encoding='utf-8-sig')
+        process = subprocess.Popen([str(self.ps), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(holder),
+                                    str(self.package / 'tools/common.psm1'), str(self.target), str(ready)],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            deadline = time.monotonic() + 15
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(.025)
+            self.assertTrue(ready.exists(), 'Mutex holder did not become ready')
+            self.assertEqual(ready.read_bytes(), b'locked')
+            for operation in ('install', 'restore'):
+                result = subprocess.run(self.legacy_command(operation, installed['backupManifest'], package),
+                                        capture_output=True, timeout=60)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('另一个安装器', result.stdout.decode('utf-8-sig'))
+            self.invoke('Apply', plan['planToken'], package=package, expected=1)
+            self.assertEqual((files(self.target), files(self.backup)), before)
+        finally:
+            stdout, stderr = process.communicate(input=b'\n', timeout=15)
+            (self.case / 'mutex-holder.stdout').write_bytes(stdout)
+            (self.case / 'mutex-holder.stderr').write_bytes(stderr)
+        self.assertEqual(process.returncode, 0)
+        self.invoke('Apply', plan['planToken'], package=package)
+
+    def test_restored_legacy_backup_noop_still_refuses_pending(self):
+        self.user_state()
+        installed = self.install()
+        command = self.legacy_command('restore', installed['backupManifest'])
+        result = subprocess.run(command, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = self.invoke()
+        self.interrupt('Apply', plan['planToken'], after_writes=0)
+        before = files(self.target), files(self.backup)
+        result = subprocess.run(command, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('未完成的维护操作', result.stdout.decode('utf-8-sig'))
+        self.assertEqual((files(self.target), files(self.backup)), before)
+        recovery = self.invoke()
+        self.invoke('Recover', recovery['planToken'])
+        result = subprocess.run(command, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_package_cannot_manage_pending_marker(self):
         package = self.case / 'invalid-package'; shutil.copytree(self.package, package)

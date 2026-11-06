@@ -158,34 +158,40 @@ public static class UserPreferencesStorage
     static string LocalDocument(string raw, Dictionary<string, object> changes)
     {
         var values = ParseLocal(raw);
+        var edits = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in changes)
         {
-            if (Array.IndexOf(LocalNames, entry.Key) < 0 || !(entry.Value is string))
+            string value = entry.Value as string;
+            if (!values.ContainsKey(entry.Key) || value == null)
                 throw new InvalidDataException("本机路径项目或值无效。");
-            if ((string)entry.Value != "") Absolute((string)entry.Value);
+            // The editor submits every path. Existing values may use legacy formats such as UNC.
+            if (System.String.Equals(value, (string)values[entry.Key], StringComparison.Ordinal)) continue;
+            if (value.Length > 0) Absolute(value);
+            edits.Add(entry.Key, value);
         }
+        if (edits.Count == 0) return raw;
+
         var lines = LocalLines(raw);
         string ending = "\r\n";
         foreach (LocalLine line in lines) if (line.Ending != "") { ending = line.Ending; break; }
         var result = new StringBuilder();
-        var seen = new HashSet<string>();
         foreach (LocalLine line in lines)
         {
-            object value;
-            if (line.Key != null && changes.TryGetValue(line.Key, out value))
+            string value;
+            if (line.Key == null || !edits.TryGetValue(line.Key, out value))
             {
-                seen.Add(line.Key);
-                if ((string)value == "") continue;
-                if ((string)value != (string)values[line.Key]) { result.Append(line.Key).Append('=').Append((string)value).Append(line.Ending); continue; }
+                result.Append(line.Body).Append(line.Ending);
+                continue;
             }
-            result.Append(line.Body).Append(line.Ending);
+            edits.Remove(line.Key);
+            if (value.Length > 0) result.Append(line.Key).Append('=').Append(value).Append(line.Ending);
         }
         foreach (string name in LocalNames)
         {
-            object value;
-            if (!changes.TryGetValue(name, out value) || seen.Contains(name) || (string)value == "") continue;
+            string value;
+            if (!edits.TryGetValue(name, out value)) continue;
             if (result.Length > 0 && result[result.Length - 1] != '\n') result.Append(ending);
-            result.Append(name).Append('=').Append((string)value).Append(ending);
+            result.Append(name).Append('=').Append(value).Append(ending);
         }
         return result.ToString();
     }

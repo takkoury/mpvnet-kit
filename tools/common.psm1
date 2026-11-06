@@ -33,6 +33,34 @@ function Get-KitTokenHash([object[]]$Parts) {
         return Get-KitHashBytes $stream.ToArray()
     } finally { $writer.Dispose(); $stream.Dispose() }
 }
+function Enter-KitMaintenanceMutex([string]$Target) {
+    # All writers use the same target identity; directory handles alone only
+    # prevent path replacement and do not serialize competing file writes.
+    $targetRoot = Get-KitRoot $Target
+    $name = 'Local\mpvnet-kit-maintenance-' + (Get-KitTokenHash @($targetRoot.ToLowerInvariant()))
+    $mutex = New-Object Threading.Mutex($false, $name)
+    try {
+        try { $entered = $mutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $entered = $true }
+        if (-not $entered) { throw '另一个安装器正在维护此配置目录，请待其结束后重新检查。' }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+function Exit-KitMaintenanceMutex($Mutex) {
+    if ($null -eq $Mutex) { return }
+    try { $Mutex.ReleaseMutex() } finally { $Mutex.Dispose() }
+}
+function Assert-KitNoPendingMaintenance([string]$Target) {
+    # Legacy commands cannot interpret or resolve a newer transaction journal.
+    # Refuse even an invalid marker rather than guessing that it is safe to write.
+    $path = Get-KitPath $Target '.mpvnet-kit-operation.json'
+    if ([IO.File]::Exists($path) -or [IO.Directory]::Exists($path)) {
+        throw '检测到未完成的维护操作，请使用统一维护入口恢复后再重试。'
+    }
+}
 function Get-KitRoot([string]$Path) {
     if (-not $Path) { throw 'An absolute Windows path is required.' }
     if ($Path.StartsWith('\\?\') -or $Path.StartsWith('\\.\')) { throw 'Device paths are not supported.' }
@@ -415,13 +443,16 @@ function Invoke-KitInstall([string]$PlayerPath, [string]$ConfigDirectory, [strin
     if (-not $Apply) { return $plan.view }
     if (-not $ConfigDirectory -and -not $ExpectedPlanToken) { throw 'Automatic target Apply requires -ExpectedPlanToken from a reviewed preview.' }
     if ($ExpectedPlanToken -and $ExpectedPlanToken -cne $plan.planToken) { throw 'Install plan changed; preview and confirm the new plan before Apply.' }
-    if ($plan.noop) { return $plan.view }
-    $locks = @{}
+    $locks = @{}; $mutex = $null
     try {
+        $mutex = Enter-KitMaintenanceMutex $plan.target
+        Assert-KitNoPendingMaintenance $plan.target
+        if ($plan.noop) { return $plan.view }
         # Acquire every existing directory chain before creating target or backup entries.
         foreach ($root in @($plan.target, $plan.backupRoot, $plan.package.root)) { Add-KitExistingDirectoryLocks $root $locks }
         foreach ($f in $plan.files) { Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName($f.target)) $locks }
         foreach ($f in $plan.package.runtime) { Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName((Get-KitPath $plan.package.root ('config/' + $f.path)))) $locks }
+        Assert-KitNoPendingMaintenance $plan.target
         $current = Get-KitInstallPlan $PlayerPath $ConfigDirectory $BackupRoot $PackageRoot
         if ($current.planToken -cne $plan.planToken) { throw 'Install plan changed while acquiring directory locks; preview again.' }
         $plan = $current
@@ -478,7 +509,10 @@ function Invoke-KitInstall([string]$PlayerPath, [string]$ConfigDirectory, [strin
             try { [void](Save-KitStatus $directory $(if ($rollbackErrors.Count) { 'rollback-incomplete' } else { 'rolled-back' }) ($failure + '; ' + ($rollbackErrors -join '; ')) $statusSha) } catch { $rollbackErrors += $_.Exception.Message }
             throw "Installation failed. Best-effort rollback recorded in $directory. $failure"
         }
-    } finally { foreach ($handle in $locks.Values) { $handle.Dispose() } }
+    } finally {
+        foreach ($handle in $locks.Values) { $handle.Dispose() }
+        Exit-KitMaintenanceMutex $mutex
+    }
 }
 function Test-KitRestored($Loaded) {
     $record = $Loaded.value
@@ -493,42 +527,62 @@ function Test-KitRestored($Loaded) {
 }
 function Invoke-KitRestore([string]$BackupManifest, [switch]$Apply) {
     $loaded = Read-KitRecord $BackupManifest; $record = $loaded.value
-    $statusPath = Get-KitPath $loaded.directory 'status.json'
-    $statusSha = Get-KitHash $statusPath
-    $status = if ($statusSha) { Read-KitJson $statusPath } else { $null }
-    if ($status -and $status.state -eq 'restored') {
-        Test-KitRestored $loaded
-        return [ordered]@{ mode = 'preview'; action = 'no-op'; target = $loaded.target; id = $record.id; reason = 'This backup is already fully restored.' }
-    }
-    $active = Get-KitReceipt $loaded.target
-    if (-not $active -or $active.value.id -cne $record.id -or $active.sha256 -cne $record.receiptSha256) { throw 'Restore requires the latest active receipt ID; wrong order or missing state refused.' }
-    foreach ($f in $record.files) { Assert-KitExpected (Get-KitPath $loaded.target $f.path) $f.newSha256 }
-    $previousBytes = $null
-    if ($record.previousReceipt.exists) {
-        $previousBytes = [IO.File]::ReadAllBytes((Get-KitPath $loaded.directory 'previous-receipt.json'))
-        $previous = $script:KitUtf8.GetString($previousBytes) | ConvertFrom-Json
-        [void](Assert-KitReceiptData $previous $loaded.target $record.previousReceipt.sha256)
-        if ($previous.id -ceq $record.id) { throw 'Cyclic receipt refused.' }
-    }
-    $view = [ordered]@{ mode = 'preview'; action = 'restore'; target = $loaded.target; id = $record.id; changedFiles = @($record.files | Where-Object changed).Count;
-        requirement = 'Close affected player instances before Apply.'; files = $record.files }
-    if (-not $Apply) { return $view }
+    $locks = @{}; $mutex = $null
     try {
-        foreach ($f in $record.files) {
-            if (-not $f.changed) { continue }
-            $path = Get-KitPath $loaded.target $f.path
-            if ($f.oldExists) { Write-KitFile $path ([IO.File]::ReadAllBytes((Get-KitPath $loaded.directory $f.backup))) $f.newSha256 }
-            else { Remove-KitFile $path $f.newSha256 }
+        if ($Apply) {
+            $mutex = Enter-KitMaintenanceMutex $loaded.target
+            Assert-KitNoPendingMaintenance $loaded.target
         }
-        if ($record.previousReceipt.exists) { Write-KitFile $active.path $previousBytes $active.sha256 }
-        else { Remove-KitFile $active.path $active.sha256 }
-        [void](Save-KitStatus $loaded.directory 'restored' 'Previous files and receipt restored; backup retained.' $statusSha)
-        $view['mode'] = 'applied'
-        return $view
-    } catch {
-        $failure = $_.Exception.Message
-        try { [void](Save-KitStatus $loaded.directory 'restore-incomplete' $failure $statusSha) } catch { }
-        throw "Restore interrupted; retained backup and report in $($loaded.directory). Partial state is preserved; do not blindly retry. Compare retained hashes before manual recovery."
+        $statusPath = Get-KitPath $loaded.directory 'status.json'
+        $statusSha = Get-KitHash $statusPath
+        $status = if ($statusSha) { Read-KitJson $statusPath } else { $null }
+        if ($status -and $status.state -eq 'restored') {
+            Test-KitRestored $loaded
+            return [ordered]@{ mode = 'preview'; action = 'no-op'; target = $loaded.target; id = $record.id; reason = 'This backup is already fully restored.' }
+        }
+        $active = Get-KitReceipt $loaded.target
+        if (-not $active -or $active.value.id -cne $record.id -or $active.sha256 -cne $record.receiptSha256) { throw 'Restore requires the latest active receipt ID; wrong order or missing state refused.' }
+        foreach ($f in $record.files) { Assert-KitExpected (Get-KitPath $loaded.target $f.path) $f.newSha256 }
+        $previousBytes = $null
+        if ($record.previousReceipt.exists) {
+            $previousBytes = [IO.File]::ReadAllBytes((Get-KitPath $loaded.directory 'previous-receipt.json'))
+            $previous = $script:KitUtf8.GetString($previousBytes) | ConvertFrom-Json
+            [void](Assert-KitReceiptData $previous $loaded.target $record.previousReceipt.sha256)
+            if ($previous.id -ceq $record.id) { throw 'Cyclic receipt refused.' }
+        }
+        $view = [ordered]@{ mode = 'preview'; action = 'restore'; target = $loaded.target; id = $record.id; changedFiles = @($record.files | Where-Object changed).Count;
+            requirement = 'Close affected player instances before Apply.'; files = $record.files }
+        if (-not $Apply) { return $view }
+        foreach ($root in @($loaded.target, $loaded.directory)) { Add-KitExistingDirectoryLocks $root $locks }
+        foreach ($f in $record.files) {
+            Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName((Get-KitPath $loaded.target $f.path))) $locks
+            if ($f.backup) { Add-KitExistingDirectoryLocks ([IO.Path]::GetDirectoryName((Get-KitPath $loaded.directory $f.backup))) $locks }
+        }
+        Assert-KitNoPendingMaintenance $loaded.target
+        # Refusal before the write phase must leave backup status untouched too.
+        $current = Get-KitReceipt $loaded.target
+        if (-not $current -or $current.sha256 -cne $active.sha256) { throw '安装记录已变化，请重新检查。' }
+        foreach ($f in $record.files) { Assert-KitExpected (Get-KitPath $loaded.target $f.path) $f.newSha256 }
+        try {
+            foreach ($f in $record.files) {
+                if (-not $f.changed) { continue }
+                $path = Get-KitPath $loaded.target $f.path
+                if ($f.oldExists) { Write-KitFile $path ([IO.File]::ReadAllBytes((Get-KitPath $loaded.directory $f.backup))) $f.newSha256 }
+                else { Remove-KitFile $path $f.newSha256 }
+            }
+            if ($record.previousReceipt.exists) { Write-KitFile $active.path $previousBytes $active.sha256 }
+            else { Remove-KitFile $active.path $active.sha256 }
+            [void](Save-KitStatus $loaded.directory 'restored' 'Previous files and receipt restored; backup retained.' $statusSha)
+            $view['mode'] = 'applied'
+            return $view
+        } catch {
+            $failure = $_.Exception.Message
+            try { [void](Save-KitStatus $loaded.directory 'restore-incomplete' $failure $statusSha) } catch { }
+            throw "Restore interrupted; retained backup and report in $($loaded.directory). Partial state is preserved; do not blindly retry. Compare retained hashes before manual recovery."
+        }
+    } finally {
+        foreach ($handle in $locks.Values) { $handle.Dispose() }
+        Exit-KitMaintenanceMutex $mutex
     }
 }
 function Write-KitResult($Value, [ValidateSet('Json', 'Text')][string]$OutputFormat = 'Json', [switch]$Details) {
@@ -602,4 +656,4 @@ function Write-KitResult($Value, [ValidateSet('Json', 'Text')][string]$OutputFor
     [Console]::WriteLine(($lines -join "`r`n"))
 }
 
-Export-ModuleMember -Function Get-KitHash,Get-KitRoot,Get-KitPath,Get-KitPlayer,Get-KitPackage,Get-KitTargetContext,Get-KitDirectoryIdentity,Initialize-KitNative,Lock-KitDirectory,Add-KitExistingDirectoryLocks,Get-KitInstallPlan,Invoke-KitInstall,Invoke-KitRestore,Write-KitResult
+Export-ModuleMember -Function Get-KitHash,Get-KitRoot,Get-KitPath,Get-KitPlayer,Get-KitPackage,Get-KitTargetContext,Get-KitDirectoryIdentity,Initialize-KitNative,Lock-KitDirectory,Add-KitExistingDirectoryLocks,Enter-KitMaintenanceMutex,Exit-KitMaintenanceMutex,Get-KitInstallPlan,Invoke-KitInstall,Invoke-KitRestore,Write-KitResult

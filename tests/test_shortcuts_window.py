@@ -435,11 +435,11 @@ class ShortcutsWindow(unittest.TestCase):
         self.assertEqual(data['rows'][0]['keys'], ['p'])
         self.assertIn('重新录入', data['status'])
 
-    def test_hidden_ipc_close_and_parent_exit(self):
+    def test_hidden_ipc_close_and_parent_exit_without_validation_capture(self):
         for mode in ['ClientClose', 'ParentExit']:
             with self.subTest(mode=mode):
                 completed = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
-                                            '-File', str(ROOT / 'tests/fixtures/shortcuts_ipc.ps1'),
+                                            '-File', str(ROOT / 'tests/fixtures/window_ipc.ps1'),
                                             '-SourcePath', str(HELPER), '-Mode', mode], capture_output=True, timeout=30)
                 result = json.loads(completed.stdout.decode('utf-8-sig'))
                 self.assertEqual(completed.returncode, 0, result)

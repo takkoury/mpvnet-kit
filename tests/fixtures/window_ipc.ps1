@@ -1,15 +1,23 @@
-param([Parameter(Mandatory=$true)][string]$SourcePath, [ValidateSet('ClientClose','ParentExit')][string]$Mode = 'ClientClose')
+param(
+    [Parameter(Mandatory=$true)][string]$SourcePath,
+    [ValidateSet('ClientClose','ParentExit')][string]$Mode = 'ClientClose',
+    [ValidateSet('Settings','Shortcuts')][string]$Editor = 'Shortcuts'
+)
 $ErrorActionPreference = 'Stop'
+$scriptName = 'user_' + $Editor.ToLowerInvariant()
+$eventPrefix = 'mpvnet-' + $Editor.ToLowerInvariant()
+$editorType = if ($Editor -eq 'Settings') { 'SettingsEditor' } else { 'ShortcutEditor' }
+$startupCommands = if ($Editor -eq 'Settings') { 4 } else { 3 }
 $encoding = New-Object Text.UTF8Encoding($false)
 $output = New-Object IO.StreamWriter([Console]::OpenStandardOutput(), $encoding)
 $output.AutoFlush = $true
-$ownedFolder = Join-Path ([IO.Path]::GetTempPath()) ('mpvnet-shortcuts-ipc-' + [Guid]::NewGuid().ToString('N'))
+$ownedFolder = Join-Path ([IO.Path]::GetTempPath()) ('mpvnet-window-ipc-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($ownedFolder)
 $server = $null
 $helperProcess = $null
 $ownedParent = $null
 try {
-    $pipeName = 'mpvnet-shortcuts-fixture-' + [Guid]::NewGuid().ToString('N')
+    $pipeName = 'mpvnet-window-fixture-' + [Guid]::NewGuid().ToString('N')
     $server = New-Object IO.Pipes.NamedPipeServerStream($pipeName, [IO.Pipes.PipeDirection]::InOut, 1,
         [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous)
     $connect = $server.WaitForConnectionAsync()
@@ -26,11 +34,13 @@ try {
     }
     $token = 'fixture-token-123'
     $request = Join-Path $ownedFolder 'editor-request.json'
-    [IO.File]::WriteAllText($request, (@{schema=1;pipe=$pipeName;parent_pid=$parentId;script='user_shortcuts';token=$token;
+    [IO.File]::WriteAllText($request, (@{schema=1;pipe=$pipeName;parent_pid=$parentId;script=$scriptName;token=$token;
         settings_path=(Join-Path $ownedFolder 'mpvnet-user.json')} | ConvertTo-Json -Compress), $encoding)
     $start = New-Object Diagnostics.ProcessStartInfo
     $start.FileName = 'powershell.exe'
-    $start.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $SourcePath + '" -Operation Editor -RequestPath "' + $request + '" -NoShow'
+    $probe = Join-Path $PSScriptRoot 'window_ipc_capture.ps1'
+    $start.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $probe + '" -SourcePath "' + $SourcePath +
+        '" -RequestPath "' + $request + '" -EditorType ' + $editorType
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
@@ -45,21 +55,24 @@ try {
     $writer = New-Object IO.StreamWriter($server, $encoding)
     $writer.AutoFlush = $true
     $messages = New-Object 'Collections.Generic.List[object]'
-    for ($count=0; $count -lt 3; $count++) {
+    for ($count=0; $count -lt $startupCommands; $count++) {
         $read = $reader.ReadLineAsync()
         if (-not $read.Wait(5000)) { throw 'ready-timeout' }
-        $messages.Add(($read.Result | ConvertFrom-Json))
+        if ($null -eq $read.Result) { throw 'ready-eof' }
+        $message = $read.Result | ConvertFrom-Json
+        if ($message.request_id -ne ($count + 1)) { throw 'request-sequence' }
+        $messages.Add($message)
     }
     $ready = @($messages | Where-Object { $_.command[2] -eq 'editor-ready' })
     if ($ready.Count -ne 1 -or $ready[0].command[3] -ne $token) { throw 'ready-protocol' }
-    $wrong = @{event='client-message';args=@('mpvnet-shortcuts-close','different-token')} | ConvertTo-Json -Compress
+    $wrong = @{event='client-message';args=@("$eventPrefix-close",'different-token')} | ConvertTo-Json -Compress
     $writer.WriteLine($wrong)
     Start-Sleep -Milliseconds 250
     $wrongTokenIgnored = -not $helperProcess.HasExited
     if (-not $wrongTokenIgnored) { throw 'wrong-token-closed-helper' }
     if ($Mode -eq 'ClientClose') {
-        $writer.WriteLine((@{event='client-message';args=@('mpvnet-shortcuts-show',$token)} | ConvertTo-Json -Compress))
-        $writer.WriteLine((@{event='client-message';args=@('mpvnet-shortcuts-close',$token)} | ConvertTo-Json -Compress))
+        $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-show",$token)} | ConvertTo-Json -Compress))
+        $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-close",$token)} | ConvertTo-Json -Compress))
     } else {
         $ownedParent.StandardInput.WriteLine('exit')
         if (-not $ownedParent.WaitForExit(5000)) { throw 'owned-parent-exit-timeout' }
@@ -68,8 +81,9 @@ try {
     if (-not $helperProcess.WaitForExit(5000)) { throw ('helper-exit-timeout; notification=' + $read.IsCompleted) }
     if (-not $read.Wait(5000)) { throw 'close-notification-timeout' }
     $close = $read.Result | ConvertFrom-Json
-    $reply = $helperOut.Result | ConvertFrom-Json
-    if ($helperProcess.ExitCode -ne 0 -or -not $reply.ok -or $helperErr.Result) { throw ('helper-failed: ' + $helperOut.Result + ' ' + $helperErr.Result) }
+    if ($helperProcess.ExitCode -ne 0 -or $helperErr.Result) { throw ('helper-failed: ' + $helperOut.Result + ' ' + $helperErr.Result) }
+    if ($Editor -eq 'Shortcuts' -and -not ($helperOut.Result | ConvertFrom-Json).ok) { throw ('helper-failed: ' + $helperOut.Result) }
+    if ($close.request_id -ne ($startupCommands + 1)) { throw 'close-request-sequence' }
     $output.WriteLine((@{ok=$true;wrong_token_ignored=$wrongTokenIgnored;ready=$ready[0].command;close=$close.command;
         helper_exit=$helperProcess.ExitCode;mode=$Mode;settings_untouched=(-not [IO.File]::Exists((Join-Path $ownedFolder 'mpvnet-user.json')))} | ConvertTo-Json -Compress -Depth 6))
 } catch {

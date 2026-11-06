@@ -1,6 +1,7 @@
 """The source checkout can build a complete package without local-only files."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,28 +17,24 @@ PACKAGER = ROOT / 'dev-tools/prepare-release.py'
 
 
 class PackageBuild(unittest.TestCase):
-    def test_stale_menu_binary_is_rejected_before_package_writes(self):
+    def test_missing_menu_sources_and_stale_binary_are_rejected_before_writes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            source = root / 'source'
-            source.mkdir()
+            target = 'config/extensions/KitContextMenu/KitContextMenu.dll'
+            source, spec, _ = self.fixture(root, {target: (ROOT / target).read_bytes()})
+            destination = root / 'package'
+            with self.assertRaisesRegex(ValueError, 'missing or linked extension source'):
+                stage_package(source, destination, spec, apply=True)
+            self.assertFalse(destination.exists())
             inputs = source / 'src/context-menu'
             inputs.mkdir(parents=True)
             for name in ('ContextMenu.csproj', 'ContextMenuExtension.cs', 'MenuPresentation.cs', 'MenuStyles.xaml'):
                 (inputs / name).write_bytes((ROOT / 'src/context-menu' / name).read_bytes())
-            target = 'config/extensions/KitContextMenu/KitContextMenu.dll'
-            binary = source / target
-            binary.parent.mkdir(parents=True)
-            binary.write_bytes((ROOT / target).read_bytes())
-            spec = root / 'map.json'
-            spec.write_text(json.dumps({'schema': 1, 'version': 'test', 'files': [
-                {'source': target, 'destination': target, 'component': 'author', 'origin': 'test'}
-            ]}), encoding='utf-8')
-            stage_package(source, root / 'valid', spec)
+            stage_package(source, destination, spec)
             (inputs / 'MenuStyles.xaml').write_bytes(b'changed source')
             with self.assertRaisesRegex(ValueError, 'does not match its sources'):
-                stage_package(source, root / 'invalid', spec, apply=True)
-            self.assertFalse((root / 'invalid').exists())
+                stage_package(source, destination, spec, apply=True)
+            self.assertFalse(destination.exists())
 
     def fixture(self, root, files=None):
         files = files or {
@@ -69,6 +66,13 @@ class PackageBuild(unittest.TestCase):
     def snapshot(self, directory):
         return {p.relative_to(directory).as_posix(): p.read_bytes()
                 for p in directory.rglob('*') if p.is_file()}
+
+    def link_directory(self, link, target):
+        if os.name == 'nt':
+            subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/j', str(link), str(target)],
+                           check=True, capture_output=True)
+        else:
+            link.symlink_to(target, target_is_directory=True)
 
     def invoke(self, destination, *args, expected=0):
         result = subprocess.run([
@@ -104,6 +108,80 @@ class PackageBuild(unittest.TestCase):
                 self.assertEqual(set(archive.namelist()), {
                     'mpvnet-kit-' + manifest['version'] + '/' + n for n in names | {'manifest.json'}
                 })
+
+    def test_paths_are_canonicalized_before_isolation_checks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            source, spec, _ = self.fixture(root)
+            (root / 'detour').mkdir()
+            alias = root / 'detour' / '..'
+            original = self.snapshot(source)
+            for source_path, destination in ((source, alias / 'source' / 'nested'),
+                                             (alias / 'source', source / 'nested'),
+                                             (source, alias)):
+                with self.subTest(source=source_path, destination=destination):
+                    with self.assertRaisesRegex(ValueError, 'must be separate trees'):
+                        stage_package(source_path, destination, spec, apply=True)
+            self.assertEqual(original, self.snapshot(source))
+            destination = root / 'package'
+            stage_package(alias / 'source', alias / 'package', spec, apply=True)
+            with self.assertRaisesRegex(ValueError, 'output must be outside'):
+                package_zip(destination, alias / 'package' / 'trial.zip', apply=True)
+            self.assertFalse((destination / 'trial.zip').exists())
+            outside = root / 'trial.zip'
+            self.assertEqual(package_zip(destination, alias / 'trial.zip', apply=True)['output'], str(outside))
+            self.assertTrue(outside.is_file())
+
+    def test_stage_and_zip_refuse_reparse_points_in_the_original_chain_and_entries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            source, spec, mapping = self.fixture(root)
+            linked_target = root / 'linked-target'
+            linked_target.mkdir()
+            (linked_target / 'data.txt').write_bytes(b'outside data')
+            link = root / 'link'
+            self.link_directory(link, linked_target)
+            alias = link / '..'
+            destination, output = root / 'package', root / 'trial.zip'
+            with self.assertRaisesRegex(ValueError, 'link or reparse point'):
+                stage_package(source, alias / 'package', spec, apply=True)
+            self.assertFalse(destination.exists())
+            stage_package(source, destination, spec, apply=True)
+            for zip_source, zip_output in ((alias / 'package', output), (destination, alias / 'trial.zip')):
+                with self.subTest(source=zip_source, output=zip_output):
+                    with self.assertRaisesRegex(ValueError, 'link or reparse point'):
+                        package_zip(zip_source, zip_output, apply=True)
+
+            self.link_directory(source / 'linked', linked_target)
+            mapping['files'].append({'source': 'linked/data.txt', 'destination': 'data.txt',
+                                     'component': 'author', 'origin': 'test'})
+            spec.write_text(json.dumps(mapping), encoding='utf-8')
+            before = self.snapshot(destination)
+            with self.assertRaisesRegex(ValueError, 'link or reparse point'):
+                stage_package(source, destination, spec, apply=True)
+            self.assertEqual(before, self.snapshot(destination))
+            self.write_manifest(source, [{'path': 'linked/data.txt', 'sha256': hashlib.sha256(b'outside data').hexdigest()}])
+            with self.assertRaisesRegex(ValueError, 'link or reparse point'):
+                package_zip(source, output, apply=True)
+            self.assertFalse(output.exists())
+            self.assertFalse((root / 'trial.zip.sha256').exists())
+
+    def test_windows_device_paths_cannot_alias_another_root(self):
+        if os.name != 'nt':
+            return
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            source, spec, _ = self.fixture(root)
+            destination = root / 'package'
+            alias = Path('\\\\?\\' + str(source))
+            with self.assertRaisesRegex(ValueError, 'device paths are not supported'):
+                stage_package(source, alias / 'nested', spec, apply=True)
+            self.assertFalse((source / 'nested').exists())
+            stage_package(source, destination, spec, apply=True)
+            alias = Path('\\\\?\\' + str(destination))
+            with self.assertRaisesRegex(ValueError, 'device paths are not supported'):
+                package_zip(destination, alias / 'trial.zip', apply=True)
+            self.assertFalse((destination / 'trial.zip').exists())
 
     def test_modified_package_is_preserved_and_git_checkout_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -166,6 +244,7 @@ class PackageBuild(unittest.TestCase):
 
     def test_invalid_package_paths_are_rejected_before_stage_or_zip_write(self):
         cases = [
+            ('.', 'unsafe relative path'),
             ('../outside.txt', 'unsafe relative path'),
             ('config/NUL.txt', 'nonportable Windows path'),
             ('config/trailing.', 'nonportable Windows path'),
@@ -173,6 +252,11 @@ class PackageBuild(unittest.TestCase):
             ('config/bad?.txt', 'nonportable Windows path'),
             ('MANIFEST.JSON', 'reserved manifest entry'),
             ('.GIT/config', 'reserved manifest entry'),
+            ('config/script-opts/MPVNET-LOCAL.CONF', 'private or state file'),
+            ('config/.mpvnet-kit-install.json', 'private or state file'),
+            ('config/.MPVNET-KIT-OPERATION.JSON', 'private or state file'),
+            ('config/local.conf', 'private or state runtime path'),
+            ('config/watch_later/file', 'private or state runtime path'),
         ]
         for name, error in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
@@ -187,6 +271,46 @@ class PackageBuild(unittest.TestCase):
                     package_zip(source, root / 'trial.zip', apply=True)
                 self.assertFalse((root / 'package').exists())
                 self.assertFalse((root / 'trial.zip').exists())
+
+    def test_private_and_state_files_cannot_be_exported_under_another_name(self):
+        for name in ('script-opts/mpvnet-local.conf', '.mpvnet-kit-operation.json'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, spec, mapping = self.fixture(root, {name: b'private fixture'})
+                mapping['files'][0]['destination'] = 'config/renamed.conf'
+                spec.write_text(json.dumps(mapping), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'private or state file'):
+                    stage_package(source, root / 'package', spec, apply=True)
+                mapping['files'][0]['source'] += '.'
+                spec.write_text(json.dumps(mapping), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'nonportable Windows path'):
+                    stage_package(source, root / 'package', spec, apply=True)
+                self.assertFalse((root / 'package').exists())
+
+    def test_upgrade_notice_limit_applies_to_bytes_in_stage_and_zip(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            notice = 'docs/upgrade-notice.txt'
+            maximum = ('升' * 1365).encode('utf-8') + b'\n'
+            files = {notice: maximum, 'LICENSE': b'Test license', 'LICENSES.md': b'# Licenses'}
+            source, spec, _ = self.fixture(root, files)
+            destination, output = root / 'package', root / 'trial.zip'
+            stage_package(source, destination, spec, apply=True)
+            self.assertEqual((destination / notice).read_bytes(), maximum)
+            self.assertEqual(package_zip(destination, output)['blockers'], [])
+            before = self.snapshot(destination)
+
+            files[notice] += b'!'
+            (source / notice).write_bytes(files[notice])
+            with self.assertRaisesRegex(ValueError, 'upgrade notice exceeds 4096 bytes'):
+                stage_package(source, destination, spec, apply=True)
+            self.assertEqual(before, self.snapshot(destination))
+            self.write_manifest(source, [{'path': name, 'sha256': hashlib.sha256(data).hexdigest()}
+                                         for name, data in files.items()])
+            with self.assertRaisesRegex(ValueError, 'upgrade notice exceeds 4096 bytes'):
+                package_zip(source, output, apply=True)
+            self.assertFalse(output.exists())
+            self.assertFalse((root / 'trial.zip.sha256').exists())
 
     def test_directory_case_collisions_are_rejected_by_both_operations(self):
         with tempfile.TemporaryDirectory() as temp:

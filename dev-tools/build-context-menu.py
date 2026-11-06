@@ -7,11 +7,12 @@ import json
 import os
 from pathlib import Path
 import shutil
-import stat
 import struct
 import subprocess
 import tempfile
 import zlib
+
+from dev_paths import is_link_or_reparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,23 +106,13 @@ def read_host_references(stream):
     return references
 
 
-def _is_link(path):
-    try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return False
-    return stat.S_ISLNK(info.st_mode) or bool(
-        getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-    )
-
-
 def _source_snapshot(source_dir):
-    if any(_is_link(path) for path in (source_dir, *source_dir.parents)):
+    if any(is_link_or_reparse(path) for path in (source_dir, *source_dir.parents)):
         raise ValueError('extension source path contains a link or junction')
     contents = {}
     for name in SOURCE_FILES:
         path = source_dir / name
-        if _is_link(path) or not path.is_file():
+        if is_link_or_reparse(path) or not path.is_file():
             raise ValueError('missing or linked extension source: ' + name)
         with path.open('rb') as stream:
             data = stream.read(1024 * 1024 + 1)
@@ -147,7 +138,7 @@ def source_digest(source_dir):
 def validate_output(output, host, root=ROOT):
     """Require a fresh output outside the source and player/config directories."""
     output = output.absolute()
-    if any(_is_link(path) for path in (output, *output.parents)):
+    if any(is_link_or_reparse(path) for path in (output, *output.parents)):
         raise ValueError('output path contains a link or junction')
     output = output.resolve()
     if output.exists():

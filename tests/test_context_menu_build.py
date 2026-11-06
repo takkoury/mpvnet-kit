@@ -12,8 +12,10 @@ import unittest
 from unittest.mock import patch
 import zlib
 
+from support.dev_imports import DEV_TOOLS
 
-BUILD = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'dev-tools' / 'build-context-menu.py'))
+
+BUILD = runpy.run_path(str(Path(DEV_TOOLS) / 'build-context-menu.py'))
 REFERENCES = {
     'mpvnet.dll': (1, b'MZ synthetic host reference'),
     'libmpvnet.dll': (1, b'MZ synthetic library reference' * 16),

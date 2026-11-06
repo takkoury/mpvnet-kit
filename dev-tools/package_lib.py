@@ -15,6 +15,8 @@ import tempfile
 from urllib.parse import unquote, urlsplit
 import zipfile
 
+from dev_paths import is_link_or_reparse
+
 
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -22,11 +24,9 @@ def _digest(data):
 
 def _check_menu_asset(source, destination, data):
     """Reject a stale checked-in menu payload; ordinary packaging needs no SDK."""
-    if destination != 'config/extensions/KitContextMenu/KitContextMenu.dll':
+    if destination.casefold() != 'config/extensions/kitcontextmenu/kitcontextmenu.dll':
         return
     inputs = source / 'src' / 'context-menu'
-    if not inputs.exists():
-        return  # Already-generated packages contain the validated binary only.
     spec = importlib.util.spec_from_file_location('kit_menu_build', Path(__file__).with_name('build-context-menu.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -42,23 +42,34 @@ def _relative(value):
     if not isinstance(value, str):
         raise ValueError('relative path must be a string: ' + repr(value))
     p = PurePosixPath(value)
-    if not value or p.is_absolute() or '..' in p.parts or '\\' in value or ':' in value or p.as_posix() != value:
-        raise ValueError('unsafe relative path: ' + str(value))
+    if not p.parts or p.is_absolute() or '..' in p.parts or '\\' in value or ':' in value or p.as_posix() != value:
+        raise ValueError('unsafe relative path: ' + value)
+    for part in p.parts:
+        if (part.endswith(('.', ' ')) or re.search(r'[<>"|?*\x00-\x1f]', part)
+                or re.fullmatch(r'(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', part, re.I)):
+            raise ValueError('nonportable Windows path: ' + value)
     return p
 
 
-def _check_user_file(name):
-    if PurePosixPath(name).name.casefold() == 'mpvnet-user.json':
+def _check_exportable_name(name):
+    basename = PurePosixPath(name).name.casefold()
+    if basename == 'mpvnet-user.json':
         raise ValueError('user preferences must not be exported: ' + name)
+    if basename in ('mpvnet-local.conf', '.mpvnet-kit-install.json', '.mpvnet-kit-operation.json'):
+        raise ValueError('private or state file must not be exported: ' + name)
 
 
 def _register_path(name, folded):
     parts = _relative(name).parts
-    if any(part.endswith(('.', ' ')) or re.search(r'[<>\"|?*\x00-\x1f]', part) or re.fullmatch(r'(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', part, re.I) for part in parts):
-        raise ValueError('nonportable Windows path: ' + name)
-    _check_user_file(name)
+    _check_exportable_name(name)
     if name.casefold() == 'manifest.json' or any(p.casefold() == '.git' for p in parts):
         raise ValueError('reserved manifest entry: ' + name)
+    if name.startswith('config/') and not name.casefold().endswith('.example'):
+        # These runtime paths are also refused by the unified maintenance plan.
+        runtime = name[7:].casefold()
+        if (runtime in ('local.conf', 'settings.xml', 'desktop.ini') or runtime.startswith('config/')
+                or runtime.split('/', 1)[0] in ('cache', 'watch_later')):
+            raise ValueError('private or state runtime path must not be exported: ' + name)
     # Check every prefix, including directory names, for Windows collisions.
     for length in range(1, len(parts) + 1):
         prefix = '/'.join(parts[:length])
@@ -88,16 +99,18 @@ def _expected_digest(entry):
     return expected
 
 
+def _check_path_chain(path):
+    if path.drive.startswith(('\\\\?\\', '\\\\.\\')):
+        raise ValueError('device paths are not supported: ' + str(path))
+    for candidate in (*reversed(path.parents), path):
+        if is_link_or_reparse(candidate):
+            raise ValueError('path contains a link or reparse point: ' + str(candidate))
+
+
 def _safe_file(root, name):
-    parts = _relative(name).parts
-    current = root
-    if current.is_symlink():
-        raise ValueError('symlink root: ' + str(root))
-    for part in parts:
-        current = current / part
-        if current.is_symlink():
-            raise ValueError('symlink entry: ' + name)
-    return current
+    path = root.joinpath(*_relative(name).parts)
+    _check_path_chain(path)
+    return path
 
 
 def _heading_slugs(value):
@@ -129,7 +142,9 @@ def _heading_slugs(value):
     return slugs
 
 
-def _inspect_privacy(files):
+def _inspect_contents(files):
+    if len(files.get('docs/upgrade-notice.txt', b'')) > 4096:
+        raise ValueError('package upgrade notice exceeds 4096 bytes')
     forbidden = re.compile(r'(?:[A-Za-z]:[/\\]Users[/\\][^/\\\s]+|/mnt/[a-z]/(?:Users/[^/\s]+|projects)|/home/[^/\s]+|[A-Za-z]:[/\\]projects|mpvnet-[\w-]+-20\d{6}|file://)', re.I)
     for name, data in files.items():
         try:
@@ -141,10 +156,12 @@ def _inspect_privacy(files):
 
 
 def _clean_root(path):
-    path = Path(os.path.abspath(path))
-    if any(p.is_symlink() for p in (path, *path.parents)):
-        raise ValueError('symlink root or ancestor: ' + str(path))
-    return path
+    # Resolving dot segments can hide a link in the original spelling.
+    path = Path(path).absolute()
+    _check_path_chain(path)
+    canonical = path.resolve()
+    _check_path_chain(canonical)
+    return canonical
 
 
 def _markdown_links(files):
@@ -173,13 +190,7 @@ def _markdown_links(files):
 
 def stage_package(source, destination, spec, *, apply=False) -> dict:
     """Validate an allowlist and stage managed files only when apply is true."""
-    source, destination, spec = Path(source), Path(destination), Path(spec)
-    if any(p.is_symlink() for root in (source, destination) for p in (root, *root.parents)):
-        raise ValueError('symlink root or ancestor')
-    source = source.absolute()
-    destination = destination.absolute()
-    if any(p.is_symlink() for root in (source, destination) for p in (root, *root.parents)):
-        raise ValueError('symlink absolute root or ancestor')
+    source, destination, spec = _clean_root(source), _clean_root(destination), Path(spec)
     if destination == source or source in destination.parents or destination in source.parents:
         raise ValueError('source and destination must be separate trees')
     if (destination / '.git').exists():
@@ -190,7 +201,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
     for item in _file_entries(mapping, 'export map'):
         src, dst = item['source'], item['destination']
         _relative(src)
-        _check_user_file(src)
+        _check_exportable_name(src)
         _register_path(dst, folded)
         if dst in contents:
             raise ValueError('duplicate destination: ' + dst)
@@ -205,7 +216,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
     manifest = {'schema': 1, 'version': version, 'status': 'generated-distribution', 'files': entries}
     manifest_data = (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + '\n').encode()
     package_contents = {**contents, 'manifest.json': manifest_data}
-    _inspect_privacy(package_contents)
+    _inspect_contents(package_contents)
     _markdown_links(package_contents)
     old = {}
     manifest_old_data = None
@@ -307,7 +318,7 @@ def package_zip(source, output, *, apply=False) -> dict:
             raise ValueError('SHA256 mismatch: ' + name)
         contents[name] = data
     contents['manifest.json'] = manifest_data
-    _inspect_privacy(contents)
+    _inspect_contents(contents)
     _markdown_links(contents)
     blockers = []
     if 'LICENSE' not in contents or not contents['LICENSE'].strip():

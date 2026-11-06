@@ -65,6 +65,16 @@ def complete_state():
 
 @unittest.skipUnless(os.name == 'nt', 'Requires Windows PowerShell/WPF')
 class SettingsWindow(unittest.TestCase):
+    def test_hidden_editor_sends_ipc_without_allocating_validation_capture(self):
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+            '-File', str(ROOT / 'tests/fixtures/window_ipc.ps1'), '-Editor', 'Settings',
+            '-SourcePath', str(ROOT / 'config/helpers/settings-window.ps1')], capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(result.stderr, b'')
+        data = json.loads(result.stdout.decode('utf-8-sig'))
+        self.assertEqual(data['ready'], ['script-message-to', 'user_settings', 'editor-ready', 'fixture-token-123'])
+        self.assertEqual(data['close'], ['script-message-to', 'user_settings', 'editor-close', 'fixture-token-123', '0'])
+
     def test_shortcut_entry_starts_on_embedded_page(self):
         data = self.run_window(initial=state(open_page='shortcuts', open_serial=1),
                                entry=dict(open_page='shortcuts', open_serial=1))
@@ -237,9 +247,14 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['drafts']['sub-scale']['text'], '1.3')
 
     def test_paths_use_separate_revision(self):
-        data = self.run_window([dict(op='edit', id='capture_root', text='C:\\Capture'), dict(op='save')])
+        initial = state()
+        unc = r'\\server\share\Capture'
+        capture = next(field for field in initial['fields'] if field['id'] == 'capture_root')
+        capture.update(saved=unc, effective=unc, has_override=True)
+        data = self.run_window([dict(op='edit', id='python_path', text=r'C:\python.exe'), dict(op='save')], initial=initial)
         self.assertEqual(data['sent'][-1][4:6], ['p1', 'paths'])
-        self.assertEqual(json.loads(data['sent'][-1][-1])['capture_root'], 'C:\\Capture')
+        self.assertEqual(json.loads(data['sent'][-1][-1]),
+                         dict(capture_root=unc, ffmpeg_path='', python_path=r'C:\python.exe', mpv_path=''))
 
     def test_invalid_number_does_not_preview_or_save(self):
         for text in ['NaN', 'Infinity', '0', 'bad']:

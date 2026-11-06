@@ -197,7 +197,7 @@ public sealed partial class SettingsEditor : Window
     readonly Process parent;
     readonly DispatcherTimer timer = new DispatcherTimer();
     readonly SettingsPreview playerPreview = new SettingsPreview();
-    readonly List<object> sent = new List<object>();
+    readonly List<object> validationCommands;
     readonly Dictionary<string, Control> editors = new Dictionary<string, Control>();
     readonly Dictionary<string, TextBlock> scaleValues = new Dictionary<string, TextBlock>();
     readonly Dictionary<string, Button> categories = new Dictionary<string, Button>();
@@ -221,6 +221,7 @@ public sealed partial class SettingsEditor : Window
     public SettingsEditor(Dictionary<string, object> request, bool validate, bool hidden)
     {
         validation = validate; noShow = hidden;
+        if (validation) validationCommands = new List<object>();
         UserPreferencesStorage.Schema(request);
         token = UserPreferencesStorage.String(request, "token");
         if (token.Length < 1 || token.Length > 256 || token.Any(Char.IsControl) || SettingsDraft.Str(request, "script") != "user_settings")
@@ -678,12 +679,13 @@ public sealed partial class SettingsEditor : Window
     }
     void Send(object[] command)
     {
-        sent.Add(command);
-        if (!validation)
+        if (validationCommands != null)
         {
-            try { writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence })); }
-            catch { Disconnect(); }
+            validationCommands.Add(command);
+            return;
         }
+        try { writer.WriteLine(json.Serialize(new { command = command, request_id = ++sequence })); }
+        catch { Disconnect(); }
     }
     void Action(string operation, params string[] args)
     {
@@ -858,6 +860,6 @@ public sealed partial class SettingsEditor : Window
                 (!AppearancePage || previewBounds.Bottom < saveBounds.Top && previewBounds.Right <= layoutRoot.ActualWidth),
             preview_column = Grid.GetColumn(previewPane),
             preview_fit = SettingsPreview.Fit(new Rect(0, 0, 600, 300), 1920, 1080).ToString(CultureInfo.InvariantCulture),
-            search_results = results.Children.OfType<Button>().Select(b => (string)(b.Tag ?? b.Content)).ToArray(), sent = sent };
+            search_results = results.Children.OfType<Button>().Select(b => (string)(b.Tag ?? b.Content)).ToArray(), sent = validationCommands };
     }
 }
