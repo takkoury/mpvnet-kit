@@ -75,6 +75,82 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['ready'], ['script-message-to', 'user_settings', 'editor-ready', 'fixture-token-123'])
         self.assertEqual(data['close'], ['script-message-to', 'user_settings', 'editor-close', 'fixture-token-123', '0'])
 
+    def test_ipc_drains_messages_queued_before_run_without_timer(self):
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+            '-File', str(ROOT / 'tests/fixtures/window_ipc.ps1'), '-Editor', 'Settings', '-Mode', 'QueuedClientClose',
+            '-SourcePath', str(ROOT / 'config/helpers/settings-window.ps1')], capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(result.stderr, b'')
+        data = json.loads(result.stdout.decode('utf-8-sig'))
+        self.assertEqual(data['close'], ['script-message-to', 'user_settings', 'editor-close', 'fixture-token-123', '7'])
+        self.assertTrue(data['settings_untouched'])
+
+    def test_background_prepares_once_and_adopts_live_state_without_preview(self):
+        updated = state(revision='r2', editor_visible=False)
+        updated['fields'][0].update(saved=1.4, has_override=True)
+        data = self.run_window([dict(op='state', state=updated), dict(op='page', page='controlbar'),
+                                dict(op='display-available', value=True),
+                                dict(op='preview', id='modernz.scalewindowed')],
+                               initial=state(editor_visible=False), entry=dict(start_hidden=True))
+        self.assertTrue(data['prepared'])
+        self.assertFalse(data['show_requested'])
+        self.assertFalse(data['display_requested'])
+        self.assertEqual(data['dirty_pages'], [])
+        self.assertCountEqual(data['navigation_reused'], data['pages'])
+        self.assertEqual(data['drafts']['sub-scale']['text'], '1.4')
+        self.assertEqual(data['sent'], [['script-message-to', 'user_settings', 'editor-prepared', TOKEN]])
+
+    def test_background_rejects_wrong_token_and_waits_for_settings(self):
+        wrong_state = state(editor_token='different', editor_visible=True, open_page='shortcuts', open_serial=2)
+        step = dict(op='ipc', events=[dict(event='client-message', args=['mpvnet-settings-show', 'different'])])
+        data = self.run_window([step], initial=wrong_state, entry=dict(start_hidden=True))
+        self.assertFalse(data['prepared'])
+        self.assertFalse(data['show_requested'])
+        self.assertEqual(data['page'], 'subtitles')
+        self.assertEqual(data['sent'], [])
+
+    def test_show_message_before_first_settings_snapshot_is_held(self):
+        show = dict(op='ipc', events=[dict(event='client-message', args=['mpvnet-settings-show', TOKEN])])
+        waiting = self.run_window([show], initial={}, entry=dict(start_hidden=True))
+        self.assertTrue(waiting['show_requested'])
+        self.assertFalse(waiting['prepared'])
+        self.assertFalse(waiting['ready_to_show'])
+        ready = self.run_window([show, dict(op='state', state=state(editor_visible=False))],
+                                initial={}, entry=dict(start_hidden=True))
+        self.assertTrue(ready['prepared'])
+        self.assertTrue(ready['ready_to_show'])
+
+    def test_visible_snapshot_before_preparation_preserves_latest_shortcuts_navigation(self):
+        early = state(fields=[], editor_visible=True)
+        waiting = self.run_window(initial=early, entry=dict(start_hidden=True))
+        self.assertTrue(waiting['show_requested'])
+        self.assertFalse(waiting['ready_to_show'])
+        incoming = state(editor_visible=True, open_page='shortcuts', open_serial=2)
+        data = self.run_window([dict(op='state', state=incoming)], initial=early, entry=dict(start_hidden=True))
+        self.assertTrue(data['prepared'])
+        self.assertTrue(data['ready_to_show'])
+        self.assertEqual(data['page'], 'shortcuts')
+        self.assertEqual(data['navigation_serial'], 2)
+        self.assertFalse(data['navigation_pending'])
+
+    def test_background_close_in_same_ipc_batch_cancels_show(self):
+        opened = dict(event='property-change', name='user-data/mpvnet/settings', data=state(editor_visible=True))
+        closed = dict(event='client-message', args=['mpvnet-settings-close', TOKEN])
+        data = self.run_window([dict(op='ipc', events=[opened, closed, opened])], initial={}, entry=dict(start_hidden=True))
+        self.assertTrue(data['close_accepted'])
+        self.assertFalse(data['prepared'])
+        self.assertFalse(data['show_requested'])
+        self.assertEqual(data['sent'], [['script-message-to', 'user_settings', 'editor-close', TOKEN, '0']])
+
+    def test_background_disconnect_discards_pending_show_and_late_state(self):
+        show = dict(op='ipc', events=[dict(event='client-message', args=['mpvnet-settings-show', TOKEN])])
+        steps = [show, dict(op='disconnect'), dict(op='state', state=state(editor_visible=True)), show]
+        data = self.run_window(steps, initial={}, entry=dict(start_hidden=True))
+        self.assertFalse(data['prepared'])
+        self.assertFalse(data['show_requested'])
+        self.assertFalse(data['ready_to_show'])
+        self.assertEqual(data['sent'], [])
+
     def test_shortcut_entry_starts_on_embedded_page(self):
         data = self.run_window(initial=state(open_page='shortcuts', open_serial=1),
                                entry=dict(open_page='shortcuts', open_serial=1))
@@ -142,6 +218,12 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['page'], 'subtitles')
         self.assertEqual(data['navigation_serial'], 0)
 
+    def test_navigation_only_replaces_content_when_its_dirty_marker_changes(self):
+        data = self.run_window([dict(op='edit', id='sub-scale', text='1.2'),
+                                dict(op='state', state=state(editor_visible=True))])
+        self.assertEqual(data['dirty_pages'], ['subtitles'])
+        self.assertCountEqual(data['navigation_reused'], [page for page in data['pages'] if page != 'subtitles'])
+
     def run_window(self, steps=(), initial=None, width=1100, height=720, render=False, entry=None):
         with tempfile.TemporaryDirectory(prefix='mpvnet-settings-window-') as temp:
             request = Path(temp) / 'request.json'
@@ -165,6 +247,7 @@ class SettingsWindow(unittest.TestCase):
             self.assertEqual(result.returncode, 0, data)
             self.assertTrue(data['ok'])
             self.assertFalse(data['shown'])
+            self.assertFalse(data['has_handle'])
             if render:
                 self.assertEqual((Path(temp) / 'render.png').read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
             return data

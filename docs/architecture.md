@@ -123,7 +123,13 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 窗口创建前的IPC或请求文件失败会退休本次token，保留原状态错误并显示4秒中文提示；helper异常退出只在会话仍有效时提示，不回显其stdout诊断。用户已关闭窗口或播放器退出后的迟到结果保持静默，重试创建新会话时清除上一轮错误。正常打开、保存和关闭的接口保持。
 
-设置控制层优先直接启动`helpers/KitSettings.exe -RequestPath <临时请求>`，避免在每次打开时启动PowerShell并编译窗口。入口[settings-host.cs](../config/helpers/settings-host.cs)运行同一`SettingsEditor`，保持STA、会话校验、JSON错误与退出码；窗口关闭或父播放器退出后结束进程，不预加载或常驻后台。EXE缺失时仍可使用`settings-window.ps1`源码入口，EXE已经启动后的失败沿既有错误提示处理，不自动再开第二个窗口。保存仍交给原控制层和storage helper。
+设置控制层优先直接启动`helpers/KitSettings.exe -RequestPath <临时请求>`，避免在每次打开时启动PowerShell并编译窗口。入口[settings-host.cs](../config/helpers/settings-host.cs)运行同一`SettingsEditor`，保持STA、会话校验、JSON错误与退出码。EXE缺失时仍可使用`settings-window.ps1`源码入口；源码入口不自动预备，已经启动后的失败不盲目再开第二个窗口。保存仍交给原控制层和storage helper。
+
+EXE存在时，控制层在初始化后延迟250ms预备一个新会话，使用`start_hidden=true`请求，保持`editor_visible=false`。窗口先载入匹配token的实时设置，在Hidden状态关联原生HWND、视觉树并完成布局，随后一次性发送`editor-prepared`；`editor-ready`只说明IPC已连接。预备期间不显示或激活窗口，也不取得预览租期。显式打开通过`editor_visible=true`快照及show消息传递意图，订阅前的点击也不丢失；实际Show沿WPF原有居中规则，再绑定已确认播放器owner。每个播放器最多一个此类进程。
+
+正常关闭仍退休旧token并结束旧进程，再预备全新的进程和模型，草稿不跨关闭保留。旧进程退出前的显式重开继续排队，不并发新窗口。预备失败静默且不自动循环重试，用户明确打开可重新尝试；已请求打开时的异常沿原中文反馈。父播放器退出取消待预备计时器，并清理对应进程及请求文件。
+
+IPC异步读取完成后唤醒WPF Dispatcher，每批最多64条，串行应用状态、导航和关闭后才决定显示；Run前完成的读取在Application就绪后处理，已退休会话不继续读取或显示。原100ms维护Timer仅处理父退出、超时和预览续期。导航内容仅随草稿标记变化更新，固定配色画刷冻结并在窗口内复用，避免状态通知重建未变化控件。
 
 EXE是以.NET Framework 4.7.2为目标的确定性WinExe，DPI manifest保留system-aware窗口行为。源码与运行资产由[构建工具](../dev-tools/build-settings-window.py)记录输入摘要，普通打包校验源同步而不运行编译器；摘要校验不充当数字签名。`-ValidateOnly`／`-NoShow`供隔离回归使用，界面模型、视图与实际IPC路径保持同源。
 

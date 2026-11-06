@@ -62,6 +62,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 设置窗口预编译资产由core中的`SettingsBuild`检查源码摘要、过期／缺失输入、输出路径隔离及打包不调用SDK。设置Lua回归另检查直接EXE启动、重复打开共享会话、保存仍走原storage helper以及EXE缺失的源码回退。设置`MPVNET_TEST_SETTINGS_EXECUTABLE`为已构建EXE的绝对路径后，`SettingsWindow`同一组隐藏WPF断言直接运行该EXE；非法路径会失败，不静默退回源码。`window_ipc.ps1 -Editor Settings -SourcePath <EXE> -Mode ClientClose/ParentExit`验证预编译入口的实际就绪、关闭、错误token和父退出；源入口原有IPC检查保留。
 
+预备回归覆盖单一隐藏会话、订阅前打开、正确／错误token、重建不复用草稿、静默且有界的失败以及退出清理。WPF验证模式不创建设置HWND，原生Hidden预备及真正显示另由隔离宿主验证。`window_ipc.ps1 -Editor Settings -SourcePath <settings-window.ps1> -Mode QueuedClientClose`只用于源码探针：停用维护Timer并在Run前写入多于64条消息，验证事件驱动读取、批次续跑及关闭序号；该测试开关不进入正式程序。
+
 ```powershell
 # 使用本机已有的 Lua 5.1 库，不由测试下载或安装。
 $env:MPVNET_TEST_LUA51 = 'C:/path/to/lua51.dll'

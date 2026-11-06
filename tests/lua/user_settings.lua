@@ -56,6 +56,7 @@ local function instance(pid,order,startup_options)
         ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},writes={},hooks={},local_options={},osd={},osd_durations={},fail=false}
     for id,value in pairs(startup_options or {}) do host.properties[id]=value end
     local script
+    local timeouts={}
     local function get(name,fallback) local value=host.properties[name];if value~=nil then return value end;return fallback end
     local function set(name,value)
         host.writes[#host.writes+1]={name,value}
@@ -99,6 +100,12 @@ local function instance(pid,order,startup_options)
         add_hook=function(name,_,callback) host.hooks[name]=host.hooks[name] or {};table.insert(host.hooks[name],callback) end,
         register_event=function(name,callback) host.events[name]=host.events[name] or {};table.insert(host.events[name],callback) end,
         add_periodic_timer=function(_,callback) host.timers[#host.timers+1]=callback end,
+        add_timeout=function(_,callback)
+            local timer={active=true,callback=callback}
+            function timer:kill() self.active=false end
+            timeouts[#timeouts+1]=timer
+            return timer
+        end,
         osd_message=function(text,duration) host.osd[#host.osd+1]=text;host.osd_durations[#host.osd_durations+1]=duration end,msg={warn=function() end},
     }
     host.set=set
@@ -112,6 +119,10 @@ local function instance(pid,order,startup_options)
     function host.hook(name) for _,callback in ipairs(host.hooks[name] or {}) do callback() end end
     function host.media() host.event('end-file');host.event('start-file');host.hook('on_load');host.event('file-loaded') end
     function host.poll() for _,callback in ipairs(host.timers) do callback() end end
+    function host.prepare()
+        local pending=timeouts;timeouts={}
+        for _,timer in ipairs(pending) do if timer.active then timer.active=false;timer.callback() end end
+    end
     function host.flush() local pending=host.pending or {};host.pending={};for _,callback in ipairs(pending) do callback() end end
     function host.state() return host.properties['user-data/mpvnet/settings'] end
     function host.field(id) for _,field in ipairs(host.state().fields) do if field.id==id then return field end end end
@@ -243,6 +254,64 @@ function compiled_window_launch_preserves_session_and_storage()
     files[executable]=nil
     host.open();local fallback=requests[#requests].args.args
     assert(fallback[1]~=executable);eq(fallback[7],config..'helpers/settings-window.ps1')
+end
+function prewarm_is_single_hidden_and_explicit_open_is_not_lost()
+    local executable=config..'helpers/KitSettings.exe';files[executable]='compiled fixture'
+    local host=instance(105);local count=#requests
+    eq(host.state().editor_visible,false);eq(host.state().editor_token,'')
+    host.prepare();eq(#requests,count+1)
+    local job=requests[#requests];local token=host.state().editor_token
+    local request=assert(parser.parse(files[job.args.args[#job.args.args]],decode))
+    eq(request.values.start_hidden.kind,'true');eq(host.state().editor_visible,false)
+    host.send('editor-ready',token);eq(host.state().editor_visible,false)
+    host.send('editor-prepared','old');eq(host.state().editor_prepared,false)
+    host.prepare();host.poll();eq(#requests,count+1)
+    host.send('open-shortcuts');eq(#requests,count+1);eq(host.state().editor_token,token)
+    eq(host.state().editor_visible,true);eq(host.state().open_page,'shortcuts')
+    host.send('editor-prepared',token);eq(host.state().editor_prepared,true)
+    host.send('editor-close',token,'1');job.callback(true,{status=0})
+    eq(host.state().editor_token,'');eq(host.state().editor_prepared,false)
+    host.prepare();eq(#requests,count+2)
+    assert(host.state().editor_token~=token and host.state().editor_token~='')
+    eq(host.state().editor_visible,false);eq(host.state().open_page,'')
+    files[executable]=nil
+end
+function prewarm_failures_are_quiet_bounded_and_manual_open_can_retry()
+    local executable=config..'helpers/KitSettings.exe';files[executable]='compiled fixture'
+    local host=instance(106);host.prepare();local job=requests[#requests];local count=#requests
+    job.callback(false,{status=1});eq(#host.osd,0);eq(host.state().editor_token,'')
+    host.prepare();host.poll();eq(#requests,count)
+    host.open();eq(#requests,count+1);eq(host.state().editor_visible,true)
+    local active=requests[#requests];host.send('editor-close',host.state().editor_token);active.callback(true,{status=0})
+    host.prepare();job=requests[#requests];count=#requests
+    host.open();job.callback(true,{status=0}) -- Lost connection before a normal close acknowledgement.
+    eq(#requests,count);eq(host.state().editor_token,'');eq(host.osd[#host.osd],'设置窗口出错\n请重新打开')
+    host.prepare();eq(#requests,count)
+    files[executable]=nil
+end
+function prewarm_shutdown_and_pending_explicit_open_do_not_duplicate_helpers()
+    local executable=config..'helpers/KitSettings.exe';files[executable]='compiled fixture'
+    local early=instance(107);local count=#requests;early.event('shutdown');early.prepare();eq(#requests,count)
+    local host=instance(108);host.prepare();local job=requests[#requests];local token=host.state().editor_token
+    host.open();host.send('editor-close',token);count=#requests
+    host.open();host.send('open-shortcuts');host.prepare();eq(#requests,count)
+    job.callback(true,{status=0});eq(#requests,count+1);eq(host.state().open_page,'shortcuts')
+    local second=requests[#requests];host.event('shutdown');second.callback(false,{status=1})
+    host.prepare();eq(#requests,count+1);eq(#host.osd,0)
+    local hidden=instance(109);hidden.prepare();job=requests[#requests];count=#requests
+    hidden.event('shutdown');job.callback(true,{status=0});hidden.prepare();eq(#requests,count)
+    files[executable]=nil
+end
+function prewarm_setup_failures_do_not_retry_or_notify()
+    local executable=config..'helpers/KitSettings.exe';files[executable]='compiled fixture'
+    local host=instance(110);host.fail_ipc=true;local count=#requests;host.prepare()
+    eq(#requests,count);eq(host.state().editor_token,'');eq(#host.osd,0)
+    host.fail_ipc=false;host.prepare();eq(#requests,count)
+    host.open();eq(#requests,count+1)
+    local write=instance(111);count=#requests;write_failure=true;write.prepare();write_failure=false
+    eq(#requests,count);eq(write.state().editor_token,'');eq(#write.osd,0)
+    write.prepare();eq(#requests,count);write.open();eq(#requests,count+1)
+    files[executable]=nil
 end
 function open_failures_are_visible_and_retryable()
     local host=instance(102)

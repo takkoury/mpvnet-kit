@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$SourcePath,
-    [ValidateSet('ClientClose','ParentExit')][string]$Mode = 'ClientClose',
+    [ValidateSet('ClientClose','ParentExit','QueuedClientClose')][string]$Mode = 'ClientClose',
     [ValidateSet('Settings','Shortcuts')][string]$Editor = 'Shortcuts'
 )
 $ErrorActionPreference = 'Stop'
@@ -16,10 +16,14 @@ $ownedFolder = Join-Path ([IO.Path]::GetTempPath()) ('mpvnet-window-ipc-' + [Gui
 $server = $null
 $helperProcess = $null
 $ownedParent = $null
+$beforeRunSignal = Join-Path $ownedFolder 'allow-run'
 try {
+    if ($Mode -eq 'QueuedClientClose' -and ($Editor -ne 'Settings' -or [IO.Path]::GetExtension($SourcePath) -ieq '.exe')) {
+        throw 'QueuedClientClose requires the settings source probe.'
+    }
     $pipeName = 'mpvnet-window-fixture-' + [Guid]::NewGuid().ToString('N')
     $server = New-Object IO.Pipes.NamedPipeServerStream($pipeName, [IO.Pipes.PipeDirection]::InOut, 1,
-        [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous)
+        [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous, 16384, 16384)
     $connect = $server.WaitForConnectionAsync()
     $parentId = $PID
     if ($Mode -eq 'ParentExit') {
@@ -35,6 +39,7 @@ try {
     $token = 'fixture-token-123'
     $request = Join-Path $ownedFolder 'editor-request.json'
     [IO.File]::WriteAllText($request, (@{schema=1;pipe=$pipeName;parent_pid=$parentId;script=$scriptName;token=$token;
+        start_hidden=($Mode -eq 'QueuedClientClose');
         settings_path=(Join-Path $ownedFolder 'mpvnet-user.json')} | ConvertTo-Json -Compress), $encoding)
     $start = New-Object Diagnostics.ProcessStartInfo
     if ([IO.Path]::GetExtension($SourcePath) -ieq '.exe') {
@@ -45,6 +50,7 @@ try {
         $probe = Join-Path $PSScriptRoot 'window_ipc_capture.ps1'
         $start.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $probe + '" -SourcePath "' + $SourcePath +
             '" -RequestPath "' + $request + '" -EditorType ' + $editorType
+        if ($Mode -eq 'QueuedClientClose') { $start.Arguments += ' -BeforeRunSignal "' + $beforeRunSignal + '"' }
     }
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
@@ -75,7 +81,15 @@ try {
     Start-Sleep -Milliseconds 250
     $wrongTokenIgnored = -not $helperProcess.HasExited
     if (-not $wrongTokenIgnored) { throw 'wrong-token-closed-helper' }
-    if ($Mode -eq 'ClientClose') {
+    if ($Mode -eq 'QueuedClientClose') {
+        # Queue more than one dispatcher batch before allowing Run, with the maintenance timer stopped.
+        for ($index = 0; $index -lt 70; $index++) { $writer.WriteLine('{"error":"success"}') }
+        $writer.WriteLine((@{event='property-change';name='user-data/mpvnet/settings';
+            data=@{editor_token=$token;open_page='shortcuts';open_serial=7;fields=@()}} | ConvertTo-Json -Compress -Depth 5))
+        $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-show",$token)} | ConvertTo-Json -Compress))
+        $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-close",$token)} | ConvertTo-Json -Compress))
+        [IO.File]::WriteAllText($beforeRunSignal, '')
+    } elseif ($Mode -eq 'ClientClose') {
         $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-show",$token)} | ConvertTo-Json -Compress))
         $writer.WriteLine((@{event='client-message';args=@("$eventPrefix-close",$token)} | ConvertTo-Json -Compress))
     } else {
@@ -100,6 +114,7 @@ try {
     if ($server) { $server.Dispose() }
     $ownedRequest = Join-Path $ownedFolder 'editor-request.json'
     if ([IO.File]::Exists($ownedRequest)) { [IO.File]::Delete($ownedRequest) }
+    if ([IO.File]::Exists($beforeRunSignal)) { [IO.File]::Delete($beforeRunSignal) }
     [IO.Directory]::Delete($ownedFolder)
     $output.Dispose()
 }

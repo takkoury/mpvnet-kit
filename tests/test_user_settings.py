@@ -10,6 +10,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class UserSettings(unittest.TestCase):
+    def test_prewarm_stays_hidden_single_and_retains_early_open(self):
+        self.run_case('prewarm_is_single_hidden_and_explicit_open_is_not_lost')
+
+    def test_prewarm_failure_is_quiet_bounded_and_user_can_retry(self):
+        self.run_case('prewarm_failures_are_quiet_bounded_and_manual_open_can_retry')
+
+    def test_prewarm_shutdown_and_close_open_handoff(self):
+        self.run_case('prewarm_shutdown_and_pending_explicit_open_do_not_duplicate_helpers')
+
+    def test_prewarm_setup_failure_keeps_manual_retry(self):
+        self.run_case('prewarm_setup_failures_do_not_retry_or_notify')
+
     def test_compiled_window_preserves_session_and_storage_with_source_fallback(self):
         self.run_case('compiled_window_launch_preserves_session_and_storage')
 

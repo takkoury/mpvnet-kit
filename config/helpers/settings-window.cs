@@ -6,6 +6,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -192,7 +193,7 @@ public sealed partial class SettingsEditor : Window
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int n);
     readonly SettingsDraft model = new SettingsDraft();
     readonly JavaScriptSerializer json = UserPreferencesStorage.Json();
-    readonly bool validation, noShow;
+    readonly bool validation, noShow, startHidden;
     readonly string token;
     readonly Process parent;
     readonly DispatcherTimer timer = new DispatcherTimer();
@@ -201,6 +202,8 @@ public sealed partial class SettingsEditor : Window
     readonly Dictionary<string, Control> editors = new Dictionary<string, Control>();
     readonly Dictionary<string, TextBlock> scaleValues = new Dictionary<string, TextBlock>();
     readonly Dictionary<string, Button> categories = new Dictionary<string, Button>();
+    readonly Dictionary<string, bool> navigationDirty = new Dictionary<string, bool>();
+    readonly Dictionary<string, SolidColorBrush> palette = new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase);
     Dictionary<string, object> latest = new Dictionary<string, object>();
     NamedPipeClientStream pipe; StreamReader reader; StreamWriter writer; Task<string> read;
     TextBox search; StackPanel content, results; TextBlock notice, heading; Button save, undo, reset;
@@ -214,15 +217,27 @@ public sealed partial class SettingsEditor : Window
     bool navigationPending, nativeDialogOpen;
     int pendingSerial, serial, sequence;
     bool syncing, saving, forceClose, finished, disconnected;
+    bool prepared, showRequested, shownOnce;
     bool displayRequested, displayAvailable, selectingPage;
     DateTime lastDisplayRenew;
     DateTime saveStarted;
-    static SolidColorBrush Brush(string value) { return (SolidColorBrush)new BrushConverter().ConvertFromString(value); }
+    SolidColorBrush Brush(string value)
+    {
+        SolidColorBrush brush;
+        if (!palette.TryGetValue(value, out brush))
+        {
+            brush = (SolidColorBrush)new BrushConverter().ConvertFromString(value);
+            brush.Freeze();
+            palette.Add(value, brush);
+        }
+        return brush;
+    }
     public SettingsEditor(Dictionary<string, object> request, bool validate, bool hidden)
     {
         validation = validate; noShow = hidden;
         if (validation) validationCommands = new List<object>();
         UserPreferencesStorage.Schema(request);
+        startHidden = SettingsDraft.Flag(request, "start_hidden");
         token = UserPreferencesStorage.String(request, "token");
         if (token.Length < 1 || token.Length > 256 || token.Any(Char.IsControl) || SettingsDraft.Str(request, "script") != "user_settings")
             throw new InvalidDataException("设置窗口连接无效。");
@@ -237,11 +252,13 @@ public sealed partial class SettingsEditor : Window
         if (SettingsDraft.Str(request,"open_page") == "shortcuts") {
             page = "shortcuts"; navigationSerial = ReadNavigationSerial(request);
         }
+        // Hidden permits layout. Queue the visibility change before IPC can request Show.
+        if (startHidden && !validation && !noShow) Visibility = Visibility.Hidden;
         Build();
         Closing += OnClosing;
         Closed += delegate { Finish(); if (!validation && Application.Current != null) Application.Current.Shutdown(); };
         SourceInitialized += delegate {
-            AttachPlayerOwner();
+            if (!startHidden) AttachPlayerOwner();
             try { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); } catch { }
         };
         KeyDown += delegate(object sender, KeyEventArgs e) {
@@ -509,7 +526,7 @@ public sealed partial class SettingsEditor : Window
     }
     void Preview(SettingsDraft.Field f)
     {
-        if (saving || disconnected || !f.Previewable) return;
+        if (saving || disconnected || (startHidden && !IsVisible) || !f.Previewable) return;
         object value;
         if (!model.TryValue(f, out value)) { localError = f.Label + "请输入 " + f.Min + " 至 " + f.Max + " 的数值。"; Refresh(); return; }
         if (f.Page == "controlbar") BeginDisplay();
@@ -517,7 +534,7 @@ public sealed partial class SettingsEditor : Window
     }
     void BeginDisplay()
     {
-        if (disconnected || (!validation && !displayAvailable)) return;
+        if (disconnected || (!(validation && !startHidden) && (!IsVisible || !displayAvailable))) return;
         Action("preview-display", "controlbar"); displayRequested = true; lastDisplayRenew = DateTime.UtcNow;
     }
     void EndDisplay()
@@ -536,7 +553,7 @@ public sealed partial class SettingsEditor : Window
     }
     void UpdatePlayerPreview()
     {
-        if (previewArea == null || validation) return;
+        if (previewArea == null || validation || (startHidden && !shownOnce && !IsVisible)) return;
         bool enabled = AppearancePage && !disconnected && !overlayOpen && search.Text.Trim().Length == 0;
         object position = SettingsDraft.Value(latest, "preview_subtitle_position");
         string message = playerPreview.Update(this, previewArea, parent, playerOwner, enabled, fullPreview ? "full" : page,
@@ -574,7 +591,21 @@ public sealed partial class SettingsEditor : Window
     }
     void Refresh()
     {
-        foreach (var item in categories) { item.Value.Content = NavigationContent(item.Key, item.Key == "shortcuts" ? shortcuts.Dirty : model.Dirty(item.Key)); item.Value.BorderBrush = item.Key == page && search.Text.Trim().Length == 0 ? Brush("#1287bb") : Brushes.Transparent; item.Value.Background = item.Key == page && search.Text.Trim().Length == 0 ? Brush("#242424") : Brushes.Transparent; item.Value.Foreground = Brush(item.Key == page ? "#F2F2F2" : "#ABABAB"); }
+        bool searching = search.Text.Trim().Length > 0;
+        foreach (var item in categories)
+        {
+            bool dirty = item.Key == "shortcuts" ? shortcuts.Dirty : model.Dirty(item.Key);
+            bool wasDirty;
+            if (!navigationDirty.TryGetValue(item.Key, out wasDirty) || dirty != wasDirty)
+            {
+                item.Value.Content = NavigationContent(item.Key, dirty);
+                navigationDirty[item.Key] = dirty;
+            }
+            bool selected = item.Key == page && !searching;
+            item.Value.BorderBrush = selected ? Brush("#1287bb") : Brushes.Transparent;
+            item.Value.Background = selected ? Brush("#242424") : Brushes.Transparent;
+            item.Value.Foreground = Brush(item.Key == page ? "#F2F2F2" : "#ABABAB");
+        }
         foreach (var item in scaleValues)
         {
             var f = model.Fields[item.Key];
@@ -615,7 +646,7 @@ public sealed partial class SettingsEditor : Window
             reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving;
         }
         else if (shortcuts.Saving) { save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false; }
-        footerPanel.Visibility = search.Text.Trim().Length > 0 || page == "advanced" ? Visibility.Collapsed : Visibility.Visible;
+        footerPanel.Visibility = searching || page == "advanced" ? Visibility.Collapsed : Visibility.Visible;
         if (settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed) save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false;
         content.IsEnabled = !saving && !shortcuts.Saving && !settingsSaveUnconfirmed && !shortcuts.SaveUnconfirmed; shortcuts.IsEnabled = !saving && !disconnected && !settingsSaveUnconfirmed;
     }
@@ -637,7 +668,7 @@ public sealed partial class SettingsEditor : Window
     }
     public void State(Dictionary<string, object> state)
     {
-        if (SettingsDraft.Str(state, "editor_token") != token) return;
+        if (SessionEnded || SettingsDraft.Str(state, "editor_token") != token) return;
         long incomingNavigation = ReadNavigationSerial(state);
         if (SettingsDraft.Str(state,"open_page") == "shortcuts" && incomingNavigation > navigationSerial) {
             navigationSerial = incomingNavigation; navigationPending = true;
@@ -670,6 +701,7 @@ public sealed partial class SettingsEditor : Window
         }
         CloseRefreshReceived("settings",SettingsDraft.Str(state,"refresh_id"));
         ApplyPendingNavigation();
+        if (startHidden && !shownOnce && SettingsDraft.Flag(state, "editor_visible")) RequestShow();
     }
     static long ReadNavigationSerial(Dictionary<string,object> state)
     {
@@ -703,42 +735,112 @@ public sealed partial class SettingsEditor : Window
     void Disconnect()
     {
         disconnected = true;
+        showRequested = false;
         EndDisplay(); playerPreview.Hide(); displayAvailable = false;
         localError = "播放器连接中断，草稿已保留。请核对保存结果后关闭并重新打开设置。";
         if (saving) settingsSaveUnconfirmed = true;
         saving = false; if (closeSaveRunning) StopCloseSave(localError); Refresh();
     }
+    bool SessionEnded { get { return disconnected || forceClose || closeAccepted || finished; } }
+    bool ReadyToShow { get { return showRequested && (!startHidden || prepared) && !SessionEnded; } }
+    void RequestShow() { if (!SessionEnded) showRequested = true; }
+    void ApplyWindowVisibility()
+    {
+        if (SessionEnded) return;
+        if (startHidden && !prepared && model.Fields.Count > 0)
+        {
+            if (validation || noShow)
+            {
+                ApplyTemplate();
+                LayoutContent(new Size(Width, Height));
+            }
+            else
+            {
+                IntPtr handle = new WindowInteropHelper(this).EnsureHandle();
+                HwndSource.FromHwnd(handle).RootVisual = this;
+                ApplyTemplate();
+                UpdateLayout();
+            }
+            prepared = true;
+            Action("editor-prepared");
+        }
+        if (!ReadyToShow || validation || noShow) return;
+        if (parent.HasExited) { CloseFromPlayer(); return; }
+        showRequested = false;
+        if (!IsVisible) Show();
+        // For an already-created HWND, WPF recalculates CenterScreen at Show.
+        // Keep its cursor-monitor placement before assigning the real owner.
+        if (startHidden && !shownOnce) AttachPlayerOwner();
+        shownOnce = true;
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+    }
+    void CloseFromPlayer()
+    {
+        forceClose = true;
+        if (validation) OnClosing(this, new CancelEventArgs()); else Close();
+    }
+    void Receive(Dictionary<string, object> message)
+    {
+        if (SessionEnded) return;
+        string eventName = SettingsDraft.Str(message, "event");
+        var data = SettingsDraft.Value(message, "data") as Dictionary<string, object>;
+        if (eventName == "property-change" && data != null)
+        {
+            string name = SettingsDraft.Str(message, "name");
+            if (name == "user-data/mpvnet/settings") State(data);
+            else if (name == "user-data/mpvnet/shortcuts") ShortcutsState(data);
+        }
+        else if (eventName == "shutdown") CloseFromPlayer();
+        else if (eventName == "client-message")
+        {
+            var args = SettingsDraft.Value(message, "args") as object[];
+            if (args == null || args.Length < 2 || args[1] as string != token) return;
+            if (args[0] as string == "mpvnet-settings-close") CloseFromPlayer();
+            else if (args[0] as string == "mpvnet-settings-show") RequestShow();
+        }
+    }
+    void QueueIpcDrain()
+    {
+        read.ContinueWith(completed =>
+        {
+            // Observe pipe disposal faults even if shutdown prevents the drain from running.
+            if (completed.IsFaulted) completed.Exception.Handle(error => true);
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(DrainIpc));
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+    void DrainIpc()
+    {
+        if (SessionEnded) return;
+        try
+        {
+            if (parent.HasExited) { CloseFromPlayer(); return; }
+            int count = 0;
+            while (read.IsCompleted && count++ < 64)
+            {
+                string line = read.GetAwaiter().GetResult();
+                if (line == null) { Disconnect(); return; }
+                Receive(UserPreferencesStorage.Object(json.DeserializeObject(line)));
+                if (SessionEnded) return;
+                read = reader.ReadLineAsync();
+            }
+            // Apply the latest navigation and honor any queued close before showing.
+            if (!read.IsCompleted) ApplyWindowVisibility();
+            if (!SessionEnded) QueueIpcDrain();
+        }
+        catch { Disconnect(); }
+    }
     void Tick(object sender, EventArgs e)
     {
         try
         {
-            if (parent.HasExited) { forceClose = true; Close(); return; }
-            AttachPlayerOwner();
+            if (parent.HasExited || (disconnected && startHidden && !shownOnce)) { CloseFromPlayer(); return; }
+            if (!startHidden || shownOnce) AttachPlayerOwner();
             shortcuts.Tick();
             PollCloseSave();
             ApplyPendingNavigation();
             if (disconnected) return;
             UpdatePlayerPreview();
-            int count = 0;
-            while (read != null && read.IsCompleted && count++ < 64)
-            {
-                if (read.IsFaulted || read.Result == null) { Disconnect(); return; }
-                var message = UserPreferencesStorage.Object(json.DeserializeObject(read.Result));
-                string eventName = SettingsDraft.Str(message, "event"); object data = SettingsDraft.Value(message, "data");
-                if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/settings" && data is Dictionary<string, object>) State((Dictionary<string, object>)data);
-                else if (eventName == "property-change" && SettingsDraft.Str(message, "name") == "user-data/mpvnet/shortcuts" && data is Dictionary<string, object>) ShortcutsState((Dictionary<string,object>)data);
-                else if (eventName == "shutdown") { forceClose = true; Close(); return; }
-                else if (eventName == "client-message")
-                {
-                    object[] args = SettingsDraft.Value(message, "args") as object[];
-                    if (args != null && args.Length >= 2 && args[1] as string == token)
-                    {
-                        if (args[0] as string == "mpvnet-settings-close") { forceClose = true; Close(); return; }
-                        if (args[0] as string == "mpvnet-settings-show" && !noShow) { if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
-                    }
-                }
-                read = reader.ReadLineAsync();
-            }
             if (saving && (DateTime.UtcNow - saveStarted).TotalSeconds > 20)
             { MarkSettingsSaveUnconfirmed(); }
         }
@@ -750,19 +852,28 @@ public sealed partial class SettingsEditor : Window
         if (!forceClose && (saving || shortcuts.Saving || closeSaveRunning)) { e.Cancel = true; return; }
         if (!forceClose && DirtyPages().Length > 0) { e.Cancel = true; if (!overlayOpen) ShowClosePrompt(); return; }
         closeAccepted = true;
+        showRequested = false;
         EndDisplay(); playerPreview.Hide();
         try { Action("editor-close", navigationSerial.ToString(CultureInfo.InvariantCulture)); } catch { }
     }
     public void Finish() { if (finished) return; finished = true; timer.Stop(); playerPreview.Dispose(); if (pipe != null) pipe.Dispose(); parent.Dispose(); }
-    public void Run() { if (noShow) new Application().Run(); else new Application().Run(this); }
-    // Exercises the same draft and control event paths, without player/filesystem IO.
-    FrameworkElement LayoutForValidation()
+    public void Run()
+    {
+        if (SessionEnded) return;
+        var application = new Application();
+        // The constructor can have a completed read, but only Run starts dispatching it.
+        QueueIpcDrain();
+        if (noShow || startHidden) application.Run(); else application.Run(this);
+    }
+    FrameworkElement LayoutContent(Size size)
     {
         var root = (FrameworkElement)Content;
-        root.Measure(new Size(Width - 48, Height - 80));
-        root.Arrange(new Rect(0, 0, Width - 48, Height - 80)); root.UpdateLayout();
+        root.Measure(size);
+        root.Arrange(new Rect(size)); root.UpdateLayout();
         return root;
     }
+    // Exercises the same draft and control event paths, without player/filesystem IO.
+    FrameworkElement LayoutForValidation() { return LayoutContent(new Size(Width - 48, Height - 80)); }
     public void RenderValidation(string path)
     {
         if (!validation || !noShow) throw new InvalidOperationException("仅离屏验证可生成图片。");
@@ -777,6 +888,8 @@ public sealed partial class SettingsEditor : Window
         if (request.ContainsKey("validation_width")) Width = Convert.ToDouble(request["validation_width"]);
         if (request.ContainsKey("validation_height")) Height = Convert.ToDouble(request["validation_height"]);
         State(UserPreferencesStorage.Object(request["validation_state"]));
+        ApplyWindowVisibility();
+        var initialNavigation = categories.ToDictionary(item => item.Key, item => item.Value.Content);
         object steps;
         if (request.TryGetValue("validation_steps", out steps)) foreach (var entry in (object[])steps)
         {
@@ -813,10 +926,12 @@ public sealed partial class SettingsEditor : Window
             }
             else if (op == "close-overlay") CloseOverlay();
             else if (op == "state") { var incoming = UserPreferencesStorage.Object(step["state"]); if (SettingsDraft.Flag(step,"current_refresh")) incoming["refresh_id"] = closeRefreshId; State(incoming); }
+            else if (op == "ipc") { foreach (var message in (object[])step["events"]) Receive(UserPreferencesStorage.Object(message)); }
             else if (op == "save") Save(); else if (op == "reset") Reset(); else if (op == "undo") Revert();
             else if (op == "disconnect") Disconnect();
             else if (op == "display-available") DisplayAvailability(SettingsDraft.Flag(step, "value"));
             else if (op == "preview") Preview(model.Fields[SettingsDraft.Str(step, "id")]);
+            ApplyWindowVisibility();
         }
         // NoShow deliberately has no native Window presentation source; measure
         // its actual content tree rather than assume Window is a visual ancestor.
@@ -841,8 +956,10 @@ public sealed partial class SettingsEditor : Window
         }
         string renderPath = SettingsDraft.Str(request, "validation_render_path");
         if (renderPath.Length > 0) RenderValidation(renderPath);
-        return new { ok = true, shown = IsVisible, page = page, pages = SettingsDraft.Pages,
+        return new { ok = true, shown = IsVisible, has_handle = new WindowInteropHelper(this).Handle != IntPtr.Zero,
+            prepared = prepared, show_requested = showRequested, ready_to_show = ReadyToShow, page = page, pages = SettingsDraft.Pages,
             navigation_pending = navigationPending, navigation_serial = navigationSerial,
+            navigation_reused = categories.Where(item => ReferenceEquals(initialNavigation[item.Key], item.Value.Content)).Select(item => item.Key).ToArray(),
             show_in_taskbar = ShowInTaskbar, window_style = WindowStyle.ToString(), caption_height = System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight,
             close_accepted = closeAccepted, close_saving = closeSaveRunning, close_save_phase = closeSavePhase, close_saved_pages = closeSavedPages.ToArray(), save_unconfirmed = settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed,
             close_buttons = VisualChildren<Button>(rootPanel).Where(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b).StartsWith("Close",StringComparison.Ordinal)).Select(b => new { label = b.Content as string, width = b.ActualWidth, height = b.ActualHeight, background = b.Background.ToString(), enabled = b.IsEnabled }).ToArray(),

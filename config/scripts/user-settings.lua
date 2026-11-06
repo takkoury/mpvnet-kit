@@ -19,6 +19,8 @@ local local_values={}
 local runtime={}
 local retired={}
 local token,editor_running,editor_visible,closing='',false,false,false
+local editor_prepared,prewarm_failed=false,false
+local prewarm_timer
 local open_page,open_serial='',0
 local queued_open,queued_page=false,nil
 local saving,saving_page,save_serial,save_page,save_error,save_ok,save_revision=false,'',0,'','',false,''
@@ -70,7 +72,7 @@ local function publish()
     end
     mp.set_property_native('user-data/mpvnet/settings',{schema=1,editor_token=token,
         open_page=open_page,open_serial=open_serial,
-        editor_visible=editor_visible,refresh_id=refresh_id,revision=revision,paths_revision=paths_revision,error=error_text,
+        editor_visible=editor_visible,editor_prepared=editor_prepared,refresh_id=refresh_id,revision=revision,paths_revision=paths_revision,error=error_text,
         paths_error=paths_error,saving=saving,saving_page=saving_page,save_serial=save_serial,
         save_page=save_page,save_error=save_error,save_ok=save_ok,save_revision=save_revision,
         fields=fields,pages=model.pages,actions=model.actions,action_serial=action_serial,action_error=action_error,
@@ -129,6 +131,13 @@ local function launch(helper,operation,path,callback)
     mp.command_native_async({name='subprocess',args=args,capture_stdout=true,capture_stderr=false,playback_only=false},function(ok,result)
         remove_owned(path);if not closing then callback(ok,result) end
     end)
+end
+local function compiled_window_available()
+    local info=utils.file_info(compiled_window)
+    return info and info.is_file==true
+end
+local function cancel_prewarm()
+    if prewarm_timer then prewarm_timer:kill();prewarm_timer=nil end
 end
 local function current(received) return not closing and token~='' and received==token end
 local function display_preview(owner,operation)
@@ -232,49 +241,74 @@ local function opening_failure(detail, message)
     if closing then return end
     feedback_client.show(message, 'error')
 end
-local function open(target)
+local open
+local function schedule_prewarm()
+    if closing or editor_running or prewarm_failed or prewarm_timer or not compiled_window_available() then return end
+    prewarm_timer=mp.add_timeout(0.25,function()
+        prewarm_timer=nil
+        if not closing and not editor_running and not prewarm_failed and compiled_window_available() then open(nil,true) end
+    end)
+end
+open=function(target,prepare)
     if closing then return end
+    cancel_prewarm()
+    if not prepare then prewarm_failed=false end
     if editor_running then
         -- editor-close retires the token before the helper process exits.
         -- Reopen only after that process releases the old window/session.
         if token=='' then queued_open=true;queued_page=target or queued_page;return end
-        if target=='shortcuts' then open_page=target;open_serial=open_serial+1;publish() end
+        if prepare then return end
+        if target=='shortcuts' then open_page=target;open_serial=open_serial+1 end
+        editor_visible=true;reload(false)
         mp.commandv('script-message','mpvnet-settings-show',token);return
     end
     session=session+1;token=instance..':editor:'..session;save_error=''
+    editor_prepared=false
     open_page=target=='shortcuts' and target or '';open_serial=open_page~='' and 1 or 0
     local pipe=mp.get_property('options/input-ipc-server','')
     if pipe=='' then
         pipe='\\\\.\\pipe\\mpvnet-settings-'..instance
         if not mp.set_property('options/input-ipc-server',pipe) then
+            if prepare then prewarm_failed=true;token='';publish();return end
             opening_failure('无法建立当前播放器的 IPC 通道','无法打开设置\n请重启播放器后重试');return
         end
     end
     local path,err=request_file('editor',encode({schema=1,pipe=pipe,parent_pid=mp.get_property_number('pid',0),
         script=mp.get_script_name(),token=token,settings_path=settings_path,local_path=local_path,
-        open_page=open_page,open_serial=open_serial}))
-    if not path then opening_failure(err,'无法打开设置\n请检查临时文件夹');return end
+        open_page=open_page,open_serial=open_serial,start_hidden=prepare==true}))
+    if not path then
+        if prepare then prewarm_failed=true;token='';publish();return end
+        opening_failure(err,'无法打开设置\n请检查临时文件夹');return
+    end
     local opened_token=token
-    editor_running,editor_visible=true,true;publish()
+    editor_running,editor_visible=true,not prepare;publish()
     launch(window,nil,path,function(ok,result)
         local active=token==opened_token
+        local requested=editor_visible
+        local failed=not ok or not result or result.status~=0
         if active then
             display_preview(opened_token,'end')
             retire(opened_token);cancel(nil,opened_token);token='';editor_visible=false
+            -- An unseen helper that exits without its close acknowledgement must
+            -- not restart forever. A later explicit open may retry normally.
+            if prepare then prewarm_failed=true end
         end
-        editor_running=false
-        if (not ok or not result or result.status~=0) and active then
+        editor_running,editor_prepared=false,false
+        if active and requested and (failed or prepare) then
             opening_failure('无法打开设置窗口','设置窗口出错\n请重新打开')
         end
         publish()
         if queued_open and not closing then
             local next_page=queued_page;queued_open,queued_page=false,nil;open(next_page)
+        elseif not failed then
+            schedule_prewarm()
         end
     end)
 end
 mp.add_key_binding(nil,'open',function() open() end)
 mp.register_script_message('open-shortcuts',function() open('shortcuts') end)
-mp.register_script_message('editor-ready',function(received) if current(received) then editor_visible=true;publish() end end)
+mp.register_script_message('editor-ready',function(received) if current(received) then publish() end end)
+mp.register_script_message('editor-prepared',function(received) if current(received) then editor_prepared=true;publish() end end)
 mp.register_script_message('editor-refresh',function(received,id)
     if not current(received) or saving or type(id)~='string' or #id<1 or #id>64 or not id:match('^[A-Za-z0-9%-]+$') then return end
     refresh_id=id;reload(false)
@@ -287,8 +321,9 @@ mp.register_script_message('editor-close',function(received,received_serial)
         local seen=type(received_serial)=='string' and #received_serial<=16
             and received_serial:match('^%d+$') and tonumber(received_serial) or nil
         if seen and seen<open_serial and open_page=='shortcuts' then queued_open,queued_page=true,'shortcuts' end
+        if not editor_visible then prewarm_failed=true end
         display_preview(received,'end')
-        retire(received);cancel(nil,received);token='';editor_visible=false;publish()
+        retire(received);cancel(nil,received);token='';editor_visible=false;editor_prepared=false;publish()
     end
 end)
 mp.register_script_message('preview-display',function(received,page)
@@ -337,6 +372,7 @@ for _,field in ipairs(model.fields) do
     end)
 end
 mp.register_event('shutdown',function()
+    cancel_prewarm()
     if token~='' then
         display_preview(token,'end')
         cancel(nil,token);mp.commandv('script-message','mpvnet-settings-close',token)
@@ -345,4 +381,5 @@ mp.register_event('shutdown',function()
     for path in pairs(owned) do remove_owned(path) end
 end)
 reload(true)
+schedule_prewarm()
 mp.add_periodic_timer(1,function() if not saving then reload(false) end end)
