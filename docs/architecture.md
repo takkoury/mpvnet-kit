@@ -119,6 +119,8 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 窗口绑定父 PID、IPC 和每次打开的新 token，旧窗口消息失效。[settings-chrome.cs](../config/helpers/settings-chrome.cs)通过WindowChrome提供同底色标题栏、系统拖动／缩放和最大化／关闭按钮，ShowInTaskbar=false；取得并校验父PID对应的MainWindowHandle后设置原生owner，不使用Topmost。验证和NoShow模式不创建窗口句柄。IPC中断保留草稿并禁保存，父进程退出时关闭窗口。窗口消失后控制层结束其预览，仅清理自己的临时请求。回归分别见[运行层](../tests/test_user_settings.py)、[存储](../tests/test_settings_storage.py)、[窗口](../tests/test_settings_window.py)及[标题栏](../tests/test_settings_chrome.py)。
 
+窗口创建前的IPC或请求文件失败会退休本次token，保留原状态错误并显示4秒中文提示；helper异常退出只在会话仍有效时提示，不回显其stdout诊断。用户已关闭窗口或播放器退出后的迟到结果保持静默，重试创建新会话时清除上一轮错误。正常打开、保存和关闭的接口保持。
+
 [settings-close.cs](../config/helpers/settings-close.cs)在关闭有草稿时提供等宽“保存／不保存／取消”。保存先校验已知冲突与输入，再依分类顺序执行现有独立保存，全部确认成功才关闭；不是跨文件事务。每页写入前发送该模块的editor-refresh(token, nonce)，等待发布状态中的refresh_id匹配，再从已更新基线发起save，避免同一窗口跨JSON域保存时被尚未轮询的旧revision误拒。两控制层仅在合法token且非保存／关闭中接受有限格式nonce，刷新不写盘或改变生命周期。
 
 逐页完成后清除对应草稿；任一失败停止后续保存，保留窗口与未保存草稿，列出已成功保存分类。保存期间阻止重入关闭。结果超时则停止自动推进并禁止重复提交，保留“不保存／取消”的退出路径，明确先前请求仍可能完成；迟到回执只更新已确认状态，不重新启动关闭流程。“不保存”只放弃未提交草稿，不回滚已成功保存的分类；“取消”只返回编辑。关闭流程与跨域确认回归见[SettingsCloseTests](../tests/test_settings_close.py)。

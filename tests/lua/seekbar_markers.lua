@@ -233,7 +233,7 @@ function crowded_labels()
     eq(#matching(ass, "text"), 0, "crowded pair suppresses short labels")
     hover(element, 20, 3)
     local label = seekbar_markers.tooltip(element, seekbar_markers.collect(element))
-    eq(label, "Loop A/B  0:20 - 0:20", "hover discloses nearby endpoints without repeating the type")
+    eq(label, "循环 A/B  0:20 - 0:20", "hover discloses nearby endpoints without repeating the type")
     element = fixture(60); properties["ab-loop-a"] = 20
     eq(#matching(frame(element), "text"), 0, "very narrow bars keep shapes without labels")
 end
@@ -243,11 +243,11 @@ function typed_hover()
     properties["ab-loop-a"], properties["ab-loop-b"] = 20, 80
     state.capture.a = 20
     hover(element, 20, 3)
-    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "Loop A  0:20")
+    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "循环 A  0:20")
     hover(element, 20, 15)
-    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "Capture A  0:20")
+    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "片段 A  0:20")
     hover(element, 80, 3)
-    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "Loop B  1:20")
+    eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), "循环 B  1:20")
     hover(element, 50, 3)
     eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), nil)
 end
@@ -258,17 +258,17 @@ function hover_preserves_preview()
     hover(element, 20, 3)
     local before, responders = get_slider_value(element), element.eventresponder
     local ass = frame(element)
-    assert(text_contains(ass, "Loop A  0:20"), "real render path includes marker explanation")
+    assert(text_contains(ass, "循环 A  0:20"), "real render path includes marker explanation")
     assert(text_contains(ass, "Opening"), "existing chapter row remains")
     assert(text_contains(ass, "0:20"), "existing time row remains")
     eq(get_slider_value(element), before, "hover does not change seek mapping")
     eq(element.eventresponder, responders); eq(next(responders), nil, "no marker mouse bindings")
     eq(#commands, 0, "hover emits no seek or mpv mutation")
-    local marker = text_contains(ass, "Loop A")
+    local marker = text_contains(ass, "循环 A")
     assert(marker.y < text_contains(ass, "Opening").y, "marker row stays above chapter")
     element.state.mbtnleft = true
     ass = frame(element)
-    eq(text_contains(ass, "Loop A"), nil, "drag keeps its normal seek preview")
+    eq(text_contains(ass, "循环 A"), nil, "drag keeps its normal seek preview")
     assert(text_contains(ass, "Opening"))
     element.state.mbtnleft, state.active_element = false, 2
     eq(seekbar_markers.tooltip(element, seekbar_markers.collect(element)), nil, "other active input wins")
@@ -281,7 +281,7 @@ function fade_and_context()
     local ass = frame(element)
     local square = matching(ass, "rect_cw", amber)[1]
     eq(square.alpha, 128, "capture endpoint follows OSC fade")
-    local label = text_contains(ass, "Capture A")
+    local label = text_contains(ass, "片段 A")
     eq(label.alpha, 128, "hover label follows OSC fade")
     local handle = matching(ass, "round_rect_cw", blue)
     assert(#handle > 0, "handle restores original blue after amber marker")
@@ -289,7 +289,7 @@ function fade_and_context()
     state.animation = 255
     ass = frame(element)
     eq(matching(ass, "rect_cw", amber)[1].alpha, 255)
-    eq(text_contains(ass, "Capture A").alpha, 255)
+    eq(text_contains(ass, "片段 A").alpha, 255)
 end
 
 function paused_observers()
@@ -364,7 +364,7 @@ function narrow_hover()
         assert(text_contains(ass, element.slider.tooltipF(get_slider_value(element))),
             "normal time preview remains in narrow windows")
         if label then
-            local rendered = assert(text_contains(ass, "Loop A/B"))
+            local rendered = assert(text_contains(ass, "循环 A/B"))
             assert(rendered.x - estimate_text_width(rendered.text) / 2 - 5 >= 10,
                 "fitted hover background respects left margin")
             assert(rendered.x + estimate_text_width(rendered.text) / 2 + 5 <= width - 10,

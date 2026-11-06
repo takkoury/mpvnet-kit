@@ -9,6 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class UserSettings(unittest.TestCase):
+    def test_open_failures_are_visible_and_retryable(self):
+        self.run_case('open_failures_are_visible_and_retryable')
+
+    def test_retired_editor_failures_do_not_notify_or_corrupt_reopen(self):
+        self.run_case('retired_editor_failures_do_not_notify_or_corrupt_reopen')
+
     def test_shortcut_entry_reuses_window_and_survives_start_and_close_handoffs(self):
         self.run_case('shortcut_entry_lifecycle')
 

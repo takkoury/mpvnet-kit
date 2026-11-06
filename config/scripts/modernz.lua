@@ -1989,9 +1989,9 @@ function seekbar_markers.tooltip(element, groups)
                 end
             end
             if #hits == 2 then
-                labels[#labels + 1] = group.kind .. " A/B  " .. format_time(hits[1].time) .. " - " .. format_time(hits[2].time)
+                labels[#labels + 1] = (loop and "循环" or "片段") .. " A/B  " .. format_time(hits[1].time) .. " - " .. format_time(hits[2].time)
             elseif #hits == 1 then
-                labels[#labels + 1] = group.kind .. " " .. hits[1].label .. "  " .. format_time(hits[1].time)
+                labels[#labels + 1] = (loop and "循环" or "片段") .. " " .. hits[1].label .. "  " .. format_time(hits[1].time)
             end
         end
     end

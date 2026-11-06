@@ -221,6 +221,17 @@ local function preview(received,id,value)
     mp.commandv('script-message-to',field.script,'settings-preview',received,wire,previous_owner,id)
     publish()
 end
+local function opening_failure(detail, message)
+    save_error=detail
+    token='';editor_visible=false
+    publish()
+    if closing then return end
+    if mp.get_property_native('user-data/mpvnet/feedback/ready')==true then
+        mp.commandv('script-message-to','feedback_osd','show',message,'4')
+    else
+        mp.osd_message(message,4)
+    end
+end
 local function open(target)
     if closing then return end
     if editor_running then
@@ -230,26 +241,31 @@ local function open(target)
         if target=='shortcuts' then open_page=target;open_serial=open_serial+1;publish() end
         mp.commandv('script-message','mpvnet-settings-show',token);return
     end
-    session=session+1;token=instance..':editor:'..session
+    session=session+1;token=instance..':editor:'..session;save_error=''
     open_page=target=='shortcuts' and target or '';open_serial=open_page~='' and 1 or 0
     local pipe=mp.get_property('options/input-ipc-server','')
     if pipe=='' then
         pipe='\\\\.\\pipe\\mpvnet-settings-'..instance
-        if not mp.set_property('options/input-ipc-server',pipe) then save_error='无法建立当前播放器的 IPC 通道';publish();return end
+        if not mp.set_property('options/input-ipc-server',pipe) then
+            opening_failure('无法建立当前播放器的 IPC 通道','无法打开设置\n请重启播放器后重试');return
+        end
     end
     local path,err=request_file('editor',encode({schema=1,pipe=pipe,parent_pid=mp.get_property_number('pid',0),
         script=mp.get_script_name(),token=token,settings_path=settings_path,local_path=local_path,
         open_page=open_page,open_serial=open_serial}))
-    if not path then save_error=err;publish();return end
+    if not path then opening_failure(err,'无法打开设置\n请检查临时文件夹');return end
     local opened_token=token
     editor_running,editor_visible=true,true;publish()
     launch(window,nil,path,function(ok,result)
-        if token==opened_token then
+        local active=token==opened_token
+        if active then
             display_preview(opened_token,'end')
             retire(opened_token);cancel(nil,opened_token);token='';editor_visible=false
         end
         editor_running=false
-        if not ok or not result or result.status~=0 then save_error='无法打开设置窗口' end
+        if (not ok or not result or result.status~=0) and active then
+            opening_failure('无法打开设置窗口','设置窗口出错\n请重新打开')
+        end
         publish()
         if queued_open and not closing then
             local next_page=queued_page;queued_open,queued_page=false,nil;open(next_page)

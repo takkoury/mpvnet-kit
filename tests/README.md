@@ -34,6 +34,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 ## Lua 与 helper 条件
 
+`InstallLauncher`归入helpers，只在全新仓外夹具调用实际`Install.cmd`，以缺失或合成PowerShell安装器检查中文输出、成功／失败退出码和暂停路径。覆盖437、936、65001代码页及中文／空格路径，核对返回后恢复原代码页；不调用真实安装器或显示窗口。
+
 `FeedbackOSD`归入lua，覆盖短消息替换与旧计时器失效、导出／字幕状态并存与终止、原生外部消息不被清除或重发、用户OSD原值和外部修改所有权、控制台／选择器／OSD等级让出及退出清理。字幕与Capture原有回归另检查状态发布；真实核心与合成任务检查不等同编码／剪贴板或实际屏幕观感验收。
 
 `DanmakuFailureFeedback`另覆盖弹幕加载状态的成功／失败／取消、替换请求旧回调、完成前次字幕槽被占、赋值失败不报成功和可选日志OSD的路径隔离；转换与下载只使用合成结果，不联网。`ThumbnailFeedback`执行缩略图启动失败回调，核对协调器／原生回退及Windows兼容宿主提示完整性。ModernZ回归使用UTF-8边界验证中文省略、原因折行和原有命中几何，真实libass测宽与窗口观感分别留证。

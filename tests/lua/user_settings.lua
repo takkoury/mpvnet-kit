@@ -53,7 +53,7 @@ local function instance(pid,order,startup_options)
     local host={properties={pid=pid,['options/input-ipc-server']='',['sub-scale']=1.25,
         ['sub-pos']=80,['sub-font']='Default Font',['sub-visibility']=true,slang='eng',alang='jpn',hwdec='auto-safe',
         volume=75,mute=true,fullscreen=false,ontop=false,['user-data/mpvnet/subtitle-base-pos']=80,sid=1,
-        ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},writes={},hooks={},local_options={},osd={},fail=false}
+        ['track-list']={{type='sub',id=1,title='ordinary'}}},observers={},events={},messages={},bindings={},timers={},commands={},writes={},hooks={},local_options={},osd={},osd_durations={},fail=false}
     for id,value in pairs(startup_options or {}) do host.properties[id]=value end
     local script
     local function get(name,fallback) local value=host.properties[name];if value~=nil then return value end;return fallback end
@@ -64,7 +64,8 @@ local function instance(pid,order,startup_options)
             if not host.local_options[option] then host.local_options[option]={value=get(option)} end
             name=option
         end
-        if host.fail and name=='sub-scale' or host.fail_audio and (name=='volume' or name=='mute') then return nil end
+        if host.fail and name=='sub-scale' or host.fail_audio and (name=='volume' or name=='mute')
+            or host.fail_ipc and name=='options/input-ipc-server' then return nil end
         if host.float and name=='sub-scale' then value=math.floor(value*8388608+0.5)/8388608 end
         host.properties[name]=value
         for _,callback in ipairs(host.observers[name] or {}) do
@@ -98,7 +99,7 @@ local function instance(pid,order,startup_options)
         add_hook=function(name,_,callback) host.hooks[name]=host.hooks[name] or {};table.insert(host.hooks[name],callback) end,
         register_event=function(name,callback) host.events[name]=host.events[name] or {};table.insert(host.events[name],callback) end,
         add_periodic_timer=function(_,callback) host.timers[#host.timers+1]=callback end,
-        osd_message=function(text) host.osd[#host.osd+1]=text end,msg={warn=function() end},
+        osd_message=function(text,duration) host.osd[#host.osd+1]=text;host.osd_durations[#host.osd_durations+1]=duration end,msg={warn=function() end},
     }
     host.set=set
     function host.event(name)
@@ -224,6 +225,35 @@ function shortcut_entry_lifecycle()
     local third=requests[#requests];host.send('editor-close',host.state().editor_token)
     host.send('open-shortcuts');count=#requests;host.event('shutdown')
     third.callback(true,{status=0});eq(#requests,count)
+end
+function open_failures_are_visible_and_retryable()
+    local host=instance(102)
+    local count=#requests;host.fail_ipc=true;host.open()
+    eq(#requests,count);eq(host.state().editor_token,'');eq(host.state().editor_visible,false)
+    eq(host.osd[#host.osd],'无法打开设置\n请重启播放器后重试');eq(host.osd_durations[#host.osd_durations],4)
+    host.fail_ipc=false;write_failure=true;host.open();write_failure=false
+    eq(#requests,count);eq(host.state().editor_token,'')
+    eq(host.osd[#host.osd],'无法打开设置\n请检查临时文件夹')
+    host.properties['user-data/mpvnet/feedback/ready']=true
+    host.open();eq(host.state().save_error,'');eq(#requests,count+1)
+    local job=requests[#requests];local request=job.args.args[#job.args.args]
+    local before=#host.osd
+    job.callback(false,{status=1,stdout='https://private.invalid/?token=secret'})
+    eq(#host.osd,before);eq(host.state().editor_token,'');eq(host.state().editor_visible,false)
+    eq(files[request],nil)
+    local c=host.commands[#host.commands]
+    eq(c[2],'feedback_osd');eq(c[3],'show');eq(c[4],'设置窗口出错\n请重新打开');eq(c[5],'4')
+    host.open();eq(#requests,count+2);eq(host.state().save_error,'')
+    eq(host.state().editor_visible,true)
+end
+function retired_editor_failures_do_not_notify_or_corrupt_reopen()
+    local host=instance(103);local token=host.open();local job=requests[#requests]
+    host.send('editor-close',token);host.send('open-shortcuts')
+    local before=#host.osd;job.callback(false,{status=1,stdout='private'})
+    eq(#host.osd,before);eq(host.state().open_page,'shortcuts');eq(host.state().save_error,'')
+    assert(host.state().editor_token~='' and host.state().editor_token~=token)
+    job=requests[#requests];host.event('shutdown');job.callback(false,{status=1})
+    eq(#host.osd,before)
 end
 
 function shortcut_entry_close_ack_preserves_only_unseen_requests()

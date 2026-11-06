@@ -47,6 +47,7 @@ PROFILES = {
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
+        'test_install_launcher.InstallLauncher',
         'test_watch_later_data.WatchLaterStore',
         'test_history_data.HistoryStore',
         'test_media_info_data.MediaInfoDataTests', 'test_media_info_view.MediaInfoViewTests', 'test_media_info_controller.MediaInfoLauncher',
