@@ -11,6 +11,8 @@
 | Bilibili 弹幕兼容组件 | 原[GPL许可证](config/scripts/bilibiliAssert/LICENSE)及文件头归属保留；本地兼容改动见源码 |
 | 含影视画面的界面演示图片 | `overview.png`、`controls.png`、`playlist.png`、`subtitle.png`、`capture.webp` 等包含 Ruri no Houseki 影视画面，源媒体权利归原权利人；这些图片不在本项目 MIT 适用清单内 |
 | 常用设置界面示意 `assets/screenshots/settings.png`、`assets/screenshots/settings-shortcuts.png` | 从本项目控件绘制，不含影视画面；采用本项目 MIT 许可 |
+| 音轨选择器示意 `assets/screenshots/selector.png` | 从本项目选择器 ASS 输出离屏渲染，使用合成轨道信息，不含影视画面；采用本项目 MIT 许可 |
+| 右键菜单示意 `assets/screenshots/context-menu.png` | 从真实宿主已打开的菜单控件离屏绘制，按实际屏幕坐标保留级联重叠；不含影视画面，采用本项目 MIT 许可 |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
 外部播放器、Python、FFmpeg、网页插件由各自项目分发，本包不打包这些程序。
@@ -30,6 +32,8 @@
 - `README.md`
 - `assets/screenshots/settings.png`
 - `assets/screenshots/settings-shortcuts.png`
+- `assets/screenshots/selector.png`
+- `assets/screenshots/context-menu.png`
 - `config/script-opts/stats.conf`
 - `config/script-modules/playlist-selector-data.lua`
 - `config/script-modules/selector-menu.lua`

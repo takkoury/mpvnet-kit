@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "files": [
     {
       "source": "config/script-modules/feedback.lua",
@@ -127,6 +127,18 @@
       "destination": "config/helpers/about-window.cs",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "assets/screenshots/context-menu.png",
+      "destination": "assets/screenshots/context-menu.png",
+      "component": "author",
+      "origin": "mpvnet-kit authors; actual open host menu controls rendered at their native screen positions, preserving popup overlap; no media imagery"
+    },
+    {
+      "source": "assets/screenshots/selector.png",
+      "destination": "assets/screenshots/selector.png",
+      "component": "author",
+      "origin": "mpvnet-kit authors; aligned audio selector illustration rendered from project ASS output with synthetic track metadata"
     },
     {
       "source": "assets/screenshots/settings-shortcuts.png",
