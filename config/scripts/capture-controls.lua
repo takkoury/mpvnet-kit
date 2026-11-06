@@ -2,6 +2,7 @@
 -- All media data goes to the helper in owned UTF-8 JSON files; never shell code.
 local mp = require('mp')
 local utils = require('mp.utils')
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local a, busy, latest, sequence = nil, false, nil, 0
 local media_generation, pending_clip = 0, nil
@@ -21,19 +22,13 @@ local function publish()
     })
 end
 
-local function feedback(text, duration)
-    if shutting_down then return end
-    duration = duration or 4
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
-    end
+local function feedback(text, kind)
+    if not shutting_down then feedback_client.show(text, kind) end
 end
 
 local function export_status(active)
     mp.set_property_native('user-data/mpvnet/feedback/capture', active and '正在导出片段…' or '')
-    if active then feedback('正在导出片段…', 1.5) end
+    if active then feedback('正在导出片段…', 'action') end
 end
 
 local failure_reasons = {
@@ -65,7 +60,7 @@ local function report_failure(fallback, data)
     elseif reason == 'access-denied' then
         text = fallback .. '：' .. detail
     end
-    feedback(text)
+    feedback(text, 'error')
 end
 
 local function clock(value)
@@ -135,7 +130,7 @@ local function run(payload, success, failure, done)
         data = type(data) == 'table' and data or nil
         if ok and result and result.status == 0 and data and data.ok then
             if done then done(data) end
-            feedback(success, 2)
+            feedback(success, 'success')
         else
             report_failure(failure, data)
         end
@@ -164,7 +159,7 @@ local function open_folder()
 end
 
 local function screenshot()
-    if busy then feedback('正在处理，请稍候', 2); return end
+    if busy then feedback('正在处理，请稍候', 'notice'); return end
     if mp.get_property_native('idle-active') or not mp.get_property_native('video-out-params') then
         report_failure('无法截图', {reason = 'no-video'}); return
     end
@@ -177,7 +172,7 @@ local function screenshot()
     if not ok or err or not utils.file_info(pending_png) then
         os.remove(pending_png)
         pending_png = nil
-        feedback('无法截图')
+        feedback('无法截图', 'error')
         return
     end
     run({action = 'screenshot', title = title(), temp_png = pending_png},
@@ -208,11 +203,11 @@ local function track_source(track, main)
 end
 
 local function clip_point()
-    if busy then feedback('正在处理，请稍候', 2); return end
+    if busy then feedback('正在处理，请稍候', 'notice'); return end
     local pos = mp.get_property_number('time-pos')
-    if not pos or pos < 0 then feedback('导出失败'); return end
-    if not a then a = pos; publish(); feedback('片段起点 A  ' .. clock(a), 1.5); return end
-    if pos <= a then feedback('片段终点要晚于起点'); return end
+    if not pos or pos < 0 then feedback('导出失败', 'error'); return end
+    if not a then a = pos; publish(); feedback('片段起点 A  ' .. clock(a), 'action'); return end
+    if pos <= a then feedback('片段终点要晚于起点', 'error'); return end
     local main = mp.get_property('stream-open-filename') or mp.get_property('path')
     local video_track = selected('video')
     if not video_track then report_failure('导出失败', {reason = 'no-video'}); return end
@@ -242,8 +237,8 @@ mp.register_script_message('set-default-format', function(format)
 end)
 
 local function copy_latest()
-    if busy then feedback('正在处理，请稍候', 2); return end
-    if not latest or not latest.file then feedback('暂无可复制的片段'); return end
+    if busy then feedback('正在处理，请稍候', 'notice'); return end
+    if not latest or not latest.file then feedback('暂无可复制的片段', 'error'); return end
     run({action = 'copy', file = latest.file}, latest.format:upper() .. ' 已复制', '复制失败')
 end
 

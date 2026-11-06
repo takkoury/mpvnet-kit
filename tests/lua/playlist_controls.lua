@@ -55,7 +55,11 @@ local utils = {
 }
 package.loaded['mp']=mp;package.loaded['mp.utils']=utils
 local original_dofile, original_open, original_getenv, original_remove=dofile,io.open,os.getenv,os.remove
-dofile=function(_) return {powershell=function() return 'powershell.exe' end} end
+dofile=function(path)
+    if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
+    return {powershell=function() return 'powershell.exe' end}
+end
 os.getenv=function(name) if name=='TEMP' or name=='TMP' then return temp end;return nil end
 os.remove=function(path) removed[#removed+1]=path;return true end
 io.open=function(_, _)

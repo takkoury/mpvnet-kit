@@ -23,7 +23,9 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ### 操作反馈与持续状态
 
-[feedback-osd.lua](../config/scripts/feedback-osd.lua)协调播放、字幕、截图／片段、增强、播放列表、弹幕和控制栏等已有反馈。各控制器持有动作结果和中文文案；协调器通过`feedback_osd/show(text, seconds)`接收1.5／2／4秒短消息，先暂时撤下自身持续文字，再交给原生`mp.osd_message`。尚未发布`user-data/mpvnet/feedback/ready=true`时，控制器直接用原生短消息回退。
+[feedback.lua](../config/script-modules/feedback.lua)提供`new(mp)`客户端，各控制器用`show(text, kind)`发送已有文案；`action`为1.5秒，`success`和普通`notice`为2秒，`error`为4秒。发送、就绪判断和原生回退集中在该Module，控制器仍拥有动作结果、文案和任务生命周期；弹幕加载用`is_ready()`决定是否需要无协调器时的短暂回退。
+
+[feedback-osd.lua](../config/scripts/feedback-osd.lua)继续通过既有`feedback_osd/show(text, seconds)`接收短消息，先暂时撤下自身持续文字，再交给原生`mp.osd_message`；秒数校验与持续槽顺序取自同一反馈Module。尚未发布`user-data/mpvnet/feedback/ready=true`时，客户端直接用原生短消息回退。原有未纳入该协议的3秒错误和20秒属性详情不变，不增加通用事件总线或动态槽注册。
 
 持续状态分别由Capture写`user-data/mpvnet/feedback/capture`、字幕控制器写`subtitle`，只包含固定中文及字幕数值，不含媒体路径。导出开始／终止更新Capture槽；换媒体不取消已有导出。字幕进入／调整更新字幕槽，退出／还原／媒体结束清除；模式外单次调整只显示短消息。显式进入或调整也发送短反馈以即时替换上一条，随后同一状态保留。弹幕控制器另写`danmaku`槽，沿已有请求代次从加载持续到成功／失败；换媒体、主动替换或退出取消时清除，旧回调只清理其自己的输出，不能清掉新状态。加载成功提示不等于存在可见弹幕；原自动显示与最小数量条件保持。各槽按导出、弹幕、字幕顺序组合，真实任务与媒体状态仍属于原模块。
 

@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import feedback_module
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'config/scripts/subtitle-controls.lua'
@@ -14,6 +15,7 @@ class SubtitleControls(unittest.TestCase):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
         cls.fixture = (ROOT / 'tests/lua/subtitle_controls.lua').read_text(encoding='utf-8')
+        cls.fixture = 'local feedback_module = ' + feedback_module() + '\n' + cls.fixture
         cls.fixture = cls.fixture.replace('-- SETTINGS MODEL IS INSERTED HERE',
                                           (ROOT / 'config/script-modules/user-settings.lua').read_text(encoding='utf-8'))
 

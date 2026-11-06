@@ -9,13 +9,14 @@ import unittest
 
 from lua_runtime import load_lua51
 
-from support.lua_source import fragment
+from support.lua_source import feedback_module, fragment
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = ROOT / 'config/scripts/capture-controls.lua'
 HELPER = ROOT / 'config/helpers/capture-media.ps1'
 PLAYBACK = ROOT / 'config/scripts/playback-feedback.lua'
 DANMAKU = ROOT / 'config/scripts/bilibiliAssert/main.lua'
+THUMBFAST = ROOT / 'config/scripts/thumbfast.lua'
 
 
 class PlaybackEndFeedback(unittest.TestCase):
@@ -23,7 +24,6 @@ class PlaybackEndFeedback(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         playback = PLAYBACK.read_text(encoding='utf-8')
-        cls.show = fragment(playback, 'local function show(text, duration)', 'local paths =')
         cls.source = fragment(playback,
                               'mp.register_event("end-file", function(event)',
                               'mp.register_event("file-loaded", function()')
@@ -49,7 +49,8 @@ local mp = {
             body += 'assert(reload_pending and reload_marks.mark==5)\n'
         else:
             body += 'assert(not reload_pending and reload_marks==nil)\n'
-        self.lua.execute(prelude + self.show + self.source + body, 'playback/end-feedback')
+        client = 'local feedback_client = ' + feedback_module() + '.new(mp)\n'
+        self.lua.execute(prelude + client + self.source + body, 'playback/end-feedback')
 
     def test_error_feedback_is_actionable_without_echoing_backend_data(self):
         self.check_event("{reason='error',error='unrecognized file format'}",
@@ -147,7 +148,7 @@ local function publish() end
 local function token() return '123-1-1' end
 local function write_payload() return payload_available and 'owned-payload.json' or nil end
 local function eq(a,b) assert(a==b, tostring(a)..' ~= '..tostring(b)) end
-'''
+''' + 'local feedback_client = ' + feedback_module() + '.new(mp)\n'
 
     def run_capture(self, body):
         self.lua.execute(self.prelude + self.capture_source + body, 'capture/feedback')
@@ -211,9 +212,7 @@ eq(busy,true); eq(pending_job,'existing-job')
 ''')
 
     def test_explicit_clipboard_url_rejection_and_success(self):
-        source = (self.prelude + '\nmp.get_property_native=function() return false end\n'
-                  + fragment(PLAYBACK.read_text(encoding='utf-8'), 'local function show(text, duration)', 'local paths =')
-                  + self.clipboard_source)
+        source = self.prelude + self.clipboard_source
         for value, message in ((None, '剪贴板中没有网址'), ('   ', '剪贴板中没有网址'),
                                ('file:///private/video.mkv', '剪贴板网址无效'),
                                ('https://example.test/a\nhttps://example.test/b', '剪贴板网址无效'),
@@ -239,7 +238,7 @@ class DanmakuFailureFeedback(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = DANMAKU.read_text(encoding='utf-8')
-        cls.prelude = r'''
+        cls.prelude = 'local feedback_module = ' + feedback_module() + r'''
 local messages, logs, calls, removed, durations, commands = {}, {}, {}, {}, {}, {}
 local properties, events = {}, {}
 local tracks, file_meta = {}, nil
@@ -259,7 +258,7 @@ local mp = {
     commandv=function(...) local args={...};commands[#commands+1]=args;if args[1]=='sub-add' then tracks[#tracks+1]={type='sub',id=7,title='Bilibili Danmaku'} end;return true end,
     get_time=function() return 1 end,
     get_script_directory=function() return 'private-script-path' end,
-    command_native=function() return 'paths.lua' end,
+    command_native=function(args) assert(args[1]=='expand-path'); return args[2] end,
     command_native_async=function(command, fn) calls[#calls+1]=command;callback=fn;return {} end,
     abort_async_command=function() end,
     osd_message=function(text,duration) messages[#messages+1]=text;durations[#durations+1]=duration end,
@@ -271,7 +270,11 @@ package.loaded['mp']=mp
 package.loaded['mp.utils']={join_path=function(a,b) return a..'/'..b end,
     file_info=function() return file_meta end}
 package.loaded['mp.options']={read_options=function() end}
-local dofile=function() return {options={python_path=''}} end
+local dofile=function(path)
+    if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
+    return {options={python_path=''}}
+end
 local os={time=function() return 1 end,getenv=function() return 'owned-temp' end,
     remove=function(path) removed[#removed+1]=path end}
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
@@ -387,49 +390,47 @@ for _,text in ipairs(messages) do assert(text~='弹幕已加载') end
 
 
 class ThumbnailFeedback(unittest.TestCase):
-    def test_windows_compatibility_messages_keep_failure_context(self):
-        source = (ROOT / 'config/scripts/thumbfast.lua').read_text(encoding='utf-8')
-        helper = fragment(source, 'local function startup_feedback()', 'local function spawn(time)')
-        callback = fragment(source, '    subprocess(args, true,', '\nend\n\nlocal function run(command)')
-        load_lua51().execute('''
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = load_lua51()
+        cls.source = THUMBFAST.read_text(encoding='utf-8')
+        cls.callback = fragment(cls.source, '    subprocess(args, true,', '\nend\n\nlocal function run(command)')
+
+    def run_startup_failure(self, body, *, ready, frontend_path='nil'):
+        prelude = '''
 local options={mpv_path='mpv'}
 local properties={['current-vo']='gpu-next'}
 local spawn_waiting,spawn_working=true,false
-local os_name,frontend_path='windows',nil
-local called,commands=nil,{}
-local mp={get_property_native=function() return true end,
+local os_name,frontend_path='windows',%s
+local called,commands,messages=nil,{},{}
+local mp={get_property_native=function() return %s end,
+ osd_message=function(text,duration) messages[#messages+1]={text,duration} end,
  commandv=function(...) commands[#commands+1]={...} end,
  msg={error=function() end}}
 local function subprocess(_,_,cb) called=cb end
-''' + helper + callback + '''
-called(false,{status=1})
+''' % (frontend_path, 'true' if ready else 'false')
+        client = 'local feedback_client = ' + feedback_module() + '.new(mp)\n'
+        self.lua.execute(prelude + client + self.callback + '\ncalled(false,{status=1})\n' + body,
+                         'thumbnail/startup-failure')
+
+    def test_windows_compatibility_messages_keep_failure_context(self):
+        self.run_startup_failure('''
+assert(#messages==0)
 assert(#commands==3)
 assert(commands[1][2]=='feedback_osd' and commands[1][5]=='4')
 for i=2,3 do
  assert(commands[i][4]=='缩略图启动失败\\n请检查进度预览程序路径')
  assert(commands[i][5]==4000 and commands[i][6]==20)
 end
-''', 'thumbnail/windows-failure')
+''', ready=True)
 
     def test_startup_failure_routes_safe_text_and_preserves_fallback(self):
-        lua = load_lua51()
-        path = ROOT / 'config/scripts/thumbfast.lua'
-        source = path.read_text(encoding='utf-8')
-        helper = fragment(source, 'local function startup_feedback()', 'local function spawn(time)')
-        lua.execute('''
-local ready=false
-local messages,commands={},{}
-local mp={get_property_native=function() return ready end,
- osd_message=function(t,d) messages[#messages+1]={t,d} end,
- commandv=function(...) commands[#commands+1]={...} end}
-''' + helper + '''
-startup_feedback()
+        self.run_startup_failure('''
+assert(#messages==1 and #commands==0)
 assert(messages[1][1]=='缩略图启动失败\\n请检查进度预览程序路径' and messages[1][2]==4)
-ready=true;startup_feedback();assert(#messages==1)
-assert(commands[1][2]=='feedback_osd' and commands[1][5]=='4')
-''', 'thumbnail/feedback')
-        lua.check_syntax(path)
-        self.assertNotIn('thumbfast: ERROR!', source)
+''', ready=False, frontend_path="'fixture.exe'")
+        self.lua.check_syntax(THUMBFAST)
+        self.assertNotIn('thumbfast: ERROR!', self.source)
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell helper checks')

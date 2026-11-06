@@ -128,6 +128,7 @@ local function instance(pid,order,startup_options)
             end
         end}
         dofile=function(path)
+            if path==config..'script-modules/feedback.lua' then return feedback_module end
             if path==config..'script-modules/user-settings.lua' then return model end
             if path==config..'script-modules/user-shortcuts.lua' then return parser end
             if path==config..'script-modules/mpvnet-paths.lua' then

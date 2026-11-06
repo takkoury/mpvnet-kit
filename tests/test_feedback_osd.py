@@ -1,5 +1,6 @@
 """OSD coordination must not clear or repeatedly overwrite native messages."""
 from pathlib import Path
+import json
 import unittest
 from lua_runtime import load_lua51
 
@@ -19,6 +20,7 @@ local observers, events, handlers, timers, messages, writes = {},{},{},{},{},{}
 local fail=false
 local function get(k,d) if props[k]~=nil then return props[k] end;return d end
 local mp={get_property=get,get_property_native=get,get_property_number=get,
+ command_native=function(args) assert(args[1]=='expand-path');return __FEEDBACK_PATH__ end,
  set_property=function(k,v) if fail then return false end;props[k]=v;writes[#writes+1]={k,v};return true end,
  set_property_native=function(k,v) props[k]=v;return true end,
  observe_property=function(k,_,f) observers[k]=f end,
@@ -31,6 +33,7 @@ local function property(k,v) props[k]=v;observers[k](k,v) end
 local function status(k,v) property('user-data/mpvnet/feedback/'..k,v) end
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 '''
+        prelude = prelude.replace('__FEEDBACK_PATH__', json.dumps((ROOT / 'config/script-modules/feedback.lua').as_posix()))
         self.lua.execute(prelude + self.source + '\n' + body, 'feedback-osd')
 
     def test_short_replacement_and_stale_timer_cannot_restore_early(self):

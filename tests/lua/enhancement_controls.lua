@@ -40,6 +40,10 @@ package.preload['mp.utils'] = function() return {file_info = function(path)
 end} end
 package.preload['mp.options'] = function() return {read_options = function(value) value.anime_verified = verified end} end
 package.preload['mp.msg'] = function() return {error = function() end} end
+local function dofile(path)
+    assert(path == '~~/script-modules/feedback.lua', 'unexpected dofile '..path)
+    return feedback_module
+end
 
 -- COMPLETE SOURCE IS INSERTED HERE
 

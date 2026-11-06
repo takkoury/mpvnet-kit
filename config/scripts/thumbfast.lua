@@ -440,14 +440,7 @@ end
 
 local activity_timer
 
-local function startup_feedback()
-    local text = "缩略图启动失败\n请检查进度预览程序路径"
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, '4')
-    else
-        mp.osd_message(text, 4)
-    end
-end
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 
 local function spawn(time)
     if disabled then return end
@@ -532,6 +525,7 @@ local function spawn(time)
                 options.tone_mapping = "no"
                 mp.msg.error("mpv subprocess create failed")
                 if not spawn_working then -- notify users of required configuration
+                    local failure_text = "缩略图启动失败\n请检查进度预览程序路径"
                     if options.mpv_path == "mpv" then
                         if properties["current-vo"] == "libmpv" then
                             if options.mpv_path == mpv_path then -- attempt to locate ImPlay
@@ -542,18 +536,18 @@ local function spawn(time)
                                     force_disabled = true
                                     info(real_w or effective_w, real_h or effective_h)
                                 end
-                                startup_feedback()
+                                feedback_client.show(failure_text, 'error')
                                 mp.commandv("script-message-to", "implay", "show-message", "thumbfast initial setup", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
                             end
                         else
-                            startup_feedback()
+                            feedback_client.show(failure_text, 'error')
                             if os_name == "windows" and frontend_path == nil then
-                                mp.commandv("script-message-to", "mpvnet", "show-text", "缩略图启动失败\n请检查进度预览程序路径", 4000, 20)
-                                mp.commandv("script-message", "mpv.net", "show-text", "缩略图启动失败\n请检查进度预览程序路径", 4000, 20)
+                                mp.commandv("script-message-to", "mpvnet", "show-text", failure_text, 4000, 20)
+                                mp.commandv("script-message", "mpv.net", "show-text", failure_text, 4000, 20)
                             end
                         end
                     else
-                        startup_feedback()
+                        feedback_client.show(failure_text, 'error')
                         -- found ImPlay but not defined in config
                         mp.commandv("script-message-to", "implay", "show-message", "thumbfast", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
                     end

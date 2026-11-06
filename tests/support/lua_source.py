@@ -8,6 +8,12 @@ def fragment(source, start, end):
     return source[first:source.index(end, first)]
 
 
+def feedback_module():
+    """Return a Lua expression executing the complete production feedback module."""
+    path = Path(__file__).resolve().parents[2] / 'config/script-modules/feedback.lua'
+    return '(function()\n' + path.read_text(encoding='utf-8') + '\nend)()'
+
+
 def _options(path):
     for line in Path(path).read_text(encoding='utf-8').splitlines():
         if line.strip() and not line.lstrip().startswith('#'):

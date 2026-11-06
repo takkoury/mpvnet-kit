@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import feedback_module
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'config/scripts/playlist-controls.lua'
@@ -13,7 +14,8 @@ class PlaylistControls(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
-        cls.fixture = (ROOT / 'tests/lua/playlist_controls.lua').read_text(encoding='utf-8')
+        cls.fixture = ('local feedback_module = ' + feedback_module() + '\n'
+                       + (ROOT / 'tests/lua/playlist_controls.lua').read_text(encoding='utf-8'))
 
     def run_case(self, name, initial_properties=''):
         prelude, cases = self.fixture.split('-- COMPLETE SOURCE IS INSERTED HERE\n', 1)

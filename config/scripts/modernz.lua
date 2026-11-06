@@ -23,6 +23,7 @@ local assdraw = require "mp.assdraw"
 local msg = require "mp.msg"
 local opt = require "mp.options"
 local utils = require "mp.utils"
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local settings_owners={}
 local settings_showonpause
 local settings_display
@@ -2573,22 +2574,19 @@ local function check_path_url()
     end
 end
 
-local function show_feedback(text, duration, minimum_osd_level)
-    if minimum_osd_level and mp.get_property_number("osd-level", 0) < minimum_osd_level then return end
-    if mp.get_property_native("user-data/mpvnet/feedback/ready") == true then
-        mp.commandv("script-message-to", "feedback_osd", "show", text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
+local function show_feedback(text, kind)
+    if mp.get_property_number("osd-level", 0) >= 1 then
+        feedback_client.show(text, kind)
     end
 end
 
 local function download_done(success)
     if success then
-        show_feedback(locale.download_complete, 2, 1)
+        show_feedback(locale.download_complete, 'success')
         state.downloaded_once = true
         msg.info("Download completed")
     else
-        show_feedback(locale.download_failed, 4, 1)
+        show_feedback(locale.download_failed, 'error')
         msg.info("Download failed")
     end
     state.downloading = false
@@ -4245,7 +4243,7 @@ local function osc_init()
         if state.eof_reached then
             mp.commandv("no-osd", "seek", 0, "absolute-percent")
             mp.set_property_bool("pause", false)
-            show_feedback("从头播放", 1.5)
+            feedback_client.show("从头播放", 'action')
         else
             mp.command(user_opts.play_pause_mbtn_left_command)
         end
@@ -4454,7 +4452,7 @@ local function osc_init()
     ne = new_element("shuffle", "button")
     ne.content = function() return state.shuffled and icons.shuffle_on or icons.shuffle_off end
     ne.eventresponder["mbtn_left_up"] = function()
-        show_feedback(state.shuffled and locale.unshuffle or locale.shuffle, 1.5, 1)
+        show_feedback(state.shuffled and locale.unshuffle or locale.shuffle, 'action')
         state.shuffled = not state.shuffled
         mp.command("playlist-" .. (state.shuffled and "shuffle" or "unshuffle"))
     end
@@ -4489,11 +4487,11 @@ local function osc_init()
         local localpath = mp.command_native({"expand-path", user_opts.download_path})
 
         if state.downloaded_once then
-            show_feedback(locale.downloaded, 1.5, 1)
+            show_feedback(locale.downloaded, 'action')
         elseif state.downloading then
-            show_feedback(locale.download_in_progress, 1.5, 1)
+            show_feedback(locale.download_in_progress, 'action')
         else
-            show_feedback(locale.downloading, 1.5, 1)
+            show_feedback(locale.downloading, 'action')
             state.downloading = true
             local command = {
                 "yt-dlp",
@@ -5616,7 +5614,7 @@ local function visibility_mode(mode, no_osd)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
         local labels = {auto = "控制栏自动显示", always = "控制栏始终显示", never = "控制栏已隐藏"}
-        show_feedback(labels[mode], 1.5)
+        feedback_client.show(labels[mode], 'action')
     end
 
     -- Reset the input state on a mode change. The input state will be
@@ -5707,7 +5705,7 @@ local function idlescreen_visibility(mode, no_osd)
     mp.set_property_native("user-data/osc/idlescreen", user_opts.idlescreen)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
-        show_feedback(user_opts.idlescreen and "空闲画面已开启" or "空闲画面已关闭", 1.5)
+        feedback_client.show(user_opts.idlescreen and "空闲画面已开启" or "空闲画面已关闭", 'action')
     end
 
     request_tick()

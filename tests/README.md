@@ -38,6 +38,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 `FeedbackOSD`归入lua，覆盖短消息替换与旧计时器失效、导出／字幕状态并存与终止、原生外部消息不被清除或重发、用户OSD原值和外部修改所有权、控制台／选择器／OSD等级让出及退出清理。字幕与Capture原有回归另检查状态发布；真实核心与合成任务检查不等同编码／剪贴板或实际屏幕观感验收。
 
+`FeedbackClient`直接加载完整反馈Module，验证语义时长、每次发送的就绪／回退、原文字与返回值、不发送非法类别，以及原wire秒数和固定槽顺序。调用者夹具同样加载真实模块，不再从播放器脚本中截取私有发送函数。
+
 `DanmakuFailureFeedback`另覆盖弹幕加载状态的成功／失败／取消、替换请求旧回调、完成前次字幕槽被占、赋值失败不报成功和可选日志OSD的路径隔离；转换与下载只使用合成结果，不联网。`ThumbnailFeedback`执行缩略图启动失败回调，核对协调器／原生回退及Windows兼容宿主提示完整性。ModernZ回归使用UTF-8边界验证中文省略、原因折行和原有命中几何，真实libass测宽与窗口观感分别留证。
 
 `PlaylistSelectorData`归入lua，覆盖真实队列ID0/重复/替换、标题模式、重排定位、删除失效与释放输入后的再次索引解析；`SubtitleSelector`检查当前项初始可见、动态焦点、路径搜索与媒体OSD控制字符中和。真实核心另用合成文件验证重排后播放、当前项重播、长队列和空态，不读取个人播放列表。

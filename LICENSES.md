@@ -77,6 +77,7 @@
 - `config/scripts/capture-controls.lua`
 - `config/scripts/enhancement-controls.lua`
 - `config/scripts/feedback-osd.lua`
+- `config/script-modules/feedback.lua`
 - `config/scripts/playback-feedback.lua`
 - `config/scripts/playlist-controls.lua`
 - `config/scripts/subtitle-controls.lua`

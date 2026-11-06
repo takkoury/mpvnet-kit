@@ -6,7 +6,7 @@ import unittest
 from lua_runtime import load_lua51
 
 
-from support.lua_source import fragment, string_configuration
+from support.lua_source import feedback_module, fragment, string_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
@@ -31,7 +31,7 @@ class ModernzInteractions(unittest.TestCase):
             fragment(source, 'local function prepare_elements()', '--\n-- Element Rendering'),
             fragment(playlist, 'local function queue()', 'local function find_id('),
             fragment(playlist, 'local function step(direction)', 'local function extension_sets()'),
-            fragment(feedback, 'local function show(text, duration)', 'local paths ='),
+            'local feedback_client = ' + feedback_module() + '.new(mp)',
             fragment(feedback, 'local function show_speed()', 'local seek_timer ='),
             fragment(source, 'close_popover = function()', 'local function enhancement_ready('),
             fragment(source, 'local function update_popover()', '-- Window Controls'),

@@ -4,6 +4,7 @@ import json
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import feedback_module
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +25,8 @@ class UserSettings(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lua = load_lua51()
-        cls.source = (ROOT / 'tests/lua/user_settings.lua').read_text(encoding='utf-8')
+        cls.source = ('local feedback_module = ' + feedback_module() + '\n'
+                      + (ROOT / 'tests/lua/user_settings.lua').read_text(encoding='utf-8'))
         package_options = {}
         for line in (ROOT / 'config/mpv.conf').read_text(encoding='utf-8').splitlines():
             key, separator, value = line.partition('=')

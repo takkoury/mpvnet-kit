@@ -8,6 +8,7 @@ import unittest
 import uuid
 
 from lua_runtime import load_lua51
+from support.lua_source import feedback_module
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / 'config/helpers/capture-media.ps1'
@@ -18,8 +19,9 @@ class CaptureRouting(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'config/scripts/capture-controls.lua').read_text(encoding='utf-8')
-        cls.prelude = r'''
+        cls.prelude = 'local feedback_module = ' + feedback_module() + r'''
 local bindings, messages, events, calls, removed, states = {}, {}, {}, {}, {}, {}
+local durations = {}
 local reply, callback, payload, state, time = nil, nil, nil, nil, 1
 local payload_failure, on_parse_reply = nil, nil
 local native = {vid=1, aid=2, ['video-out-params']={}}
@@ -38,12 +40,15 @@ local mp = {
     end,
     get_time=function() return time end,
     command_native=function(command)
+        if command[1]=='expand-path' then return command[2] end
         if command[1]=='screenshot-to-file' then screenshot_calls=screenshot_calls+1 end
-        return 'paths.lua'
     end,
     command_native_async=function(_, fn) calls[#calls+1]=payload; callback=fn end,
     set_property_native=function(name, value) native[name]=value;if name=='user-data/mpvnet/capture' then state=value;states[#states+1]=value end end,
-    osd_message=function(text) messages[#messages+1]=text end,
+    osd_message=function(text, duration)
+        messages[#messages+1]=text
+        durations[#messages]=duration
+    end,
     add_key_binding=function(_, name, fn) bindings[name]=fn end,
     register_script_message=function(name, fn) messages[name]=fn end,
     register_event=function(name, fn) events[name]=fn end,
@@ -59,7 +64,11 @@ package.loaded['mp.utils']={
         return reply
     end,
 }
-local dofile=function() return {powershell=function() return 'powershell' end, capture_payload=function() end} end
+local dofile=function(path)
+    if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
+    return {powershell=function() return 'powershell' end, capture_payload=function() end}
+end
 local os={getenv=function() return temp end,remove=function(path) removed[#removed+1]=path end}
 local io={open=function()
     if payload_failure=='open' then return nil end
@@ -118,6 +127,7 @@ events.shutdown();eq(native['user-data/mpvnet/feedback/capture'],'')
         self.run_case('''
 bindings['copy-latest']();eq(messages[#messages],'暂无可复制的片段');eq(#calls,0)
 clip('webp');bindings['copy-latest']();eq(messages[#messages],'正在处理，请稍候');eq(#calls,1)
+eq(durations[#messages],2)
 ''')
 
     def test_zero_start_and_invalid_b_preserve_visible_a(self):

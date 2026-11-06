@@ -1,15 +1,8 @@
 -- Focused playback actions shared by input.conf and ModernZ.
 -- No property observer emits OSD: feedback belongs to explicit user actions.
 local mp = require("mp")
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
-local function show(text, duration)
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
-    end
-end
-
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 -- The Windows host enables defaults before mpv_initialize; enforce the user whitelist at runtime too.
 mp.set_property_bool("input-default-bindings", false)
@@ -111,13 +104,13 @@ local function show_time()
     local current = mp.get_property_number("time-pos")
     local total = mp.get_property_number("duration")
     local hours = (current or 0) >= 3600 or (total or 0) >= 3600
-    show(time_text(current, hours) .. " / " .. time_text(total, hours), 1.5)
+    feedback_client.show(time_text(current, hours) .. " / " .. time_text(total, hours), 'action')
 end
 
 local function show_speed()
     local speed = mp.get_property_number("speed", 1)
     local number = string.format(speed % 1 == 0 and "%.1f" or "%g", speed)
-    show("倍速 ×" .. number, 1.5)
+    feedback_client.show("倍速 ×" .. number, 'action')
 end
 
 local function set_speed(value, quiet)
@@ -154,7 +147,7 @@ end
 local function toggle_pause()
     local paused = not mp.get_property_bool("pause", false)
     mp.set_property_bool("pause", paused)
-    show(paused and "已暂停" or "继续播放", 1.5)
+    feedback_client.show(paused and "已暂停" or "继续播放", 'action')
 end
 
 local function release_hold()
@@ -221,7 +214,7 @@ end)
 mp.add_key_binding(nil, "ontop", function()
     local enabled = not mp.get_property_bool("ontop", false)
     mp.set_property_bool("ontop", enabled)
-    show(enabled and "窗口已置顶" or "已取消置顶", 1.5)
+    feedback_client.show(enabled and "窗口已置顶" or "已取消置顶", 'action')
 end)
 mp.add_key_binding(nil, "window-100", function()
     if window_scale_timer then window_scale_timer:kill() end
@@ -234,7 +227,7 @@ mp.add_key_binding(nil, "window-100", function()
         window_scale_timer = nil
         mp.set_property_number("window-scale", 1)
     end)
-    show("窗口缩放 100%", 1.5)
+    feedback_client.show("窗口缩放 100%", 'action')
 end)
 mp.add_key_binding(nil, "media-info", function()
     mp.commandv('script-message-to', 'media_info', 'open')
@@ -247,7 +240,7 @@ end)
 mp.add_key_binding(nil, "copy-time", function()
     local current = mp.get_property_number("time-pos")
     if not current or current < 0 or current ~= current or current == math.huge then
-        show("无可复制的时间", 4)
+        feedback_client.show("无可复制的时间", 'error')
         return
     end
     -- Round the full timestamp before splitting so milliseconds carry across minutes/hours.
@@ -255,55 +248,55 @@ mp.add_key_binding(nil, "copy-time", function()
     local seconds = math.floor(milliseconds / 1000)
     local text = time_text(seconds, true) .. string.format(".%03d", milliseconds % 1000)
     local ok = mp.set_property("clipboard/text", text)
-    show(ok and "时间已复制" or "时间复制失败", ok and 2 or 4)
+    feedback_client.show(ok and "时间已复制" or "时间复制失败", ok and 'success' or 'error')
 end)
 mp.add_key_binding(nil, "copy-media-path", function()
     local address, kind = media_address()
     local ok = address and mp.set_property("clipboard/text", address)
-    show((kind == "URL" and "网址" or "路径") .. (ok and "已复制" or "复制失败"), ok and 2 or 4)
+    feedback_client.show((kind == "URL" and "网址" or "路径") .. (ok and "已复制" or "复制失败"), ok and 'success' or 'error')
 end)
 mp.add_key_binding(nil, "open-media-path", function()
     local address, kind = media_address()
-    if not address then show(kind == "URL" and "网址打开失败" or "文件定位失败", 4); return end
+    if not address then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
     -- Windows mpv subprocess stdin_data is unreliable; transport data in one owned UTF-8 JSON file.
     path_sequence = path_sequence + 1
     local directory = os.getenv("TEMP") or os.getenv("TMP")
     local absolute = directory and (directory:match("^%a:[\\/]") or directory:match("^\\\\"))
     local metadata = absolute and utils.file_info(directory)
-    if not metadata or not metadata.is_dir then show(kind == "URL" and "网址打开失败" or "文件定位失败", 4); return end
+    if not metadata or not metadata.is_dir then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
     local request_path = utils.join_path(directory, "mpvnet-path-" .. tostring(mp.get_property_number("pid")) .. "-" .. tostring(mp.get_time()):gsub("%W", "") .. "-" .. path_sequence .. ".json")
     local file = io.open(request_path, "wb")
-    if not file then show(kind == "URL" and "网址打开失败" or "文件定位失败", 4); return end
+    if not file then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
     local written = file:write(utils.format_json({operation = kind == "URL" and "url" or "reveal", address = address}))
     local closed = file:close()
-    if not written or not closed then os.remove(request_path); show(kind == "URL" and "网址打开失败" or "文件定位失败", 4); return end
+    if not written or not closed then os.remove(request_path); feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
     local helper = mp.command_native({"expand-path", "~~/helpers/media-path-action.ps1"})
     path_requests[request_path] = mp.command_native_async({name = "subprocess", args = {
         paths.powershell(), "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-File", helper, "-RequestPath", request_path,
     }, capture_stderr = true, playback_only = false}, function(success, result)
         path_requests[request_path] = nil
         os.remove(request_path)
-        if not success or not result or result.status ~= 0 then show(kind == "URL" and "网址打开失败" or "文件定位失败", 4) end
+        if not success or not result or result.status ~= 0 then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error') end
     end)
 end)
 mp.add_key_binding(nil, "clipboard-url", function()
     -- Read only on this explicit action; reject local paths and multiple clipboard lines.
     local text = mp.get_property("clipboard/text")
-    if not text or text:match("^%s*$") then show("剪贴板中没有网址", 4); return end
+    if not text or text:match("^%s*$") then feedback_client.show("剪贴板中没有网址", 'error'); return end
     text = text:match("^%s*(.-)%s*$")
-    if text:find("%s") or text:find("%c") then show("剪贴板网址无效", 4); return end
+    if text:find("%s") or text:find("%c") then feedback_client.show("剪贴板网址无效", 'error'); return end
     local scheme, authority = text:match("^([%a][%w+.-]*)://([^/?#]+)")
-    if not scheme or not authority or (scheme:lower() ~= "http" and scheme:lower() ~= "https") then show("剪贴板网址无效", 4); return end
+    if not scheme or not authority or (scheme:lower() ~= "http" and scheme:lower() ~= "https") then feedback_client.show("剪贴板网址无效", 'error'); return end
     mp.commandv("no-osd", "loadfile", text, "replace")
 end)
 mp.add_key_binding(nil, "save-mark", function()
     local current = mp.get_property_number("time-pos")
     if not current or not mp.get_property("path") then return end
     mark = current
-    show("已标记 " .. time_text(mark, true), 2)
+    feedback_client.show("已标记 " .. time_text(mark, true), 'success')
 end)
 mp.add_key_binding(nil, "jump-mark", function()
-    if mark == nil then show("尚无播放标记", 4); return end
+    if mark == nil then feedback_client.show("尚无播放标记", 'error'); return end
     seek(mark, "absolute+exact")
 end)
 mp.add_key_binding(nil, "ab-loop", function()
@@ -313,30 +306,30 @@ mp.add_key_binding(nil, "ab-loop", function()
     if a and b then
         mp.commandv("no-osd", "set", "ab-loop-a", "no")
         mp.commandv("no-osd", "set", "ab-loop-b", "no")
-        show("A–B 循环已关闭", 1.5)
+        feedback_client.show("A–B 循环已关闭", 'action')
         return
     end
     local current = mp.get_property_number("time-pos")
     if not current then return end
     if a then
         if current <= a then
-            show("循环终点要晚于起点", 4)
+            feedback_client.show("循环终点要晚于起点", 'error')
             return
         end
         mp.commandv("no-osd", "set", "ab-loop-count", "inf")
         mp.commandv("no-osd", "set", "ab-loop-b", current)
-        show("A–B 循环已开启", 1.5)
+        feedback_client.show("A–B 循环已开启", 'action')
     else
         mp.commandv("no-osd", "set", "ab-loop-b", "no")
         mp.commandv("no-osd", "set", "ab-loop-a", current)
-        show("循环起点 A  " .. time_text(current, true), 1.5)
+        feedback_client.show("循环起点 A  " .. time_text(current, true), 'action')
     end
 end)
 mp.add_key_binding(nil, "file-loop", function()
     local value = mp.get_property("loop-file", "no")
     local enabled = value ~= "no" and value ~= "0"
     mp.commandv("no-osd", "set", "loop-file", enabled and "no" or "inf")
-    show(enabled and "单文件循环已关闭" or "单文件循环已开启", 1.5)
+    feedback_client.show(enabled and "单文件循环已关闭" or "单文件循环已开启", 'action')
 end)
 mp.add_key_binding(nil, "reload", function()
     local path = mp.get_property("path")
@@ -415,7 +408,7 @@ mp.register_event("end-file", function(event)
         local message = (event.error or event.file_error) == "unrecognized file format"
             and "不支持此格式\n请换一个文件"
             or "播放失败\n请检查文件或网址"
-        show(message, 4)
+        feedback_client.show(message, 'error')
     end
 end)
 mp.register_event("file-loaded", function()

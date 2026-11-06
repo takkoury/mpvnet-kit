@@ -37,6 +37,7 @@ local o = {
 }
 
 options.read_options(o, "bilibiliAssert")
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 if paths.options.python_path ~= '' then o.python_path = paths.options.python_path end
 
@@ -47,21 +48,15 @@ local secondary_state = nil
 local generation = 0
 local pending_request = nil
 local shutting_down = false
-local function feedback(text, duration)
-    if shutting_down then return end
-    duration = duration or 4
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
-    end
+local function feedback(text, kind)
+    if not shutting_down then feedback_client.show(text, kind) end
 end
 local function loading(active)
     mp.set_property_native('user-data/mpvnet/feedback/danmaku', active and '正在加载弹幕…' or '')
     -- A ready coordinator owns this state until completion/cancellation. A timed
     -- native copy could outlive a quick media switch and report a retired task.
-    if active and mp.get_property_native('user-data/mpvnet/feedback/ready') ~= true then
-        feedback('正在加载弹幕…', 1.5)
+    if active and not feedback_client.is_ready() then
+        feedback('正在加载弹幕…', 'action')
     end
 end
 
@@ -113,16 +108,16 @@ local function file_exists(path)
 end
 
 -- Optional log OSD uses safe Chinese summaries, never filenames or raw diagnostics.
-local function log(text, user_text, duration)
+local function log(text, user_text)
     mp.msg.info(text)
-    if o.log_osd and user_text then feedback(user_text, duration or 1.5) end
+    if o.log_osd and user_text then feedback(user_text, 'action') end
 end
 
 -- load function
 local function load_danmu(file)
-	if not file_exists(file) then feedback("弹幕加载失败") return end
+	if not file_exists(file) then feedback("弹幕加载失败", 'error') return end
 	local secondary_sid = mp.get_property("secondary-sid", "no")
-	if secondary_id() then feedback("次字幕已占用，无法加载弹幕") return end
+	if secondary_id() then feedback("次字幕已占用，无法加载弹幕", 'error') return end
 	local primary_sid = mp.get_property("sid", "no")
 	local previous_ids = get_sub_ids()
 	mp.commandv("sub-add", file, "auto", "Bilibili Danmaku")
@@ -134,7 +129,7 @@ local function load_danmu(file)
 		if track["type"] == "sub" and not previous_ids[track["id"]]
 			and track["title"] == "Bilibili Danmaku" then added_sid = track["id"] break end
 	end
-	if not added_sid then feedback("弹幕加载失败") return end
+	if not added_sid then feedback("弹幕加载失败", 'error') return end
 	secondary_state = {
 		sid = secondary_sid,
 		visibility = mp.get_property_native("secondary-sub-visibility"),
@@ -144,7 +139,7 @@ local function load_danmu(file)
 	mp.set_property_native("secondary-sub-visibility", false)
 	mp.set_property_native("secondary-sub-ass-override", false)
 	mp.set_property_native("secondary-sid", danmu_sid)
-	if secondary_id() ~= danmu_sid then feedback("弹幕加载失败"); return end
+	if secondary_id() ~= danmu_sid then feedback("弹幕加载失败", 'error'); return end
 	local approximatedDanmukuCount = math.floor((utils.file_info(file)["size"] - 850) / 120)
 	log(file ..
 		' [' .. utils.file_info(file)["size"] ..
@@ -152,7 +147,7 @@ local function load_danmu(file)
 	if o.autoplay and approximatedDanmukuCount >= o.mincount then
 		Danmaku_show(true)
 	end
-	feedback('弹幕已加载', 2)
+	feedback('弹幕已加载', 'success')
 end
 
 -- check if danmaku exists, load if true
@@ -179,10 +174,10 @@ end
 -- call Danmu2Ass executable
 function Danmaku_process(cid)
 	if cid == nil then return end
-	if not o.use_python then feedback("弹幕加载失败") return end
+	if not o.use_python then feedback("弹幕加载失败", 'error') return end
 	local secondary_sid = secondary_id()
 	if secondary_sid and secondary_sid ~= danmu_sid then
-		feedback("次字幕已占用，无法加载弹幕") return
+		feedback("次字幕已占用，无法加载弹幕", 'error') return
 	end
 	Danmaku_terminate()
 	generation = generation + 1
@@ -264,21 +259,21 @@ function Danmaku_process(cid)
 				and "弹幕加载失败\n请检查 Python 路径"
 				or "弹幕加载失败"
 			log(start_failed and "DANMAKU LOAD FAILED: python-start" or "DANMAKU LOAD FAILED: worker")
-			feedback(message)
+			feedback(message, 'error')
 		end
 	end)
 end
 
 -- toggle danmaku visibility
 function Danmaku_toggle()
-	if not danmu_file or not danmu_sid or secondary_id() ~= danmu_sid then feedback("无可用弹幕") return end
+	if not danmu_file or not danmu_sid or secondary_id() ~= danmu_sid then feedback("无可用弹幕", 'error') return end
 
 	if danmu_open then
 		Danmaku_unshow(true)
 	elseif secondary_id() == danmu_sid then
 		Danmaku_show(true)
 	end
-	feedback(danmu_open and "弹幕已开启" or "弹幕已关闭", 1.5)
+	feedback(danmu_open and "弹幕已开启" or "弹幕已关闭", 'action')
 end
 
 -- remove danmaku

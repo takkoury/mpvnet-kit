@@ -1,12 +1,16 @@
 -- Own only the persistent OSD option. Native messages retain their own lifetime.
 local mp = require('mp')
-local root = 'user-data/mpvnet/feedback/'
-local owners = {'capture', 'danmaku', 'subtitle'}
-local states = {capture = '', danmaku = '', subtitle = ''}
+local policy = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'}))
+local root, owners = policy.root, policy.owners
+local states = {}
+for _, owner in ipairs(owners) do states[owner] = '' end
 local original, owned, lost, timer, serial, stopping = nil, nil, false, nil, 0, false
 
 local function has_states()
-    return states.capture ~= '' or states.danmaku ~= '' or states.subtitle ~= ''
+    for _, owner in ipairs(owners) do
+        if states[owner] ~= '' then return true end
+    end
+    return false
 end
 
 local function current()
@@ -57,7 +61,7 @@ end
 mp.register_script_message('show', function(text, seconds)
     if stopping or type(text) ~= 'string' or #text > 600 then return end
     local duration = tonumber(seconds)
-    if duration ~= 1.5 and duration ~= 2 and duration ~= 4 then return end
+    if not policy.accepts_duration(duration) then return end
     serial = serial + 1
     local revision = serial
     if timer then timer:kill() end

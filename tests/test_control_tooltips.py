@@ -4,7 +4,7 @@ import unittest
 
 from lua_runtime import load_lua51
 
-from support.lua_source import fragment, typed_configuration
+from support.lua_source import feedback_module, fragment, typed_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 MODERNZ = ROOT / 'config/scripts/modernz.lua'
@@ -21,6 +21,7 @@ class ControlTooltips(unittest.TestCase):
             fragment(source, 'local user_opts = {', 'local osc_param = {'), typed_configuration(ROOT / 'config/script-opts/modernz.conf'),
             fragment(source, 'local language = {', 'local bidi = {'),
             'local locale = language.default', prelude,
+            'local feedback_client = ' + feedback_module() + '.new(mp)',
             fragment(source, 'local function show_feedback(', 'local function new_element('),
             fragment(source, 'local function mult_alpha(', '-- draw tooltip background box and label'),
             fragment(source, '-- Button hints use a small self-drawn mouse,', 'local function ass_draw_cir_cw('),

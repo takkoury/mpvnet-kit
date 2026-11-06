@@ -2,6 +2,7 @@
 local mp=require('mp')
 local utils=require('mp.utils')
 local function expand(path) return mp.command_native({'expand-path','~~/'..path}) end
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local model=dofile(expand('script-modules/user-settings.lua'))
 local parser=dofile(expand('script-modules/user-shortcuts.lua'))
 local paths=dofile(expand('script-modules/mpvnet-paths.lua'))
@@ -226,11 +227,7 @@ local function opening_failure(detail, message)
     token='';editor_visible=false
     publish()
     if closing then return end
-    if mp.get_property_native('user-data/mpvnet/feedback/ready')==true then
-        mp.commandv('script-message-to','feedback_osd','show',message,'4')
-    else
-        mp.osd_message(message,4)
-    end
+    feedback_client.show(message, 'error')
 end
 local function open(target)
     if closing then return end

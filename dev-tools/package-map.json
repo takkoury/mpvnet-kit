@@ -3,6 +3,12 @@
   "version": "0.4.0",
   "files": [
     {
+      "source": "config/script-modules/feedback.lua",
+      "destination": "config/script-modules/feedback.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/scripts/feedback-osd.lua",
       "destination": "config/scripts/feedback-osd.lua",
       "component": "author",

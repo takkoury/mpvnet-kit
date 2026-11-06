@@ -1,13 +1,7 @@
 -- Optional per-file rendering presets. No color, VO, hardware-decoding or FPS changes.
 local mp = require('mp')
 local utils = require('mp.utils')
-local function show(text, duration)
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
-    end
-end
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 
 local options = require('mp.options')
 local msg = require('mp.msg')
@@ -109,8 +103,8 @@ local function publish()
     })
 end
 
-local function feedback(text, duration)
-    if not shutting_down then show(text, duration or 4) end
+local function feedback(text, kind)
+    if not shutting_down then feedback_client.show(text, kind) end
 end
 
 -- Set only file-local options: mpv restores the original values when this file ends.
@@ -149,7 +143,7 @@ local function apply(name, quiet, remember)
         last_error = 'Preset unavailable: ' .. tostring(name)
         error_reason, error_preset = reasons[name] or 'unavailable', name
         publish()
-        if not quiet then feedback(reason_text[error_reason]) end
+        if not quiet then feedback(reason_text[error_reason], 'error') end
         return false
     end
     local previous, err = snapshot()
@@ -157,7 +151,7 @@ local function apply(name, quiet, remember)
         last_error = err
         error_reason, error_preset = 'settings_failed', name
         publish()
-        if not quiet then feedback(reason_text[error_reason]) end
+        if not quiet then feedback(reason_text[error_reason], 'error') end
         return false
     end
     local ok
@@ -169,20 +163,20 @@ local function apply(name, quiet, remember)
         error_reason, error_preset = restored and 'settings_failed' or 'rollback_failed', name
         msg.error(last_error)
         publish()
-        if not quiet then feedback(reason_text[error_reason]) end
+        if not quiet then feedback(reason_text[error_reason], 'error') end
         return false
     end
     applied, last_error = name, nil
     error_reason, error_preset = nil, nil
     if remember then desired = name end
     publish()
-    if not quiet then feedback(name == 'OFF' and '画面设置已还原' or ('已选择' .. labels[name]), 2) end
+    if not quiet then feedback(name == 'OFF' and '画面设置已还原' or ('已选择' .. labels[name]), 'success') end
     return true
 end
 
 mp.register_script_message('set-preset', function(name)
     name = tostring(name or ''):upper()
-    if not labels[name] then feedback(reason_text.unavailable); return end
+    if not labels[name] then feedback(reason_text.unavailable, 'error'); return end
     apply(name, false, true)
 end)
 
@@ -234,7 +228,7 @@ mp.register_event('log-message', function(event)
         .. (restored and '' or '; rollback: ' .. tostring(err))
     error_reason, error_preset = restored and 'renderer_error' or 'rollback_failed', previous
     publish()
-    feedback(reason_text[error_reason])
+    feedback(reason_text[error_reason], 'error')
 end)
 mp.register_event('end-file', function()
     baseline, ready, applied = nil, false, nil

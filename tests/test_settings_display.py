@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
-from support.lua_source import fragment
+from support.lua_source import feedback_module, fragment
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,7 +21,7 @@ class SettingsDisplay(unittest.TestCase):
             fragment(source, 'local function get_hidetimeout()', 'local function cache_enabled()'),
             fragment(source, 'local function show_bar(', 'local function update_tracklist('),
             fragment(source, 'local function set_bar_visible(', '-- use_down:'),
-            fragment(source, 'local function show_feedback(', 'local function download_done('),
+            'local feedback_client = ' + feedback_module() + '.new(mp)',
             fragment(source, 'local function show_wc()', 'local function handle_touch('),
             fragment(source, 'local function do_enable_keybindings()', 'local function render()'),
             'local function autohide()\nlocal now=mp.get_time()\n' +

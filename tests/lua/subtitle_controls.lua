@@ -38,8 +38,9 @@ local settings_model=(function()
 -- SETTINGS MODEL IS INSERTED HERE
 end)()
 local dofile=function(path)
-    assert(path:find('user-settings.lua',1,true), 'subtitle controls must not own the selector')
-    return settings_model
+    if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    if path == '~~/script-modules/user-settings.lua' then return settings_model end
+    error('unexpected dofile '..path)
 end
 
 -- COMPLETE SOURCE IS INSERTED HERE

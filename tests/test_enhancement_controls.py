@@ -5,7 +5,7 @@ import unittest
 from lua_runtime import load_lua51
 
 
-from support.lua_source import fragment
+from support.lua_source import feedback_module, fragment
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'config/scripts/enhancement-controls.lua'
@@ -18,7 +18,10 @@ class EnhancementControls(unittest.TestCase):
         cls.lua = load_lua51()
         prelude, cases = (ROOT / 'tests/lua/enhancement_controls.lua').read_text(encoding='utf-8').split(
             '-- COMPLETE SOURCE IS INSERTED HERE\n', 1)
-        cls.source = '\n'.join([prelude, SCRIPT.read_text(encoding='utf-8'), cases])
+        cls.source = '\n'.join([
+            'local feedback_module = ' + feedback_module(), prelude,
+            SCRIPT.read_text(encoding='utf-8'), cases,
+        ])
 
     def run_case(self, case):
         self.lua.execute(self.source + '\n' + case + '()', name='enhancement/' + case)

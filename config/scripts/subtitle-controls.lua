@@ -1,5 +1,6 @@
 -- Primary subtitle controls; the Bilibili plugin keeps ownership of its secondary track.
 local mp = require("mp")
+local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local adjusting = false
 local saved_adjustment
 local position
@@ -8,19 +9,11 @@ local position_owner
 -- User-confirmed steps; no settings file is written by these actions.
 local delay_step, position_step, scale_step = 0.1, 1, 0.05
 
-local function show(text, duration)
-    if mp.get_property_native('user-data/mpvnet/feedback/ready') == true then
-        mp.commandv('script-message-to', 'feedback_osd', 'show', text, tostring(duration))
-    else
-        mp.osd_message(text, duration)
-    end
-end
-
 local function status(text)
     mp.set_property_native('user-data/mpvnet/feedback/subtitle', text or '')
     -- An explicit adjustment replaces the preceding short message immediately;
     -- when it expires, the same value remains in the persistent status layer.
-    if text then show(text, 1.5) end
+    if text then feedback_client.show(text, 'action') end
 end
 
 local function ordinary_tracks()
@@ -41,7 +34,7 @@ local function primary_track()
 end
 
 local function no_subtitle()
-    show("无可用字幕", 4)
+    feedback_client.show("无可用字幕", 'error')
 end
 
 local function select_subtitle()
@@ -77,7 +70,7 @@ end
 local function show_adjustment()
     local text = string.format("字幕位置 %.0f%%\n字号 ×%.2f", position,
         mp.get_property_number("sub-scale", 1))
-    if adjusting then status(text) else show(text, 1.5) end
+    if adjusting then status(text) else feedback_client.show(text, 'action') end
 end
 
 local function prepare_adjustment()
@@ -119,7 +112,7 @@ end
 local function toggle_adjustment()
     if adjusting then
         exit_mode()
-        show("已退出字幕调整", 1.5)
+        feedback_client.show("已退出字幕调整", 'action')
         return
     end
     if not prepare_adjustment() then return end
@@ -146,20 +139,20 @@ local function reset_adjustment()
     if position_owner then position_owner.invalidate() end
     local had_adjustment = saved_adjustment ~= nil
     reset_for_file()
-    show(had_adjustment and "字幕位置、字号已还原" or "无可还原的字幕调整", had_adjustment and 2 or 4)
+    feedback_client.show(had_adjustment and "字幕位置、字号已还原" or "无可还原的字幕调整", had_adjustment and 'success' or 'error')
 end
 
 local function delay(amount)
     local value = amount and mp.get_property_number("sub-delay", 0) + amount or 0
     if math.abs(value) < 0.00001 then value = 0 end
     mp.set_property_number("sub-delay", value)
-    show(string.format("字幕延迟 %+.1f 秒", value), 1.5)
+    feedback_client.show(string.format("字幕延迟 %+.1f 秒", value), 'action')
 end
 
 mp.add_key_binding(nil, "toggle", function()
     local visible = not mp.get_property_bool("sub-visibility", true)
     mp.set_property_bool("sub-visibility", visible)
-    show(visible and "字幕已开启" or "字幕已关闭", 1.5)
+    feedback_client.show(visible and "字幕已开启" or "字幕已关闭", 'action')
 end)
 mp.add_key_binding(nil, "select", select_subtitle)
 mp.add_key_binding(nil, "cycle-next", function() cycle_subtitle(1) end)
@@ -180,7 +173,7 @@ mp.add_key_binding(nil, "copy", function()
     if not text or not text:match("%S") then no_subtitle(); return end
     -- Use the native API's write result; never read or clear the clipboard first.
     local ok, err = mp.set_property("clipboard/text", text)
-    show(ok and "字幕已复制" or "字幕复制失败", ok and 2 or 4)
+    feedback_client.show(ok and "字幕已复制" or "字幕复制失败", ok and 'success' or 'error')
     if not ok then mp.msg.warn("Subtitle clipboard write failed: " .. tostring(err)) end
 end)
 mp.register_event("start-file", reset_for_file)

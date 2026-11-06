@@ -7,9 +7,11 @@ The modified script is provided as source under [MPL-2.0](LICENSE); the original
 | Input | SHA256 |
 | --- | --- |
 | Original upstream thumbfast.lua | `a3d08e71eae8b892f6cd39f9593ea219768e709312d176bca883841b156448bf` |
-| Distributed modified thumbfast.lua | `33e612f6b7ca88753ce27eb7a0097dd275349f94c781c3fd28b70597d847bef7` |
+| Distributed modified thumbfast.lua | `e45fead4fe32ed42d8cf0516405b52575cf969c698409fe561976e9baf40bb1e` |
 
 ## Local modifications
+
+2026-11-06: delegate the existing startup OSD routing and four-second policy to the shared kit feedback client. Keep the compatibility host messages and all thumbnail worker behavior.
 
 2026-11-06: use concise Chinese startup failure messages and the kit feedback coordinator when available, with native OSD fallback. Preserve backend discovery, retry branches and upstream terminal diagnostics; existing Windows frontend fallback messages use the same four-second error duration.
 
