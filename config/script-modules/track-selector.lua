@@ -322,11 +322,11 @@ local function confirm_clear(s)
     local ok=pcall(s.clear,done)
     if not ok then done(false,'未能确认清空结果，请重新打开播放历史核对。') end
 end
-local function retry_history(s)
+local function retry_list_read(s)
     reset_tip(s)
     if s.state.can_retry and type(s.retry)=='function' then
         local ok=pcall(s.retry)
-        if not ok and active==s then s.error='未能读取播放历史，请重试。';render() end
+        if not ok and active==s then s.error='重试失败，请关闭后重新打开。';render() end
     end
 end
 local function selection(s)
@@ -478,7 +478,7 @@ mouse_button=function(info)
         if pressed==hit and type(hit)=='string' and hit:match('^filter%d$') then set_filter(s,tonumber(hit:sub(-1)))
         elseif pressed==hit and type(hit)=='number' then submit(s,hit)
         elseif pressed==hit and hit=='clear' then ask_clear(s)
-        elseif pressed==hit and hit=='retry' then retry_history(s)
+        elseif pressed==hit and hit=='retry' then retry_list_read(s)
         elseif pressed==hit and (hit=='confirm-cancel' or hit=='confirm-outside') then cancel_clear(s)
         elseif pressed==hit and hit=='confirm-accept' then confirm_clear(s)
         elseif pressed==hit and hit=='close' then M.close()
@@ -504,7 +504,7 @@ key=function(name, info)
     elseif name=='enter' then
         if s.focus=='close' then M.close()
         elseif s.focus=='clear' then ask_clear(s)
-        elseif s.focus=='retry' then retry_history(s)
+        elseif s.focus=='retry' then retry_list_read(s)
         elseif s.focus=='filter' then set_filter(s,s.filter_index)
         elseif s.focus=='row' then submit(s,s.focus_id)
         elseif #s.matches>0 then
@@ -900,8 +900,12 @@ render=function()
     end
     end
     local footer=y+height-34*scale;rect(out,x+1,footer,panel_width*scale-2,scale,'2C2C2C')
+    local empty_keys
+    if not selectable(s) or (#s.matches==0 and not s.profile.off) then
+        empty_keys=l.retry and 'Tab 切换　Esc 关闭' or 'Esc 关闭'
+    end
     if history then
-        add_text(out,'↑ ↓ 移动　Enter 播放',x+18*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
+        add_text(out,empty_keys or '↑ ↓ 移动　Enter 播放',x+18*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
         local count=(q~='' and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..(s.kind=='history' and ' 条' or ' 项')
         if s.kind=='history' then
             add_text(out,count,x+186*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,4)
@@ -912,7 +916,14 @@ render=function()
             add_text(out,count,x+(panel_width-18)*scale,footer+17*scale,meta_size*scale,'AAAAAA',nil,false,6)
         end
     else
-    add_text(out,s.kind=='playlist' and '↑ ↓ 移动　Enter 播放　Esc 取消' or properties and '↑ ↓ 移动　Enter 查看　Esc 取消' or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消' or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消' or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消' or '↑ ↓ 移动　Enter 选择　Esc 取消',x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
+    local keys=empty_keys
+        or s.kind=='playlist' and '↑ ↓ 移动　Enter 播放　Esc 取消'
+        or properties and '↑ ↓ 移动　Enter 查看　Esc 取消'
+        or s.kind=='bindings' and '↑ ↓ 移动　Enter 执行　Esc 取消'
+        or (s.kind=='chapter' or s.kind=='lines') and '↑ ↓ 移动　Enter 跳转　Esc 取消'
+        or s.kind=='edition' and '↑ ↓ 移动　Enter 切换　Esc 取消'
+        or '↑ ↓ 移动　Enter 选择　Esc 取消'
+    add_text(out,keys,x+18*scale,footer+10*scale,meta_size*scale,'AAAAAA')
     local count=((q~='' or (grouped and s.filter~='all')) and tostring(#s.matches)..' / ' or '')..tostring(#s.tracks)..((s.kind=='bindings' or s.kind=='menu' or s.kind=='playlist' or properties) and ' 项' or s.kind=='lines' and ' 行' or s.kind=='chapter' and ' 章' or s.kind=='device' and ' 项' or s.kind=='edition' and ' 个版本' or ' 条')
     add_text(out,count,x+(panel_width-18)*scale-measure(s,count,meta_size*scale),footer+10*scale,meta_size*scale,'AAAAAA')
     end

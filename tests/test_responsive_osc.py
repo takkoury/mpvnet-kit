@@ -32,7 +32,7 @@ class ResponsiveOsc(unittest.TestCase):
             fragment(source, 'local layouts = {}', 'layouts["compact"] = function ()'),
             fragment(source, 'local function prepare_elements()', '--\n-- Element Rendering'),
             fragment(source, 'local function bind_buttons(', '-- format seconds into a time string'),
-            'local function build_volume_source()\nlocal ne\n' + fragment(source, '    --volumebar\n', '    -- zoom in/out helper') + '\nend',
+            'local function build_volume_sources()\nlocal ne\n' + fragment(source, '    -- vol_ctrl\n', '    -- zoom in/out helper') + '\nend',
             fragment(source, 'local function reset_timeout()', 'local function do_enable_keybindings()'),
             fragment(source, 'local function request_init_resize()', 'local function render_wipe('),
             fragment(source, 'observe_cached("speed", function()', 'mp.observe_property("user-data/mpvnet/enhancement"'),

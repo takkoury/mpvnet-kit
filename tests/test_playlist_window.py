@@ -23,12 +23,26 @@ class PlaylistWindow(unittest.TestCase):
         cls.output = create_fixture_root(configured, ROOT, mode='unique')
         cls.helper = ROOT / 'config/helpers/playlist-window.ps1'
 
-    def run_fixture(self, name):
+    def run_fixture(self, name, *arguments, evidence_name=None):
         result = run_recorded([str(self.ps), '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
                                '-File', str(ROOT / 'tests/fixtures' / name),
-                               '-SourcePath', str(self.helper)], self.output / name, timeout=30, append_suffix=True)
+                               '-SourcePath', str(self.helper), *arguments], self.output / (evidence_name or name),
+                              timeout=30, append_suffix=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
         return json.loads(result.stdout.decode('utf-8-sig'))
+
+    def test_ipc_distinguishes_disconnection_from_normal_exit(self):
+        for mode in ('EarlyEof', 'ReadyEof', 'ClientClose', 'Shutdown', 'ParentExit'):
+            with self.subTest(mode=mode):
+                data = self.run_fixture('playlist_session_probe.ps1', '-ArtifactDirectory',
+                                        str(self.output), '-Mode', mode, evidence_name='session-' + mode)
+                self.assertEqual(data['ready'], mode != 'EarlyEof', data)
+                self.assertEqual(data['helper_error'], '', data)
+                disconnected = mode in ('EarlyEof', 'ReadyEof')
+                self.assertEqual(data['helper_exit'], int(disconnected), data)
+                self.assertEqual(data['helper_reply']['ok'], not disconnected, data)
+                if disconnected:
+                    self.assertEqual(data['helper_reply']['phase'], 'session', data)
 
     def test_dynamic_shortcuts_use_shared_key_names_and_release_changed_keys(self):
         data = self.run_fixture('playlist_shortcuts.ps1')

@@ -6,6 +6,8 @@ The modified Lua script remains under [LGPL-2.1](LICENSE); its original introduc
 
 ## Local modifications
 
+2026-11-06: expose the existing no-audio reason on the disabled volume control, including its compact More-menu entry; layouts and actions are unchanged.
+
 2026-11-06: use the shared kit feedback client for existing action messages; preserve text, durations, native fallback and per-action OSD-level gating. Rendering, layouts and command bindings are unchanged.
 
 2026-11-06: translate loop/capture marker hover labels while preserving internal kind identifiers, lanes, hit areas and time formatting.

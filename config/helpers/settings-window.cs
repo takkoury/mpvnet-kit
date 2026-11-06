@@ -320,7 +320,7 @@ public sealed partial class SettingsEditor : Window
         Grid.SetRow(shortcuts,1); shell.Children.Add(shortcuts); shortcuts.Visibility = Visibility.Collapsed;
         footerPanel = new Border { BorderBrush = Brush("#2E2E2E"), BorderThickness = new Thickness(0,1,0,0), Padding = new Thickness(0,12,0,16), Margin = new Thickness(0,12,0,0), Background = Background }; Grid.SetRow(footerPanel,2); shell.Children.Add(footerPanel);
         var footer = new StackPanel(); footerPanel.Child = footer;
-        notice = new TextBlock { Text = "正在连接播放器…", TextWrapping = TextWrapping.Wrap, Foreground = Brush("#ABABAB"), Margin = new Thickness(0,0,0,8) }; footer.Children.Add(notice);
+        notice = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brush("#ABABAB"), Margin = new Thickness(0,0,0,8) }; footer.Children.Add(notice);
         var actions = new DockPanel(); footer.Children.Add(actions);
         reset = Button("恢复本页默认", Reset); reset.Background = Brushes.Transparent; reset.BorderThickness = new Thickness(0); reset.Foreground = Brush("#ABABAB"); reset.Padding = new Thickness(12,8,12,8); reset.HorizontalContentAlignment = HorizontalAlignment.Center; DockPanel.SetDock(reset,Dock.Left); actions.Children.Add(reset);
         var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; actions.Children.Add(right);
@@ -583,9 +583,10 @@ public sealed partial class SettingsEditor : Window
         string error = SettingsDraft.Str(latest, page == "paths" ? "paths_error" : "error");
         string revision = SettingsDraft.Str(latest, page == "paths" ? "paths_revision" : "revision");
         string baseline; bool stale = model.Revisions.TryGetValue(page, out baseline) && baseline != revision;
+        string loadingNotice = latest.Count == 0 ? "正在连接播放器…" : "";
         string noticeText = localError.Length > 0 ? localError : error.Length > 0 ? error :
             stale && model.Dirty(page) ? "配置已被其他窗口修改。草稿已保留；撤销本页修改可载入最新值。" :
-            saving ? "正在保存…" : "";
+            saving ? "正在保存…" : loadingNotice;
         if (!saving && localError.Length == 0 && SettingsDraft.Str(latest, "save_page") == page && serial > 0)
         {
             string saveError = SettingsDraft.Str(latest, "save_error");
@@ -605,7 +606,14 @@ public sealed partial class SettingsEditor : Window
         save.IsEnabled = !saving && !disconnected && model.Dirty(page) && !stale && error.Length == 0 && valid;
         undo.IsEnabled = !saving && !disconnected && (model.Dirty(page) || stale || model.Fields.Values.Any(f => f.Page == page && (f.Status == "preview" || f.CanCancel)));
         reset.IsEnabled = !saving && !disconnected && model.Fields.Values.Any(f => f.Page == page) && error.Length == 0; reset.Visibility = page == "advanced" || page == "shortcuts" ? Visibility.Collapsed : Visibility.Visible;
-        if (page == "shortcuts") { notice.Text = localError.Length > 0 ? localError : shortcuts.Notice; notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed; save.IsEnabled = !saving && !disconnected && shortcuts.CanSave; undo.IsEnabled = !saving && !disconnected && !shortcuts.Saving; reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving; }
+        if (page == "shortcuts") {
+            string shortcutNotice = shortcuts.Notice;
+            notice.Text = localError.Length > 0 ? localError : shortcutNotice.Length > 0 ? shortcutNotice : loadingNotice;
+            notice.Visibility = notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            save.IsEnabled = !saving && !disconnected && shortcuts.CanSave;
+            undo.IsEnabled = !saving && !disconnected && !shortcuts.Saving;
+            reset.Visibility = Visibility.Visible; reset.IsEnabled = !saving && !disconnected && !shortcuts.Saving;
+        }
         else if (shortcuts.Saving) { save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false; }
         footerPanel.Visibility = search.Text.Trim().Length > 0 || page == "advanced" ? Visibility.Collapsed : Visibility.Visible;
         if (settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed) save.IsEnabled = undo.IsEnabled = reset.IsEnabled = false;

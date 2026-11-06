@@ -167,6 +167,8 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 发行包可包含`docs/upgrade-notice.txt`。包读取器只从已通过manifest摘要校验的字节读取该提示，最大4096字节；缺少提示的旧包保持兼容。维护计划通过`releaseNotice`传给图形安装器与命令行文本输出：更新确认摘要直接展示，首次安装可在确认详情中展开；恢复／还原不展示升级提示。此展示字段不改变安装、备份、冲突保护或事务顺序。
 
+`maintenance.psm1`的`Get-KitMaintenanceReason`统一给维护计划、图形失败摘要和CLI文本输出提供中文原因；含中文路径的英文诊断仍需转换。图形详情及CLI显式`-Details`保留必要的原始技术诊断，JSON错误字段保持原契约。此函数仅负责展示，不改变错误判断、写入或恢复流程。
+
 Capture、Playlist、快捷键、标题路径和媒体信息使用各自拥有的 UTF-8 临时 JSON 文件传参，媒体地址等数据不拼成 shell 命令。
 
 媒体信息的旧`playback_feedback/media-info`动作转发给[media-info.lua](../config/scripts/media-info.lua)，保留原键位与Info按钮。控制层保存打开时的媒体快照及自有请求／唤回序号文件；同一媒体重复打开唤回已有窗，切换媒体后显式打开会先结束旧helper、再生成当前快照，防止两窗并存。网络请求不传URL、请求头或外部轨道地址；标题为URL时使用通用名称。播放进度变化不刷新阅读中的报告。
@@ -174,6 +176,8 @@ Capture、Playlist、快捷键、标题路径和媒体信息使用各自拥有�
 [media-info-window.ps1](../config/helpers/media-info-window.ps1)校验请求与序号路径配对；[数据层](../config/helpers/media-info-data.cs)读取当前父播放器目录的MediaInfo.dll，以默认Complete=0取得完整原始报告，保留未知字段和行；网络仅使用播放器可取得属性，缺失不猜测。本地读取失败保留可用概览及中文原因。[WPF视图](../config/helpers/media-info-view.cs)负责概览／详情、名称值列、无法结构化的原行、查找及复制；复制详情保留原报告，不复制过滤后的子集。父Process、owner校验、Loaded后轮询、关闭序号及NoShow边界沿关于窗口约定。报告获取与展示分离，不把MediaInfo动态字段压缩成固定概览字段。
 
 Playlist 和快捷键窗口绑定启动它们的播放器 PID、IPC 与 token，关闭时只通知或清理自己的窗口和请求。Capture 用任务 ID、父进程及 Job Object 管理 FFmpeg，失败只清理本任务产生的文件；打开输出目录使用独立请求，不占用导出状态。切换媒体可清除可见区间，但不取消已经开始的导出；媒体代次防止旧任务结果影响新媒体标记。
+
+Playlist在父进程仍存活时遇IPC读取失败或EOF，沿已有helper失败回执退出，由控制层显示中文提示；匹配token的关闭消息、shutdown事件和父进程已退出仍正常结束，不误报连接失败。
 
 Playlist 的 WinForms 展示继续位于 `playlist-window.ps1`：`PlaylistStyle` 集中当前窗口配色，客户区标题栏沿用设置窗口的视觉；`WM_NCCALCSIZE`将绘制范围扩到整个窗口，`WM_NCPAINT`／`WM_NCACTIVATE`不再进入默认系统框绘制，普通`WM_ACTIVATE`仍由Form处理。保留sizing样式、水平命中映射和 `PlaylistFollower` 的可见边缘计算。标题栏／底栏尺寸按窗口 DPI 转为物理像素。关闭按钮进入原关闭拦截并隐藏窗口；搜索按钮位于底栏右侧，复用原搜索切换，展开后依次排列输入框、计数和按钮。两按钮聚焦时 Space／Enter 留给按钮激活，列表内仍沿用播放器快捷键转发。此层不持有真实队列或改变 IPC 契约。隐藏句柄消息、命中及离屏绘制检查不等同真实跨屏与跟随验收。
 

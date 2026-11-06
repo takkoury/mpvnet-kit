@@ -111,6 +111,8 @@ python -B dev-tools/run-tests.py --profile core --profile install
 
 `InstallerUI`归入helpers，编译真实`installer-ui.cs`并检查窗口能力、确认摘要／完整详情、收展高度与文字选区保持、取消默认、按钮布局和原生Edit滚底末行；不运行维护写入，不显示窗口。100%／150%／200%合成倍率检查不等同混合显示器DPI验收，真实选择文本／拖动及DWM像素仍需单独试用。
 
+安装器失败夹具通过真实隐藏窗口检查含中文路径的英文诊断仍转换为中文原因，并保留详情及JSON错误契约。Playlist会话夹具使用实际命名管道及NoShow helper，区分首次数据前断连、就绪后断连、匹配token关闭、shutdown和父进程退出；不启动或关闭个人播放器。设置窗口另检查首份匹配会话状态前的连接提示及连接失败优先级。
+
 `AboutController`归入lua，检查关于窗口单helper、重复唤回、迟到打开重放、失败及退出清理；`AboutWindowTests`归入helpers，运行真实WPF启动器的ValidateOnly检查版本来源、完整信息、路径校验及无句柄／计时器。owner、实际激活和父播放器退出仍需隔离真窗试用。
 
 媒体信息由`MediaInfoController`（lua）、`MediaInfoDataTests`和`MediaInfoViewTests`（helpers）分别验证会话及地址隔离、原始报告与概览数据、完整行保留及搜索／复制。可选`MPVNET_TEST_MEDIAINFO`指向已有MediaInfo.dll，使用临时父进程与合成音频对照默认Inform原报告；不读取个人配置，不安装DLL。无此依赖时仅允许对应真实DLL用例跳过，隐藏WPF不替代用户键鼠与owner验收。

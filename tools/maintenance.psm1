@@ -173,14 +173,17 @@ function Assert-MaintenanceRecoverable($Pending, [string]$Target) {
     }
     Assert-MaintenanceExpected $Pending.path $Pending.sha256
 }
-function Get-MaintenanceReason([string]$Message) {
+function Get-KitMaintenanceReason([string]$Message) {
     if ($Message -match 'Managed file modified or deleted: (.+)') { return "配置包文件已修改或缺失：$($Matches[1])。请先保存并处理这些改动，再重新检查；安装器不会覆盖或合并。" }
     if ($Message -match 'Unknown file occupies a new runtime path: (.+)') { return "新文件位置已被其他内容占用：$($Matches[1])。请先自行保存并处理，安装器不会覆盖。" }
-    if ($Message -match '[\u4e00-\u9fff]') { return $Message }
-    if ($Message -match 'removed or renamed') { return '新版配置包移除或重命名了部分已安装文件，当前暂不支持这类更新。请保留现有配置与备份。' }
-    if ($Message -match 'receipt|Receipt|backup|Backup') { return '安装记录或备份未通过完整性检查。请保留配置目录和原备份，再核对安装来源。' }
-    if ($Message -match 'Reparse|reparse|directory|Directory|path|Path') { return '配置目录、配置包或备份路径不符合安全要求，请检查是否存在链接、占用或目录重叠。' }
-    if ($Message -match 'checksum|manifest|package') { return '配置包未通过完整性检查，请重新获取完整配置包后再试。' }
+    # A Chinese filename inside an English diagnostic does not localize the reason.
+    if ($Message -match '^\s*[\u4e00-\u9fff]') { return $Message }
+    # Classify the diagnostic prefix, not words such as "backup" in a filename.
+    $reason = ($Message -split ':', 2)[0]
+    if ($reason -match 'removed or renamed') { return '新版配置包移除或重命名了部分已安装文件，当前暂不支持这类更新。请保留现有配置与备份。' }
+    if ($reason -match 'receipt|backup') { return '安装记录或备份未通过完整性检查。请保留配置目录和原备份，再核对安装来源。' }
+    if ($reason -match 'checksum|manifest|package') { return '配置包未通过完整性检查，请重新获取完整配置包后再试。' }
+    if ($reason -match 'reparse|directory|path') { return '配置目录、配置包或备份路径不符合安全要求，请检查是否存在链接、占用或目录重叠。' }
     return '无法完成检查。请保留现有配置，并核对播放器、配置包及备份目录是否可访问。'
 }
 function Test-MaintenanceClean($Context, $Package, [string]$PlayerPath, [string]$ConfigDirectory) {
@@ -290,7 +293,7 @@ function Get-MaintenanceState {
                     $view.restoreManifest = $install.receipt.record.manifest; $view.restoreFiles = $state.restore.files
                     $view.restoreChangedFiles = @($install.receipt.record.value.files | Where-Object changed).Count
                     $view.restoreKind = $state.restore.kind; $view.restorePreviousVersion = $state.restore.previousVersion; $view.canRestore = $true
-                } catch { $state.restoreError = Get-MaintenanceReason $_.Exception.Message; $view.warnings += ('无法还原上一步：' + $state.restoreError) }
+                } catch { $state.restoreError = Get-KitMaintenanceReason $_.Exception.Message; $view.warnings += ('无法还原上一步：' + $state.restoreError) }
             }
             if ($state.kind -eq 'managed' -and -not @($install.files | Where-Object changed).Count) { $view.action = 'current'; $view.reason = '当前配置与此配置包一致，无需更新。'; $view.eligible = $false }
             elseif ($state.kind -eq 'clean') { $view.action = 'install'; $view.reason = '配置目录符合首次安装要求，可以开始安装。'; $view.eligible = $true }
@@ -321,7 +324,7 @@ function Get-MaintenanceState {
         }
     } catch {
         $view.action = if ($state.pending) { 'recover' } else { 'blocked' }; $view.eligible = $false; $view.canRestore = $false
-        $view.reason = Get-MaintenanceReason $_.Exception.Message; $view.planToken = ''; $view.restorePlanToken = ''
+        $view.reason = Get-KitMaintenanceReason $_.Exception.Message; $view.planToken = ''; $view.restorePlanToken = ''
     }
     return $state
 }
@@ -596,7 +599,12 @@ function Write-KitMaintenanceResult($Value, [ValidateSet('Json', 'Text')][string
     [Console]::OutputEncoding = $script:MaintenanceUtf8
     if ($OutputFormat -eq 'Json') { [Console]::WriteLine(($Value | ConvertTo-Json -Depth 24)); return }
     $data = @{}; if ($Value -is [Collections.IDictionary]) { foreach ($key in $Value.Keys) { $data[$key] = $Value[$key] } } else { foreach ($property in $Value.PSObject.Properties) { $data[$property.Name] = $property.Value } }
-    if ($data['error']) { [Console]::WriteLine('操作未完成：' + [string]$data['error']); return }
+    if ($data['error']) {
+        $reason = Get-KitMaintenanceReason ([string]$data['error'])
+        [Console]::WriteLine('操作未完成：' + $reason)
+        if ($Details -and $reason -cne [string]$data['error']) { [Console]::WriteLine("技术详情：`r`n" + [string]$data['error']) }
+        return
+    }
     $lines = New-Object 'System.Collections.Generic.List[string]'
     $labels = @{ install = '首次安装'; update = '更新配置'; current = '无需更新'; blocked = '暂时无法继续'; recover = '恢复未完成的操作'; restore = '还原上一步配置' }
     $lines.Add([string]$labels[$data['action']] + $(if ($data['mode'] -eq 'applied') { ' · 已完成' } else { ' · 检查结果' }))
@@ -617,4 +625,4 @@ function Write-KitMaintenanceResult($Value, [ValidateSet('Json', 'Text')][string
     [Console]::WriteLine(($lines -join "`r`n"))
 }
 
-Export-ModuleMember -Function Get-KitMaintenancePlan,Invoke-KitMaintenance,Write-KitMaintenanceResult
+Export-ModuleMember -Function Get-KitMaintenancePlan,Invoke-KitMaintenance,Write-KitMaintenanceResult,Get-KitMaintenanceReason

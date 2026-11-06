@@ -43,6 +43,7 @@ public static class MpvnetInstallerDpi {
     if (-not $PackageRoot) { $PackageRoot = Split-Path -Parent $PSScriptRoot }
     $script:modulePath = Join-Path $PSScriptRoot 'maintenance.psm1'
     if (-not [IO.File]::Exists($script:modulePath)) { throw '安装器文件不完整，请重新解压完整配置包。' }
+    Import-Module $script:modulePath
     $script:backupRoot = $BackupRoot; $script:packageRoot = $PackageRoot; $script:plan = $null; $script:worker = $null; $script:runspace = $null
     $script:busy = $false; $script:confirming = $false; $script:installed = $false; $script:snapshotTaken = $false; $script:detailsExpanded = $false
     $script:lastResult = $null; $script:lastOperation = ''; $script:restoreLabel = '还原上次操作'; $script:preserveResult = $false
@@ -236,21 +237,23 @@ public static class MpvnetInstallerDpi {
         $footer.PerformLayout()
     }
     function Set-Failure([string]$Title, [string]$Detail) {
+        $reason = Get-KitMaintenanceReason $Detail
+        $displayDetail = if ($reason -ceq $Detail) { $reason } else { $reason + "`r`n`r`n技术详情：`r`n" + $Detail }
         $script:plan = $null; $script:resultState = 'blocked'; $script:statusLabel.Text = $Title
         if (-not $script:target) {
             $script:targetBox.Text = '未能确定配置目录。'; $script:sourceLabel.Text = '来源：未确定  ·  目录状态：未确定'
         }
-        $brief=$Detail.Replace("`r`n",' ').Replace("`n",' ').Trim()
+        $brief=$reason.Replace("`r`n",' ').Replace("`n",' ').Trim()
         $script:reasonLabel.Text = if($brief.Length -le 64){$brief}else{'请查看详情，处理后重新检查。'}
         $script:summaryLabel.Text=''
         $script:nextLabel.Text = '请查看具体原因，处理后重新检查。播放器路径和已有备份将保留。'
-        $script:logBox.Text = $Detail
+        $script:logBox.Text = $displayDetail
         if ($script:preserveResult -and $script:lastResult) {
             $script:resultState = 'completed-check-failed'; $script:statusLabel.Text = $script:lastResult.title
             $script:reasonLabel.Text = $script:lastResult.description + ' 最新检查未完成，请查看详情并重新检查。'
             $script:nextLabel.Text = $script:lastResult.backupText
             $script:summaryLabel.Text = "本次操作：已处理 $($script:lastResult.changedFiles) 个文件。`r`n最新检查：$($plan.reason)"
-            $script:logBox.Text = $script:lastResult.description + "`r`n" + $script:lastResult.backupText + "`r`n`r`n最新检查失败：`r`n" + $Detail
+            $script:logBox.Text = $script:lastResult.description + "`r`n" + $script:lastResult.backupText + "`r`n`r`n最新检查失败：`r`n" + $displayDetail
         }
         if($script:preserveResult -and $script:lastResult){$script:reasonLabel.Text='操作已完成，但重新检查未完成。';$script:summaryLabel.Text=''}
         Set-DetailsExpanded $false

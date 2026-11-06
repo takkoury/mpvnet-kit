@@ -4333,6 +4333,7 @@ local function osc_init()
     ne = new_element("vol_ctrl", "button")
     ne.enabled = state.audio_track_count > 0
     ne.off = state.audio_track_count == 0
+    ne.nothingavailable = locale.no_audio
     ne.content = function ()
         local volume = state.volume
         return state.mute and icons.volume_mute or (volume >= 75 and icons.volume_high) or (volume >= 25 and icons.volume_low) or icons.volume_quiet

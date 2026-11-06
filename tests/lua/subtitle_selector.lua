@@ -149,7 +149,8 @@ function keyboard_selection_off_current_and_filtered_empty()
     assert(open(nil,'no'));invoke('DOWN');invoke('ENTER');eq(submitted[1],0);idle_resources()
     assert(open(nil,'3'));invoke('ENTER');eq(submitted[2],3);idle_resources()
     assert(open());text('no match');invoke('ENTER');assert(M.is_open());eq(#submitted,2)
-    assert(data():find('没有匹配的字幕',1,true));invoke('DOWN');invoke('ENTER');eq(submitted[3],0)
+    assert(data():find('没有匹配的字幕',1,true));text_point('↑ ↓ 移动　Enter 选择　Esc 取消')
+    invoke('DOWN');invoke('ENTER');eq(submitted[3],0)
     assert(open());invoke('UP');invoke('ENTER');eq(submitted[4],9)
 end
 function errors_refresh_reentrant_submission_and_stale_callback()
@@ -459,6 +460,7 @@ function edition_selection_has_numbers_but_no_off_or_single_choice()
         return M.open({kind='edition',tracks=items,current_id=1,submit=function(id) submitted[#submitted+1]=id;return true end})
     end
     assert(open_editions(list));assert(data():find('选择媒体版本',1,true));assert(data():find('2 个版本',1,true))
+    text_point('↑ ↓ 移动　Enter 切换　Esc 取消')
     assert(not data():find('关闭视频画面',1,true));local positions={}
     for line in data():gmatch('[^\n]+') do
         if line:find('\\an6',1,true) then positions[#positions+1]=line:match('\\pos%(([%d%.%-]+),') end
@@ -467,8 +469,10 @@ function edition_selection_has_numbers_but_no_off_or_single_choice()
     invoke('DOWN');invoke('ENTER');eq(submitted[1],1);idle_resources()
     assert(open_editions(list));text('8');invoke('ENTER');eq(submitted[2],2)
     assert(open_editions({list[1]}));assert(data():find('当前媒体只有一个版本',1,true))
+    text_point('Esc 关闭');assert(not data():find('Enter 切换',1,true))
     invoke('DOWN');text('ignored');assert(not data():find('ignored',1,true));invoke('ENTER');eq(#submitted,2);idle_resources()
-    assert(open_editions({}));assert(data():find('没有可用的媒体版本',1,true));invoke('ESC');idle_resources()
+    assert(open_editions({}));assert(data():find('没有可用的媒体版本',1,true));text_point('Esc 关闭')
+    invoke('ESC');idle_resources()
 end
 function advanced_subtitle_blocked_rows_and_target_slot_layout()
     local list={{id=1,title='简体中文',lang='zh',codec='subrip',external=false,slot_label='已用于主字幕',blocked_reason='该轨道已用于主字幕，不能同时用于次字幕。'},
@@ -479,6 +483,7 @@ function advanced_subtitle_blocked_rows_and_target_slot_layout()
     assert(show());assert(data():find('选择次字幕轨',1,true));assert(data():find('已用于主字幕',1,true));assert(data():find('Bilibili Danmaku',1,true))
     invoke('DOWN');invoke('DOWN');invoke('ENTER');eq(#submitted,0);assert(M.is_open());assert(data():find('不能同时用于次字幕',1,true))
     invoke('Ctrl+f');text('简体');invoke('ENTER');eq(#submitted,0);assert(M.is_open(),'search must not submit only blocked match')
+    text_point('↑ ↓ 移动　Enter 选择　Esc 取消')
     invoke('Ctrl+u');invoke('ENTER');eq(submitted[1],2);idle_resources()
     assert(show());invoke('DOWN');invoke('ENTER');eq(submitted[2],0);idle_resources()
     assert(show());local unblocked={{id=1,title='简体中文',lang='zh',codec='subrip',external=false}}
@@ -705,10 +710,14 @@ function saved_playback_loading_retry_and_no_match_have_no_off_action()
     local calls=0
     assert(M.open({kind='watchlater',tracks={},state={empty_title='正在读取保存记录…',empty_hint=''},submit=function(id) calls=calls+1;return true end,
         retry=function() M.update(history_rows(),0,'',{can_retry=false}) end}))
+    text_point('Esc 关闭');assert(not data():find('Enter 播放',1,true))
     local s=active_state();eq(s.focus,'close');invoke('DOWN');eq(calls,0)
     M.update({},0,'',{empty_title='未能读取保存记录',empty_hint='请重试。',can_retry=true})
+    text_point('Tab 切换　Esc 关闭')
     invoke('TAB');eq(s.focus,'retry');invoke('ENTER');eq(s.focus,'search');eq(#s.tracks,2)
+    text_point('↑ ↓ 移动　Enter 播放')
     text('no-match');invoke('ENTER');invoke('DOWN');eq(calls,0);assert(M.is_open())
+    text_point('Esc 关闭');assert(not data():find('Enter 播放',1,true))
     invoke('TAB');eq(s.focus,'close');invoke('ESC');idle_resources()
 end
 
@@ -817,6 +826,30 @@ function properties_empty_retry_and_no_off_selection()
         retry=function() M.update({{id=3,title='volume',property_value='37'}},0,'',{}) end,submit=function(id) submitted[#submitted+1]=id;return true end}))
     invoke('DOWN');eq(#submitted,0);invoke('TAB');eq(active_state().focus,'retry');invoke('ENTER');eq(active_state().focus,'search')
     text('not-a-property');invoke('DOWN');invoke('ENTER');eq(#submitted,0);invoke('ESC');idle_resources()
+end
+
+function retry_exception_belongs_to_the_active_list()
+    local replace = false
+    local function submit() return true end
+    local function retry()
+        if replace then
+            M.close()
+            assert(M.open({kind='menu',tracks={{id=1,title='重新读取的菜单项'}},submit=submit}))
+        end
+        error('private retry exception')
+    end
+    assert(M.open({kind='menu',tracks={},state={can_retry=true},retry=retry,submit=submit}))
+    local previous = active_state()
+    invoke('TAB');invoke('ENTER')
+    eq(active_state(),previous)
+    text_point('重试失败，请关闭后重新打开。')
+    assert(not data():find('播放历史',1,true) and not data():find('private retry exception',1,true))
+    replace = true
+    local button = previous.layout.retry
+    mouse(button.x+button.w/2,button.y+button.h/2);invoke('MBTN_LEFT')
+    assert(active_state()~=previous and data():find('重新读取的菜单项',1,true))
+    assert(not data():find('重试失败',1,true))
+    invoke('ESC');idle_resources()
 end
 
 function properties_large_snapshot_does_not_measure_hidden_ids()

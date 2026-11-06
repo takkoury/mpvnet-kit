@@ -67,7 +67,7 @@ local function fixture(width, height, options)
             unavailable_reasons = {ANIME_LIGHT = "hdr_source", ANIME_STRONG = "hdr_source"}}}
     osc_param = {playresx = width, playresy = height, areas = {}, video_margins = {}}
     mouse_x, mouse_y, init_count = -10, -10, 0
-    for _, name in ipairs({"info", "sub_track", "vol_ctrl", "enhancement", "speed", "screenshot", "ontop", "playlist", "download", "cache_info",
+    for _, name in ipairs({"info", "sub_track", "enhancement", "speed", "screenshot", "ontop", "playlist", "download", "cache_info",
         "playlist_prev", "playlist_next", "chapter_prev", "chapter_next", "jump_backward", "jump_forward", "play_pause", "title", "chapter_title", "time_codes"}) do
         local e = new_element(name, "button")
         e.content = name
@@ -75,15 +75,15 @@ local function fixture(width, height, options)
     end
     elements.speed.content = function() return "× " .. string.format("%g", state.speed) end
     elements.time_codes.content = function() return options.time_text or "0:00 / 6:00" end
-    elements.vol_ctrl.enabled, elements.sub_track.enabled = not options.no_tracks, not options.no_tracks
-    elements.vol_ctrl.nothingavailable, elements.sub_track.nothingavailable = "无音轨", "无字幕"
+    elements.sub_track.enabled = not options.no_tracks
+    elements.sub_track.nothingavailable = "无字幕"
     for _, pair in ipairs({{"jump_backward", -10}, {"jump_forward", 10}}) do
         local amount = pair[2]
         elements[pair[1]].eventresponder = {mbtn_left_down = function()
             mp.commandv("script-message-to", "playback_feedback", "seek", amount, "relative+exact")
         end}
     end
-    build_volume_source()
+    build_volume_sources()
     new_element("seekbar", "slider")
     new_element("persistent_seekbar", "slider")
     layouts.default()
@@ -288,9 +288,10 @@ function no_tracks()
     assert(r.sources.vol_ctrl.visible and not r.sources.vol_ctrl.enabled)
     assert(r.sources.sub_track.visible and not r.sources.sub_track.enabled)
     fixture(320,200,{no_tracks = true}); open()
-    local row = entry_row("sub_track"); assert(not row.enabled); eq(row.tooltipF(), nil)
+    local row = entry_row("sub_track"); assert(not row.enabled); eq(row.tooltipF(), nil); has(row.content(), "无字幕")
     click(row); eq(state.more_page, "root"); eq(#commands + #command_strings, 0)
-    row = entry_row("vol_ctrl"); click(row); eq(state.more_page, "root")
+    row = entry_row("vol_ctrl"); assert(not row.enabled); eq(row.tooltipF(), nil); has(row.content(), "无音轨")
+    click(row); eq(state.more_page, "root"); eq(#commands + #command_strings, 0)
 end
 
 function more_tooltips()

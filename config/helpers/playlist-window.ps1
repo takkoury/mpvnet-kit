@@ -1295,7 +1295,10 @@ public sealed class PlaylistTip : Form {
             if ($parentProcess.HasExited) { Exit-Window; return }
             $updates = 0
             while ($readTask.IsCompleted -and $updates -lt 64) {
-                if ($readTask.IsFaulted -or $null -eq $readTask.Result) { Exit-Window; return }
+                if ($readTask.IsFaulted -or $null -eq $readTask.Result) {
+                    if ($parentProcess.HasExited) { Exit-Window; return }
+                    throw 'ipc-disconnected'
+                }
                 $playlistEvent = $readTask.Result | ConvertFrom-Json
                 if ($playlistEvent.event -eq 'property-change') {
                     switch ($playlistEvent.name) {

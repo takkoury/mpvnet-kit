@@ -66,3 +66,25 @@ class InstallerUI(unittest.TestCase):
         for item in self.data['idle']:
             self.assertEqual(item['margin_writes'], 0, item)
             self.assertTrue(item['selection'], item)
+
+    def test_failure_summary_localizes_diagnostics_with_chinese_paths(self):
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+            '-File', str(ROOT/'tests/fixtures/installer_failure_cases.ps1'), '-SourceRoot', str(ROOT)],
+            capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
+        data = json.loads(result.stdout.decode('utf-8-sig'))
+        for item in data['cases']:
+            self.assertFalse(item['shown'])
+            self.assertEqual(item['state'], 'blocked')
+            self.assertTrue(item['reason'].startswith(('配置包未通过', '安装记录或备份', '无法完成检查', '配置目录不可访问', '配置目录、配置包')), item)
+            self.assertNotIn('checksum', item['summary'])
+            self.assertIn(item['reason'], item['details'])
+            self.assertIn(item['input'], item['details'])
+        self.assertEqual(data['cases'][0]['reason'], data['cases'][2]['reason'])
+        self.assertEqual(data['cases'][0]['reason'], data['cases'][3]['reason'])
+        self.assertEqual(data['cases'][0]['reason'], data['cases'][4]['reason'])
+        self.assertEqual(data['cases'][-1]['input'], data['cases'][-1]['reason'])
+        self.assertNotIn('checksum', data['output']['Text'])
+        self.assertIn('技术详情', data['output']['Details'])
+        self.assertIn('Package checksum mismatch', data['output']['Details'])
+        self.assertEqual(json.loads(data['output']['Json'])['error'], data['cases'][0]['input'])

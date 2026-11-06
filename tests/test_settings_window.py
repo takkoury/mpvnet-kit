@@ -146,7 +146,7 @@ class SettingsWindow(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='mpvnet-settings-window-') as temp:
             request = Path(temp) / 'request.json'
             request.write_text(json.dumps(dict(schema=1, token=TOKEN, script='user_settings',
-                parent_pid=os.getpid(), pipe='fixture-unused', validation_state=initial or state(),
+                parent_pid=os.getpid(), pipe='fixture-unused', validation_state=state() if initial is None else initial,
                 validation_steps=list(steps), validation_width=width, validation_height=height,
                 validation_render_path=str(Path(temp) / 'render.png') if render else '', **(entry or {})), ensure_ascii=False), encoding='utf-8')
             result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
@@ -166,6 +166,18 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['dirty_pages'], [])
         self.assertFalse(data['can_save'])
         self.assertEqual(len(data['drafts']), 6)
+
+    def test_loading_notice_waits_for_current_editor_state(self):
+        waiting = '正在连接播放器…'
+        for entry in ({}, dict(open_page='shortcuts', open_serial=1)):
+            with self.subTest(entry=entry):
+                data = self.run_window(initial=state(editor_token='different-editor'), entry=entry)
+                self.assertEqual(data['notice'], waiting)
+                self.assertFalse(data['can_save'])
+        loaded = self.run_window([dict(op='state', state=state())], initial={})
+        self.assertEqual(loaded['notice'], '')
+        failed = self.run_window([dict(op='disconnect')], initial={})
+        self.assertIn('播放器连接中断', failed['notice'])
 
     def test_search_all_pages_preserves_other_drafts(self):
         data = self.run_window([dict(op='edit', id='sub-scale', text='1.2'),

@@ -125,6 +125,9 @@ class SubtitleSelector(unittest.TestCase):
     def test_properties_empty_retry_and_no_off_selection(self):
         self.run_case('properties_empty_retry_and_no_off_selection')
 
+    def test_retry_exception_belongs_to_the_active_list(self):
+        self.run_case('retry_exception_belongs_to_the_active_list')
+
     def test_properties_large_snapshot_does_not_measure_hidden_ids(self):
         self.run_case('properties_large_snapshot_does_not_measure_hidden_ids')
 
