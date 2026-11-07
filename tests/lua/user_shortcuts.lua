@@ -239,6 +239,10 @@ function native_catalog_coverage()
         ['script-binding select/select-audio-device']='audio.device',
         ['script-binding select/select-chapter']='chapter.select',
         ['script-binding select/select-aid']='audio.select',
+        ['script-message-to mpvnet open-files']='file.open',
+        ['script-message-to mpvnet open-files append']='file.append',
+        ['script-message-to mpvnet open-clipboard']='file.open-clipboard',
+        ['script-message-to mpvnet open-clipboard append']='file.append-clipboard',
         ['script-message-to mpvnet play-pause']='playback.pause',
         ['script-binding playback_feedback/toggle-pause']='playback.pause',
         ['playlist-prev']='playlist.previous',['playlist-next']='playlist.next',
@@ -249,6 +253,10 @@ function native_catalog_coverage()
     }
     for command,id in pairs(aliases) do eq(catalog.by_command[command].id,id) end
     eq(catalog.by_command['script-binding select/select-aid'].command,'script-binding track_selection/select-audio')
+    eq(catalog.by_id['file.open'].command,'script-binding playlist_controls/open-files')
+    eq(catalog.by_id['file.append'].command,'script-binding playlist_controls/append-files')
+    eq(catalog.by_id['file.open-clipboard'].command,'script-binding playlist_controls/open-clipboard')
+    eq(catalog.by_id['file.append-clipboard'].command,'script-binding playlist_controls/append-clipboard')
     eq(catalog.by_command['script-binding select/select-chapter'].command,'script-binding track_selection/select-chapter')
     eq(catalog.by_command['script-binding select/select-audio-device'].command,'script-binding track_selection/select-device')
     eq(catalog.by_command['script-binding select/select-vid'].command,'script-binding track_selection/select-video')

@@ -1,4 +1,4 @@
-"""Exercise the complete Playlist script with only the mpv/IO host replaced."""
+"""Exercise the complete Playlist script with host and input-delegation doubles."""
 from pathlib import Path
 import unittest
 
@@ -34,8 +34,11 @@ class PlaylistControls(unittest.TestCase):
     def test_success_and_shutdown_are_silent(self):
         self.run_case('success_and_shutdown_are_silent')
 
-    def test_append_rejections_and_partial_success(self):
-        self.run_case('append_rejections_and_partial_success')
+    def test_append_delegates_unfiltered_paths_with_token_boundary(self):
+        self.run_case('append_delegates_unfiltered_paths_with_token_boundary')
+
+    def test_input_bindings_and_shutdown_delegate(self):
+        self.run_case('input_bindings_and_shutdown_delegate')
 
     def test_actions_keep_queue_ids_and_token_boundary(self):
         self.run_case('actions_keep_queue_ids_and_token_boundary')

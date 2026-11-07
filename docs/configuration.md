@@ -144,7 +144,7 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 | `osd-on-seek` | 原生 seek 提示 | 显式 `no` | 采用官方选项值；脚本仍有自己的反馈 | `osd-on-seek=no` |
 | `osd-playing-msg` | 加载媒体时的文字 | 显式空值；脚本也强制清空 | 本实现会覆盖此配置；不要依赖此项自定义开场信息 | `osd-playing-msg=` |
 | `input-default-bindings` | mpv 默认绑定 | 显式 `no`；脚本再次强制关闭 | yes/no；本实现不能只改成 yes 恢复默认键 | `input-default-bindings=no` |
-| `autocreate-playlist` | 从当前目录创建同类队列 | 显式 `same` | no/filter/same；具体支持依播放器版本 | `autocreate-playlist=same` |
+| `autocreate-playlist` | 打开单个文件时从当前目录创建同类队列 | 显式 `same` | no/filter/same；套件多选和追加媒体不自动补队，不改此默认 | `autocreate-playlist=same` |
 | `directory-filter-types` | 目录队列文件类别 | 显式 `video,audio` | 播放器支持的类型列表；按手册检查 | `directory-filter-types=video,audio` |
 | `directory-mode` | 如何处理目录条目 | 显式 `ignore` | auto/lazy/recursive/ignore；按版本手册检查 | `directory-mode=ignore` |
 | `vo` | 渲染输出优先列表 | 显式 `gpu-next,gpu` | 逗号分隔驱动列表，首项不可用才回退；非强制单一驱动 | `vo=gpu-next,gpu` |

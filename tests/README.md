@@ -34,6 +34,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 ## Lua 与 helper 条件
 
+`PlaylistInputController`归入lua，执行完整文件输入模块，检查打开／追加、异步请求失效、取消、完整队列身份及不改变暂停状态。`PlaylistInput`归入helpers，需要已有本地.NET 10 SDK和.NET Framework 4.7.2引用，编译实际C#后用合成文件与注入输入源验证混排、路径去重、字幕、原生格式边界、stdout结果和父退出；不读写个人剪贴板、不打开桌面文件对话框。`PlaylistInputBuild`归入core，只用Python检查运行EXE摘要、输出隔离和构包拒绝过期资产；`PlaylistInputCompilation`归入helpers，实际运行构建工具与最终EXE。日常包构建不需要SDK。实际系统文件对话框的owner、焦点和键鼠体验由隔离试用另验。
+
 `InstallLauncher`归入helpers，只在全新仓外夹具调用实际`Install.cmd`，以缺失或合成PowerShell安装器检查中文输出、成功／失败退出码和暂停路径。覆盖437、936、65001代码页及中文／空格路径，核对返回后恢复原代码页；不调用真实安装器或显示窗口。
 
 `FeedbackOSD`归入lua，覆盖短消息替换与旧计时器失效、导出／字幕状态并存与终止、原生外部消息不被清除或重发、用户OSD原值和外部修改所有权、控制台／选择器／OSD等级让出及退出清理。字幕与Capture原有回归另检查状态发布；真实核心与合成任务检查不等同编码／剪贴板或实际屏幕观感验收。

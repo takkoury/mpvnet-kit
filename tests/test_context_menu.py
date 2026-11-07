@@ -70,6 +70,10 @@ class ContextMenu(unittest.TestCase):
     def test_kit_actions_use_current_backends(self):
         menu = {path: command for _, command, path in entries() if path}
         expected = {
+            '文件 > 打开文件…': 'script-binding playlist_controls/open-files',
+            '文件 > 追加文件到播放列表…': 'script-binding playlist_controls/append-files',
+            '文件 > 打开剪贴板中的文件或网址': 'script-binding playlist_controls/open-clipboard',
+            '文件 > 从剪贴板追加文件或网址': 'script-binding playlist_controls/append-clipboard',
             '工具与设置 > 常用设置…': 'script-binding user_settings/open',
             '播放 > 播放／暂停': 'script-binding playback_feedback/toggle-pause',
             '窗口与界面 > 切换控制栏显示方式': 'script-binding playback_feedback/osc-visibility',

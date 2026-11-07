@@ -30,7 +30,7 @@ class ModernzInteractions(unittest.TestCase):
             fragment(source, 'local function bind_buttons(', '-- format seconds into a time string'),
             fragment(source, 'local function prepare_elements()', '--\n-- Element Rendering'),
             fragment(playlist, 'local function queue()', 'local function find_id('),
-            fragment(playlist, 'local function step(direction)', 'local function extension_sets()'),
+            fragment(playlist, 'local function step(direction)', 'local function action('),
             'local feedback_client = ' + feedback_module() + '.new(mp)',
             fragment(feedback, 'local function show_speed()', 'local seek_timer ='),
             fragment(source, 'close_popover = function()', 'local function enhancement_ready('),

@@ -1,10 +1,17 @@
--- The whole production script runs below; doubles represent mpv and the OS only.
+-- The complete controller runs below; input delegation has a separate full-module fixture.
 local bindings, events, script_messages, commands, messages, logs = {}, {}, {}, {}, {}, {}
 local properties = {pid = 123, ['working-directory'] = 'X:/fixture', path = 'X:/fixture/current.mkv',
     ['options/input-ipc-server'] = '', ['options/video-exts'] = {'mkv', 'mp4'},
     ['options/audio-exts'] = {'flac', 'mp3'}, playlist = {{id=71}, {id=92}}}
 local failure, callback, removed, temp = '', nil, {}, 'X:/fixture/temp'
 local parsed, emitted_payload
+local input_requests, input_shutdowns = {}, 0
+local input_module = {new=function(actual_mp, actual_utils, feedback)
+    assert(actual_mp ~= nil and actual_utils ~= nil and type(feedback.show) == 'function')
+    return {request=function(mode, operation, files)
+        input_requests[#input_requests+1]={mode=mode,operation=operation,files=files}
+    end,shutdown=function() input_shutdowns=input_shutdowns+1 end}
+end}
 local observers = {}
 local function set_property(name, value)
     local previous = properties[name]
@@ -34,7 +41,6 @@ local mp = {
     osd_message=function(value, duration) messages[#messages+1]={value,duration} end,
     commandv=function(...)
         local args={...};commands[#commands+1]=args
-        if failure == 'append' and args[2]=='loadfile' then return nil end
         return true
     end,
     command_native=function(args)
@@ -57,6 +63,7 @@ package.loaded['mp']=mp;package.loaded['mp.utils']=utils
 local original_dofile, original_open, original_getenv, original_remove=dofile,io.open,os.getenv,os.remove
 dofile=function(path)
     if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    if path == '~~/script-modules/playlist-input.lua' then return input_module end
     assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
     return {powershell=function() return 'powershell.exe' end}
 end
@@ -76,6 +83,7 @@ end
 local function reset(mode)
     failure=mode or '';messages,commands,logs,removed={}, {}, {}, {};temp='X:/fixture/temp'
     callback,parsed=nil,nil
+    input_requests,input_shutdowns={},0
     properties['options/input-ipc-server']=''
 end
 local function open()
@@ -129,18 +137,28 @@ function success_and_shutdown_are_silent()
     events.shutdown();callback(false,{status=1})
     eq(#messages,0)
 end
-function append_rejections_and_partial_success()
+function append_delegates_unfiltered_paths_with_token_boundary()
     reset();local token=properties['user-data/mpvnet/playlist-window'].token
-    parsed={'X:/fixture/wrong.flac','X:/fixture/image.png','X:/fixture/missing.mp4','https://private.invalid/secret.mkv'}
-    script_messages.action(token,'append','json');only_message('没有可添加的媒体文件');eq(#commands,0)
-    messages={};parsed={'X:/fixture/wrong.flac','X:/fixture/valid.mp4','X:/fixture/image.png'}
-    script_messages.action(token,'append','json');eq(#messages,0);eq(#commands,1)
-    eq(commands[1][2],'loadfile');eq(commands[1][3],'X:/fixture/valid.mp4');eq(commands[1][4],'append')
-    messages={};commands={};parsed={};script_messages.action(token,'append','json');only_message('没有可添加的媒体文件')
-    messages={};parsed=nil;script_messages.action(token,'append','bad json');only_message('没有可添加的媒体文件')
-    messages={};failure='append';parsed={'X:/fixture/valid.mp4'}
-    script_messages.action(token,'append','json');only_message('添加到播放列表失败')
-    eq(#logs,0)
+    parsed={'X:/fixture/a.flac','relative.mkv','https://private.invalid/secret.mkv'}
+    script_messages.action('wrong','append','json');eq(#input_requests,0);eq(#messages,0)
+    script_messages.action(token,'append','json')
+    eq(#input_requests,1);eq(input_requests[1].mode,'append');eq(input_requests[1].operation,'paths')
+    eq(input_requests[1].files,parsed);eq(#commands,0);eq(#messages,0)
+    parsed=nil;script_messages.action(token,'append','bad json')
+    eq(#input_requests,1);only_message('没有可添加的媒体文件')
+    messages={};events.shutdown();script_messages.action(token,'append','json');eq(#input_requests,1)
+end
+function input_bindings_and_shutdown_delegate()
+    reset()
+    local cases={{'open-files','open','files'},{'append-files','append','files'},
+        {'open-clipboard','open','clipboard'},{'append-clipboard','append','clipboard'}}
+    for index,case in ipairs(cases) do
+        assert(bindings[case[1]],'missing binding '..case[1]);bindings[case[1]]()
+        eq(#input_requests,index);eq(input_requests[index].mode,case[2])
+        eq(input_requests[index].operation,case[3]);eq(input_requests[index].files,nil)
+    end
+    eq(#commands,0);eq(#messages,0);eq(input_shutdowns,0)
+    events.shutdown();eq(input_shutdowns,1)
 end
 function actions_keep_queue_ids_and_token_boundary()
     reset();local token=properties['user-data/mpvnet/playlist-window'].token

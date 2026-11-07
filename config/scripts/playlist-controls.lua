@@ -2,6 +2,7 @@
 local mp = require('mp')
 local utils = require('mp.utils')
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
+local input = dofile(mp.command_native({'expand-path', '~~/script-modules/playlist-input.lua'})).new(mp, utils, feedback_client)
 
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local helper = mp.command_native({'expand-path', '~~/helpers/playlist-window.ps1'})
@@ -118,55 +119,12 @@ local function step(direction)
     mp.commandv('no-osd', 'playlist-play-index', target)
 end
 
-local function extension_sets()
-    local sets = {video = {}, audio = {}}
-    for kind, set in pairs(sets) do
-        local values = mp.get_property_native('options/' .. kind .. '-exts', {})
-        if type(values) == 'string' then
-            local parsed = {}
-            for value in values:gmatch('[^,]+') do parsed[#parsed + 1] = value end
-            values = parsed
-        end
-        if type(values) == 'table' then
-            for _, value in ipairs(values) do
-                if type(value) == 'string' then set[value:lower():gsub('^%.', '')] = true end
-            end
-        end
-    end
-    return sets
-end
-
-local function media_kind(path, sets)
-    if type(path) ~= 'string' then return nil end
-    if path:find('://', 1, true) then path = path:gsub('[?#].*$', '') end
-    local ext = path:match('%.([^./\\]+)$')
-    if not ext then return nil end
-    ext = ext:lower()
-    if sets.video[ext] then return 'video' end
-    if sets.audio[ext] then return 'audio' end
-end
-
 local function action(received_token, operation, id, target_id, side)
     if received_token ~= token or closing then return end
     if operation == 'append' then
         local files = utils.parse_json(id or '')
         if type(files) ~= 'table' then feedback_client.show('没有可添加的媒体文件', 'error'); return end
-        local sets = extension_sets()
-        local kind = media_kind(mp.get_property('path'), sets)
-        local supported, appended = 0, 0
-        for _, file in ipairs(files) do
-            if type(file) == 'string' and not file:find('://', 1, true) then
-                local info = utils.file_info(file)
-                local candidate = media_kind(file, sets)
-                if info and info.is_file and candidate and (not kind or kind == candidate) then
-                    kind = kind or candidate
-                    supported = supported + 1
-                    if mp.commandv('no-osd', 'loadfile', file, 'append') then appended = appended + 1 end
-                end
-            end
-        end
-        if supported == 0 then feedback_client.show('没有可添加的媒体文件', 'error')
-        elseif appended == 0 then feedback_client.show('添加到播放列表失败', 'error') end
+        input.request('append', 'paths', files)
         return
     end
     local entries = queue()
@@ -274,6 +232,10 @@ mp.add_key_binding(nil, 'toggle', function()
 end)
 mp.add_key_binding(nil, 'previous', function() step(-1) end)
 mp.add_key_binding(nil, 'next', function() step(1) end)
+mp.add_key_binding(nil, 'open-files', function() input.request('open', 'files') end)
+mp.add_key_binding(nil, 'append-files', function() input.request('append', 'files') end)
+mp.add_key_binding(nil, 'open-clipboard', function() input.request('open', 'clipboard') end)
+mp.add_key_binding(nil, 'append-clipboard', function() input.request('append', 'clipboard') end)
 mp.register_script_message('action', action)
 mp.register_script_message('key', key)
 mp.observe_property('user-data/mpvnet/shortcuts', 'native', function(_, state)
@@ -298,6 +260,7 @@ mp.register_script_message('helper-ready', function(received_token, pid)
     publish()
 end)
 mp.register_event('shutdown', function()
+    input.shutdown()
     release_keys()
     closing, wanted = true, false
     mp.commandv('script-message', 'mpvnet-playlist-close', token)

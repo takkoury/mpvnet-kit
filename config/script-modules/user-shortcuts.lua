@@ -44,11 +44,11 @@ local definitions = {
 -- New entries have no key literals. Defaults still come only from input.conf;
 -- native defaults are command coverage, never an extra default-key source.
 local additions = {
-    {'file.open', '文件', '打开文件…', 'script-message-to mpvnet open-files', true},
-    {'file.open-clipboard', '文件', '打开剪贴板中的文件或网址', 'script-message-to mpvnet open-clipboard', true},
+    {'file.open', '文件', '打开文件…', 'script-binding playlist_controls/open-files', true},
+    {'file.open-clipboard', '文件', '打开剪贴板中的文件或网址', 'script-binding playlist_controls/open-clipboard', true},
     {'file.open-disc', '文件', '打开 DVD／蓝光光盘或目录…', 'script-message-to mpvnet open-optical-media', true},
-    {'file.append', '文件', '追加文件到播放列表…', 'script-message-to mpvnet open-files append', true},
-    {'file.append-clipboard', '文件', '从剪贴板追加文件或网址', 'script-message-to mpvnet open-clipboard append', true},
+    {'file.append', '文件', '追加文件到播放列表…', 'script-binding playlist_controls/append-files', true},
+    {'file.append-clipboard', '文件', '从剪贴板追加文件或网址', 'script-binding playlist_controls/append-clipboard', true},
     {'file.open-location', '文件', '打开文件所在位置／来源网页', 'script-binding playback_feedback/open-media-path', true},
     {'file.copy-location', '文件', '复制文件路径／来源网址', 'script-binding playback_feedback/copy-media-path'},
     {'file.history', '文件', '播放历史…', 'script-binding track_selection/select-history', true},
@@ -208,6 +208,10 @@ for _, def in ipairs(additions) do definitions[#definitions+1] = def end
 -- Fixed semantic aliases keep one function in the editor. These are never
 -- interpreted from user JSON, and never alter the command of an existing ID.
 local command_aliases = {
+    {'script-message-to mpvnet open-files', 'file.open'},
+    {'script-message-to mpvnet open-files append', 'file.append'},
+    {'script-message-to mpvnet open-clipboard', 'file.open-clipboard'},
+    {'script-message-to mpvnet open-clipboard append', 'file.append-clipboard'},
     {'script-binding select/select-sid', 'subtitle.select-native'},
     {'script-binding select/select-secondary-sid', 'subtitle.select-secondary'},
     {'script-binding select/select-edition', 'edition.select'},

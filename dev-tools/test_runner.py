@@ -19,7 +19,7 @@ from support.install_fixtures import (checked_fixture_root, load_release_files,
 PROFILES = {
     'core': (
         'test_context_menu.ContextMenu', 'test_context_menu_build.ContextMenuBuild', 'test_danmaku.DanmakuTests',
-        'test_package_build.PackageBuild', 'test_settings_build.SettingsBuild', 'test_user_preferences_export.UserPreferencesExport',
+        'test_package_build.PackageBuild', 'test_settings_build.SettingsBuild', 'test_playlist_input_build.PlaylistInputBuild', 'test_user_preferences_export.UserPreferencesExport',
         'test_test_support.TestSupport', 'test_test_runner.RunnerContract',
         'test_documentation.DocumentationLinks',
     ),
@@ -43,11 +43,13 @@ PROFILES = {
         'test_failure_feedback.VideoRestore',
         'test_failure_feedback.DanmakuFailureFeedback', 'test_failure_feedback.ThumbnailFeedback',
         'test_modernz.ModernzInteractions',
-        'test_playlist_controls.PlaylistControls', 'test_responsive_osc.ResponsiveOsc',
+        'test_playlist_controls.PlaylistControls', 'test_playlist_input_controller.PlaylistInputController', 'test_responsive_osc.ResponsiveOsc',
         'test_seekbar_markers.SeekbarMarkers', 'test_subtitle_controls.SubtitleControls',
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
+        'test_playlist_input.PlaylistInput',
+        'test_playlist_input_build.PlaylistInputCompilation',
         'test_install_launcher.InstallLauncher',
         'test_watch_later_data.WatchLaterStore',
         'test_history_data.HistoryStore',
@@ -69,7 +71,7 @@ PROFILES = {
 REQUIREMENTS = {
     'core': 'Python 标准库；Git（源码文档清单）',
     'lua': 'MPVNET_TEST_LUA51：已有的 Lua 5.1 共享库',
-    'helpers': 'Windows PowerShell、Git；MPVNET_TEST_PLAYLIST_ARTIFACTS：仓外证据目录',
+    'helpers': 'Windows PowerShell、Git、本地 .NET 10 SDK 与 Framework 4.7.2 引用；MPVNET_TEST_PLAYLIST_ARTIFACTS：仓外证据目录',
     'install': ('Windows PowerShell、Git 与固定旧发行历史；MPVNET_INSTALL_TARGET_ROOT、'
                 'MPVNET_LEGACY_ROOT/PACKAGE、MPVNET_MAINTENANCE_ROOT/PACKAGE、'
                 'MPVNET_USER_UPGRADE_ROOT/OLD_PACKAGE/NEW_PACKAGE'),

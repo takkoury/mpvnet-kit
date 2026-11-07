@@ -183,6 +183,24 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/script-modules/playlist-input.lua",
+      "destination": "config/script-modules/playlist-input.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/playlist-input.cs",
+      "destination": "config/helpers/playlist-input.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/KitPlaylistInput.exe",
+      "destination": "config/helpers/KitPlaylistInput.exe",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/scripts/subtitle-controls.lua",
       "destination": "config/scripts/subtitle-controls.lua",
       "component": "author",

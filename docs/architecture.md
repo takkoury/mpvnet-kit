@@ -21,6 +21,16 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
+### 显式文件输入
+
+[playlist-input.lua](../config/script-modules/playlist-input.lua)由playlist-controls持有，集中受管菜单、稳定快捷键动作、剪贴板文件和侧窗拖入的打开／追加请求。真实队列仍归mpv；请求开始记录条目ID／路径、当前项、媒体路径和工作目录，异步结果提交前重查，变化则要求重新选择。新请求先退休旧请求；旧结果、关停和提交期间的重入不能继续写新队列。追加不重建原队列、不改暂停状态，空队列也不自动播放。
+
+按需启动的[playlist-input.cs](../config/helpers/playlist-input.cs)编译为`KitPlaylistInput.exe`，只读取本次JSON请求和用户明确选择的输入。它负责Windows文件对话框、显式剪贴板读取、完整路径规范化、文件存在检查和按路径去重；通过stdout返回带请求ID的结果。对话框绑定父PID的主窗；持有父Process并在父退出时结束自身。结果或诊断不输出原始异常、路径日志；请求文件由Lua清理。它不读个人配置、不写剪贴板、不持有独立队列或跨实例会话。
+
+受管打开单个普通音视频保留当前`autocreate-playlist`偏好；明确多选及追加媒体通过loadfile的单文件选项设置`autocreate-playlist=no`，不改全局默认。文件夹、列表解析与保存尚未接入此批。字幕使用sub-add；普通列表／其他核心来源暂交原有loadfile。ISO、AviSynth及Windows快捷方式需要宿主特定预处理，整批拒绝并提示拖入主窗，避免将其当普通文件误加载。原生光盘入口、主窗拖入、资源管理器调起及原生近期文件仍由宿主处理，不承诺新规则覆盖这些路径。
+
+构建工具通过源码摘要校验受管EXE，普通构包不编译、不下载依赖；与设置构建共用本地托管程序构建基础。验证分别覆盖实际C#输入规则、完整Lua控制层和隔离核心；真实选择对话框与键鼠体验仍需用户验收。
+
 ### 操作反馈与持续状态
 
 [feedback.lua](../config/script-modules/feedback.lua)提供`new(mp)`客户端，各控制器用`show(text, kind)`发送已有文案；`action`为1.5秒，`success`和普通`notice`为2秒，`error`为4秒。发送、就绪判断和原生回退集中在该Module，控制器仍拥有动作结果、文案和任务生命周期；弹幕加载用`is_ready()`决定是否需要无协调器时的短暂回退。

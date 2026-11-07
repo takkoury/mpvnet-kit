@@ -48,6 +48,16 @@ python -B dev-tools/build-settings-window.py --output D:/Builds/settings-window-
 
 默认只校验源码和全新仓外输出位置；`--apply`才构建EXE及`build-evidence.json`。验证后将输出EXE复制到`config/helpers/KitSettings.exe`，与源码一同提交。构建记录源码、编译器及引用程序集摘要；相同输入可确定性重建。打包会拒绝缺少源码或源码摘要不匹配的EXE；普通打包不调用SDK。旧PowerShell窗口入口保留为源码开发及EXE缺失时的兼容路径，不用于正式包的常规打开。
 
+### 文件输入 helper 预编译
+
+文件选择与输入预检使用随包的 `config/helpers/KitPlaylistInput.exe`，源码是同目录 `playlist-input.cs`，应用声明在 `src/playlist-input/app.manifest`。修改输入后执行：
+
+```powershell
+python -B dev-tools/build-playlist-input.py --output D:/Builds/playlist-input-check --apply
+```
+
+省略 `--apply` 仅预览。与设置窗口相同，使用本机 .NET 10 SDK 和 .NET Framework 4.7.2 引用，不下载依赖；公共构建步骤位于 `dev-tools/managed_build.py`。核对仓外输出的 `build-evidence.json` 后将 EXE 复制回受管位置，源码和运行资产一起交付。普通打包校验源码摘要，不启动编译器。
+
 ### 构建安装包
 
 在仓库根目录执行。将示例输出位置换成一个全新的仓外目录；不要指向播放器、源码检出或其他 Git 仓库。
