@@ -40,6 +40,9 @@ class PlaylistInputController(unittest.TestCase):
     def test_cancel_and_feedback_for_duplicates_empty_and_partial_results(self):
         self.run_case('result_feedback')
 
+    def test_folder_request_never_autocreates_and_reports_empty_unreadable_or_oversized_inputs(self):
+        self.run_case('folder_input_and_feedback')
+
     def test_request_preparation_failures_never_launch_or_change_queue(self):
         self.run_case('preparation_failures')
 

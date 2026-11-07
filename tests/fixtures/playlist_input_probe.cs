@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Runtime.InteropServices;
 using System.Web.Script.Serialization;
 using KitPlaylistInput;
 
@@ -20,7 +21,38 @@ public sealed class PlaylistInputProbe : IInputSource
         return values;
     }
     public string[] SelectFiles(InputRequest request) { return Read(); }
+    public string SelectFolder(InputRequest request)
+    {
+        var paths = Read();
+        return paths == null || paths.Length == 0 ? null : paths[0];
+    }
     public string[] ReadClipboard() { return Read(); }
+
+    sealed class InjectedScanner : IDirectoryScanner
+    {
+        readonly string behavior;
+        public InjectedScanner(string action) { behavior = action; }
+        public IEnumerable<string> EnumerateEntries(string directory)
+        {
+            if (behavior == "scanner-denied") throw new UnauthorizedAccessException();
+            if (behavior == "scanner-disappeared") throw new DirectoryNotFoundException();
+            if (behavior == "scanner-many-unrelated")
+            {
+                for (int i = 0; i < 60000; i++) yield return Path.Combine(directory, "ignored.txt");
+                yield break;
+            }
+            if (behavior == "scanner-many-candidates")
+            {
+                for (int i = 0; i < 6000; i++) yield return Path.Combine(directory, "candidate.mkv");
+                yield break;
+            }
+            foreach (string path in Directory.EnumerateFileSystemEntries(directory))
+            {
+                yield return path;
+                if (behavior == "scanner-late-denied") throw new UnauthorizedAccessException();
+            }
+        }
+    }
 
     [STAThread]
     public static int Main(string[] args)
@@ -30,6 +62,18 @@ public sealed class PlaylistInputProbe : IInputSource
         try
         {
             var request = InputProcessor.ParseRequest(File.ReadAllText(args[0], Encoding.UTF8));
+            if (args[1] == "folder-com")
+            {
+                var dialog = FolderPicker.Create();
+                try
+                {
+                    uint options;
+                    dialog.GetOptions(out options);
+                    Console.WriteLine(json.Serialize(new { options = options, required = FolderPicker.FolderOptions }));
+                }
+                finally { Marshal.FinalReleaseComObject(dialog); }
+                return 0;
+            }
             if (args[1] == "normalize")
             {
                 var entries = new List<InputEntry>();
@@ -39,7 +83,8 @@ public sealed class PlaylistInputProbe : IInputSource
             }
             string[] values = args.Length > 2 ? InputProcessor.ParseClipboardText(File.ReadAllText(args[2], Encoding.UTF8)) : request.Paths;
             var source = new PlaylistInputProbe(values, args[1]);
-            var response = args[1] == "wait" ? Program.Execute(request, source) : InputProcessor.Process(request, source);
+            var scanner = args[1].StartsWith("scanner-", StringComparison.Ordinal) ? new InjectedScanner(args[1]) : null;
+            var response = args[1] == "wait" ? Program.Execute(request, source) : InputProcessor.Process(request, source, scanner);
             Console.WriteLine(json.Serialize(response));
         }
         catch (InputFailure error)

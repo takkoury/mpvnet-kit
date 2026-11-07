@@ -1118,7 +1118,9 @@ public sealed class PlaylistTip : Form {
         param($sender, $eventArgs)
         Clear-DropMarker
         if ($eventArgs.Data.GetDataPresent([Windows.Forms.DataFormats]::FileDrop)) {
-            $files = @($eventArgs.Data.GetData([Windows.Forms.DataFormats]::FileDrop) | Where-Object { [IO.File]::Exists([string]$_) })
+            $files = @($eventArgs.Data.GetData([Windows.Forms.DataFormats]::FileDrop) | Where-Object {
+                [IO.File]::Exists([string]$_) -or [IO.Directory]::Exists([string]$_)
+            })
             if ($files.Count) { Send-Action 'append' (ConvertTo-Json -InputObject $files -Compress) }
         } elseif ($eventArgs.Data.GetDataPresent('mpvnet-playlist-entry') -and $list.Items.Count) {
             $point = $list.PointToClient((New-Object Drawing.Point($eventArgs.X, $eventArgs.Y)))

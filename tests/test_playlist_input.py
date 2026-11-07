@@ -124,12 +124,164 @@ class PlaylistInput(unittest.TestCase):
         response = self.invoke(paths=['https://example.invalid/video.iso'])
         self.assertEqual(response['entries'][0]['kind'], 'native')
 
-    def test_missing_files_and_folders_are_skipped_without_modification(self):
+    def test_missing_files_skip_and_directories_expand_without_modification(self):
         before = {path: path.read_bytes() for path in (self.video, self.audio, self.subtitle, self.native)}
         response = self.invoke(paths=[str(self.root/'missing.mkv'), str(self.root), str(self.video)])
-        self.assertEqual(response['skipped'], 2)
-        self.assertEqual([entry['path'] for entry in response['entries']], [str(self.video)])
+        self.assertEqual(response['skipped'], 1)
+        self.assertEqual({entry['path'] for entry in response['entries']}, {str(self.video), str(self.audio)})
+        self.assertEqual(response['duplicates'], 1)
         self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    def test_folder_natural_order_mixed_media_and_only_direct_children(self):
+        folder = self.root/'混合 目录'
+        folder.mkdir()
+        names = ['episode10.mkv', 'Episode2.mkv', 'episode02.mkv', 'Episode1.FLAC',
+                 '超长编号99999999999999999999.mkv', '超长编号100000000000000000000.mkv']
+        for name in names + ['subtitle.customsub', 'list.m3u', 'list.m3u8', 'list.pls', 'image.png',
+                             'disc.iso', 'script.avs', 'shortcut.lnk', 'ignored.txt']:
+            (folder/name).write_bytes(b'fixture')
+        nested = folder/'nested.mkv'
+        nested.mkdir()
+        (nested/'episode0.mkv').touch()
+        response = self.invoke(operation='folder', paths=[str(folder)], image_exts=['png'],
+            video_exts=['mkv', 'm3u', 'm3u8', 'pls', 'png', 'iso', 'avs', 'lnk'])
+        expected = ['Episode1.FLAC', 'Episode2.mkv', 'episode02.mkv', 'episode10.mkv',
+                    '超长编号99999999999999999999.mkv', '超长编号100000000000000000000.mkv']
+        # Equal numeric tokens compare by the complete filename with ordinal case.
+        self.assertEqual([Path(entry['path']).name for entry in response['entries']], expected)
+        self.assertTrue(all(entry['kind'] == 'media' for entry in response['entries']))
+        self.assertEqual(response['skipped'], 0)
+        self.assertEqual(response['unreadable_directories'], 0)
+        self.assertFalse(response['single_media'])
+
+    def test_all_managed_sources_expand_directories_at_their_input_position(self):
+        first, second = self.root/'first', self.root/'second'
+        first.mkdir()
+        second.mkdir()
+        for name in ['part10.mkv', 'part2.mkv']:
+            (first/name).touch()
+        (second/'music.FLAC').touch()
+        paths = [str(self.audio), str(first), str(self.video), str(second)]
+        expected = [str(self.audio), str(first/'part2.mkv'), str(first/'part10.mkv'),
+                    str(self.video), str(second/'music.FLAC')]
+        for operation in ('files', 'clipboard', 'paths'):
+            with self.subTest(operation=operation):
+                response = self.invoke(operation=operation, paths=paths)
+                self.assertEqual([entry['path'] for entry in response['entries']], expected)
+                self.assertFalse(response['single_media'])
+
+    def test_directory_overlap_and_existing_queue_deduplicate_after_expansion(self):
+        folder = self.root/'overlap'
+        folder.mkdir()
+        for name in ['part2.mkv', 'part10.mkv']:
+            (folder/name).touch()
+        second = str(folder/'part2.mkv')
+        tenth = str(folder/'part10.mkv')
+        response = self.invoke(paths=[second, str(folder), str(folder).upper(), tenth])
+        self.assertEqual([entry['path'] for entry in response['entries']], [second, tenth])
+        self.assertEqual(response['duplicates'], 4)
+        response = self.invoke(mode='append', existing_paths=[second.upper()], paths=[str(folder), second])
+        self.assertEqual([entry['path'] for entry in response['entries']], [tenth])
+        self.assertEqual(response['duplicates'], 2)
+
+    def test_folder_single_media_empty_missing_and_cancel_are_distinct(self):
+        folder = self.root/'single'
+        folder.mkdir()
+        (folder/'only.mkv').touch()
+        for operation in ('files', 'clipboard', 'paths', 'folder'):
+            with self.subTest(operation=operation):
+                response = self.invoke(operation=operation, paths=[str(folder)])
+                self.assertEqual(len(response['entries']), 1)
+                self.assertFalse(response['single_media'])
+        (folder/'only.mkv').unlink()
+        response = self.invoke(operation='folder', paths=[str(folder)])
+        self.assertEqual(response['entries'], [])
+        self.assertEqual(response['unreadable_directories'], 0)
+        folder.rmdir()
+        response = self.invoke(operation='folder', paths=[str(folder)])
+        self.assertEqual(response['entries'], [])
+        self.assertEqual(response['unreadable_directories'], 1)
+        self.assertEqual(self.invoke(operation='folder', behavior='cancel')['status'], 'cancelled')
+
+    def test_unreadable_and_disappeared_directories_keep_other_inputs_with_no_partial_directory(self):
+        folder = self.root/'blocked'
+        folder.mkdir()
+        (folder/'partial.mkv').touch()
+        for behavior in ('scanner-denied', 'scanner-late-denied', 'scanner-disappeared'):
+            with self.subTest(behavior=behavior):
+                response = self.invoke(behavior=behavior, paths=[str(self.video), str(folder), str(self.audio)])
+                self.assertEqual([entry['path'] for entry in response['entries']], [str(self.video), str(self.audio)])
+                self.assertEqual(response['unreadable_directories'], 1)
+        # This is an injected scanner failure, not evidence of real ACL behavior.
+
+    def test_image_exclusions_apply_only_to_folder_expansion(self):
+        folder = self.root/'images'
+        folder.mkdir()
+        image = folder/'cover.png'
+        image.touch()
+        (folder/'movie.mkv').touch()
+        response = self.invoke(paths=[str(folder)], video_exts=['png', 'mkv'], image_exts=['png'])
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/'movie.mkv')])
+        response = self.invoke(paths=[str(image)], video_exts=['png', 'mkv'], image_exts=['png'])
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(image)])
+        self.assertTrue(response['single_media'])
+
+    def test_directory_item_and_enumeration_limits_are_global_without_partial_results(self):
+        folders = [self.root/'first', self.root/'second']
+        for folder in folders:
+            folder.mkdir()
+            (folder/'candidate.mkv').touch()
+        for behavior in ('scanner-many-candidates', 'scanner-many-unrelated'):
+            with self.subTest(behavior=behavior):
+                response = self.invoke(behavior=behavior, paths=[str(folder) for folder in folders])
+                self.assertEqual(response['error_code'], 'input_too_large')
+                self.assertEqual(response['entries'], [])
+
+    def test_folder_byte_budget_rejects_expansion_without_partial_results(self):
+        folder = self.root/'bytes'
+        folder.mkdir()
+        # Each real filename is short enough for Framework's legacy path handling,
+        # while Unicode makes 6000 candidate paths exceed the UTF-8 byte budget.
+        for number in range(6000):
+            (folder/('影片' * 30 + f'{number:04}.mkv')).touch()
+        response = self.invoke(operation='folder', paths=[str(folder)])
+        self.assertEqual(response['error_code'], 'input_too_large')
+        self.assertEqual(response['entries'], [])
+
+    def test_folder_json_output_limit_includes_keys_and_json_overhead(self):
+        folder = self.root/'output'
+        folder.mkdir()
+        stem = '片' * max(1, 240 - len(str(folder)) - 9)
+        path_bytes = len(str(folder/(stem + '0000.mkv')).encode('utf-8'))
+        count = (2 * 1024 * 1024 - 16384) // path_bytes
+        self.assertLessEqual(count, 10000)
+        self.assertLess(count * path_bytes, 2 * 1024 * 1024)
+        for number in range(count):
+            (folder/(stem + f'{number:04}.mkv')).touch()
+        # All candidate paths fit the input budget; duplicated path/key fields
+        # and JSON punctuation alone push the final response beyond 4 MiB.
+        response = self.invoke(operation='folder', paths=[str(folder)])
+        self.assertEqual(response['error_code'], 'input_too_large')
+        self.assertEqual(response['entries'], [])
+
+    def test_modern_folder_com_options_work_without_showing_a_dialog(self):
+        response = self.invoke(behavior='folder-com')
+        self.assertEqual(response['options'] & response['required'], response['required'])
+        self.assertEqual(response['options'] & 0x200, 0)
+
+    def test_explicit_junction_directory_scans_one_layer_without_following_nested_junction(self):
+        outside = self.root/'outside'
+        outside.mkdir()
+        (outside/'outside.mkv').touch()
+        folder = self.root/'local'
+        folder.mkdir()
+        (folder/'inside.mkv').touch()
+        nested, selected = folder/'nested', self.root/'selected'
+        for link, target in ((nested, outside), (selected, folder)):
+            subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/j', str(link), str(target)],
+                           check=True, capture_output=True)
+        response = self.invoke(operation='folder', paths=[str(selected)])
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(selected/'inside.mkv')])
 
     def test_side_paths_accept_mixed_audio_video_but_filter_subtitles_native_urls(self):
         response = self.invoke(executable=True, operation='paths', paths=[str(self.audio), str(self.video),
@@ -205,19 +357,21 @@ class PlaylistInput(unittest.TestCase):
             self.assertNotIn(str(target).encode(), result.stdout + result.stderr)
 
     def test_parent_exit_terminates_only_waiting_helper(self):
-        parent = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
-        self.addCleanup(lambda: parent.poll() is None and parent.kill())
-        request = self.request_path(parent_pid=parent.pid)
-        helper = subprocess.Popen([str(self.probe), str(request), 'wait'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.addCleanup(lambda: helper.poll() is None and helper.kill())
-        self.assertEqual(helper.stdout.readline().decode('utf-8-sig').strip(), 'READY')
-        self.assertIsNone(parent.poll())
-        parent.terminate()
-        parent.wait(timeout=5)
-        helper.wait(timeout=5)
-        self.assertEqual(helper.returncode, 0)
-        helper.stdout.close()
-        helper.stderr.close()
+        for operation in ('files', 'folder'):
+            with self.subTest(operation=operation):
+                parent = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+                self.addCleanup(lambda process=parent: process.poll() is None and process.kill())
+                request = self.request_path(parent_pid=parent.pid, operation=operation)
+                helper = subprocess.Popen([str(self.probe), str(request), 'wait'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.addCleanup(lambda process=helper: process.poll() is None and process.kill())
+                self.assertEqual(helper.stdout.readline().decode('utf-8-sig').strip(), 'READY')
+                self.assertIsNone(parent.poll())
+                parent.terminate()
+                parent.wait(timeout=5)
+                helper.wait(timeout=5)
+                self.assertEqual(helper.returncode, 0)
+                helper.stdout.close()
+                helper.stderr.close()
 
 
 if __name__ == '__main__':

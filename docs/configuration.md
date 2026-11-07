@@ -146,7 +146,7 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 | `input-default-bindings` | mpv 默认绑定 | 显式 `no`；脚本再次强制关闭 | yes/no；本实现不能只改成 yes 恢复默认键 | `input-default-bindings=no` |
 | `autocreate-playlist` | 打开单个文件时从当前目录创建同类队列 | 显式 `same` | no/filter/same；套件多选和追加媒体不自动补队，不改此默认 | `autocreate-playlist=same` |
 | `directory-filter-types` | 目录队列文件类别 | 显式 `video,audio` | 播放器支持的类型列表；按手册检查 | `directory-filter-types=video,audio` |
-| `directory-mode` | 如何处理目录条目 | 显式 `ignore` | auto/lazy/recursive/ignore；按版本手册检查 | `directory-mode=ignore` |
+| `directory-mode` | 播放核心如何处理目录条目 | 显式 `ignore` | auto/lazy/recursive/ignore；套件文件夹入口固定只读取一层，不修改此默认 | `directory-mode=ignore` |
 | `vo` | 渲染输出优先列表 | 显式 `gpu-next,gpu` | 逗号分隔驱动列表，首项不可用才回退；非强制单一驱动 | `vo=gpu-next,gpu` |
 | `hwdec` | 主播放器硬件解码 | 显式 `auto-safe` | `auto-safe` 沿用随包策略，`no` 关闭硬解；其他后端见对应版本手册 | `hwdec=auto-safe` |
 | `target-trc` | 渲染目标传递曲线 | 显式 `auto` | 可按实际显示链路选 srgb；不是 ICC 校准 | `target-trc=auto` |

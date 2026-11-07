@@ -49,6 +49,7 @@ function M.new(mp, utils, feedback)
         native_entry_required='此格式请拖入播放器主窗口打开',
         parent_unavailable='播放器已不可用，请重新打开',
         input_unavailable='无法读取所选文件或剪贴板',
+        input_too_large='文件数量或路径内容过多，未修改播放列表',
     }
 
     local function valid_entries(entries)
@@ -61,10 +62,13 @@ function M.new(mp, utils, feedback)
         return true
     end
 
-    local function commit(mode, data, generation)
+    local function commit(mode, operation, data, generation)
         if #data.entries == 0 then
-            if (tonumber(data.duplicates) or 0) > 0 then
+            if (tonumber(data.unreadable_directories) or 0) > 0 then
+                feedback.show('无法读取所选文件夹', 'error')
+            elseif (tonumber(data.duplicates) or 0) > 0 then
                 feedback.show('所选文件已在播放列表中', 'action')
+            elseif operation == 'folder' then feedback.show('文件夹中没有可添加的音视频', 'action')
             else feedback.show('没有可添加的媒体文件', 'error') end
             return
         end
@@ -92,6 +96,8 @@ function M.new(mp, utils, feedback)
         end
         if closing or generation ~= sequence then return end
         if failed > 0 then feedback.show('部分文件未能加入播放列表', 'error')
+        elseif (tonumber(data.unreadable_directories) or 0) > 0 then
+            feedback.show('已添加可用文件，部分文件夹无法读取', 'error')
         elseif (tonumber(data.skipped) or 0) > 0 then feedback.show('已跳过无法加入的文件', 'action') end
     end
 
@@ -114,6 +120,7 @@ function M.new(mp, utils, feedback)
         local payload = utils.format_json({schema=1, request_id=id, parent_pid=mp.get_property_number('pid', 0),
             operation=operation, mode=mode, paths=files or {}, working_directory=state.cwd,
             video_exts=extensions('video-exts'), audio_exts=extensions('audio-exts'),
+            image_exts=extensions('image-exts'),
             subtitle_exts=extensions('sub-auto-exts'), existing_paths=existing})
         if not payload or #payload > 2*1024*1024 then
             feedback.show('文件操作内容过多，未修改播放列表', 'error'); return
@@ -146,7 +153,7 @@ function M.new(mp, utils, feedback)
             if not unchanged(state) then
                 feedback.show('播放列表已变化，请重新选择文件', 'action'); return
             end
-            commit(mode, data, generation)
+            commit(mode, operation, data, generation)
         end)
     end
 

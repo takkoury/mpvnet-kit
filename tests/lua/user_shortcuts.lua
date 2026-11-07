@@ -255,6 +255,10 @@ function native_catalog_coverage()
     eq(catalog.by_command['script-binding select/select-aid'].command,'script-binding track_selection/select-audio')
     eq(catalog.by_id['file.open'].command,'script-binding playlist_controls/open-files')
     eq(catalog.by_id['file.append'].command,'script-binding playlist_controls/append-files')
+    eq(catalog.by_id['file.open-folder'].command,'script-binding playlist_controls/open-folder')
+    eq(catalog.by_id['file.append-folder'].command,'script-binding playlist_controls/append-folder')
+    eq(#catalog.by_id['file.open-folder'].default_keys,0)
+    eq(#catalog.by_id['file.append-folder'].default_keys,0)
     eq(catalog.by_id['file.open-clipboard'].command,'script-binding playlist_controls/open-clipboard')
     eq(catalog.by_id['file.append-clipboard'].command,'script-binding playlist_controls/append-clipboard')
     eq(catalog.by_command['script-binding select/select-chapter'].command,'script-binding track_selection/select-chapter')
@@ -345,14 +349,14 @@ end
 
 function trial_catalog()
     local catalog=model.catalog(input_source)
-    eq(#catalog.actions,195)
+    local base_count=#catalog.actions
     eq(catalog.by_id['tools.settings-editor'].command,'script-binding user_settings/open')
     eq(#catalog.by_id['tools.settings-editor'].default_keys,0)
     eq(catalog.by_id['danmaku.renderer-overlay'],nil);eq(catalog.by_id['danmaku.renderer-ass'],nil)
     local with_trial=input_source..'\n_ script-message-to bilibiliAssert renderer overlay #menu: 字幕与弹幕 > 固定字号试用\n'
         ..'_ script-message-to bilibiliAssert renderer ass #menu: 字幕与弹幕 > 原ASS\n'
     catalog=model.catalog(with_trial)
-    eq(#catalog.actions,197)
+    eq(#catalog.actions,base_count+2)
     eq(catalog.by_id['danmaku.renderer-overlay'].command,'script-message-to bilibiliAssert renderer overlay')
     eq(catalog.by_id['danmaku.renderer-ass'].command,'script-message-to bilibiliAssert renderer ass')
     eq(#catalog.by_id['danmaku.renderer-overlay'].default_keys,0);eq(#catalog.by_id['danmaku.renderer-ass'].default_keys,0)

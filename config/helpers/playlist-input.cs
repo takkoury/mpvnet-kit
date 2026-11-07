@@ -22,6 +22,7 @@ namespace KitPlaylistInput
         public string[] VideoExtensions;
         public string[] AudioExtensions;
         public string[] SubtitleExtensions;
+        public string[] ImageExtensions;
         public string[] ExistingPaths;
     }
 
@@ -41,6 +42,7 @@ namespace KitPlaylistInput
         public bool single_media;
         public int skipped;
         public int duplicates;
+        public int unreadable_directories;
         public string error_code = "";
     }
 
@@ -55,7 +57,21 @@ namespace KitPlaylistInput
     public interface IInputSource
     {
         string[] SelectFiles(InputRequest request);
+        string SelectFolder(InputRequest request);
         string[] ReadClipboard();
+    }
+
+    public interface IDirectoryScanner
+    {
+        IEnumerable<string> EnumerateEntries(string directory);
+    }
+
+    sealed class DirectoryScanner : IDirectoryScanner
+    {
+        public IEnumerable<string> EnumerateEntries(string directory)
+        {
+            return Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.TopDirectoryOnly);
+        }
     }
 
     public static class InputProcessor
@@ -63,6 +79,8 @@ namespace KitPlaylistInput
         public const int MaxBytes = 2 * 1024 * 1024;
         public const int MaxItems = 10000;
         public const int MaxPathLength = 32767;
+        public const int MaxScannedItems = 100000;
+        public const int MaxResponseBytes = 4 * 1024 * 1024;
 
         static bool Clean(string value, int limit)
         {
@@ -118,16 +136,17 @@ namespace KitPlaylistInput
                     WorkingDirectory = StringField(data, "working_directory"),
                     VideoExtensions = ArrayField(data, "video_exts"), AudioExtensions = ArrayField(data, "audio_exts"),
                     SubtitleExtensions = ArrayField(data, "subtitle_exts"),
+                    ImageExtensions = ArrayField(data, "image_exts", true),
                     ExistingPaths = ArrayField(data, "existing_paths"), Paths = ArrayField(data, "paths", true)
                 };
                 if (!Clean(request.RequestId, 128) || request.ParentPid <= 0 ||
-                    (request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths") ||
+                    (request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
                     (request.Mode != "open" && request.Mode != "append") ||
                     !Clean(request.WorkingDirectory, MaxPathLength) || !IsFullyQualified(request.WorkingDirectory))
                     throw new InputFailure("invalid_request");
                 request.WorkingDirectory = Path.GetFullPath(request.WorkingDirectory);
                 if (request.Operation == "paths" && !data.ContainsKey("paths")) throw new InputFailure("invalid_request");
-                Extensions(request.VideoExtensions, request.AudioExtensions, request.SubtitleExtensions);
+                Extensions(request.VideoExtensions, request.AudioExtensions, request.SubtitleExtensions, request.ImageExtensions);
                 return request;
             }
             catch (InputFailure) { throw; }
@@ -203,15 +222,129 @@ namespace KitPlaylistInput
             return lines.ToArray();
         }
 
-        public static InputResponse Process(InputRequest request, IInputSource source)
+        sealed class InputBudget
+        {
+            int items, bytes, scanned;
+            public void Add(string path)
+            {
+                if (++items > MaxItems || (bytes += Encoding.UTF8.GetByteCount(path ?? "")) > MaxBytes)
+                    throw new InputFailure("input_too_large");
+            }
+            public void Scan()
+            {
+                if (++scanned > MaxScannedItems) throw new InputFailure("input_too_large");
+            }
+        }
+
+        static bool HostFormat(string extension)
+        {
+            return extension.Equals("iso", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals("avs", StringComparison.OrdinalIgnoreCase) || extension.Equals("lnk", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool PlaylistFormat(string extension)
+        {
+            return extension.Equals("m3u", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals("m3u8", StringComparison.OrdinalIgnoreCase) || extension.Equals("pls", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool FolderMedia(string extension, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
+        {
+            return extensions.Contains(extension) && !subtitles.Contains(extension) && !images.Contains(extension) &&
+                !HostFormat(extension) && !PlaylistFormat(extension);
+        }
+
+        static bool Digit(char value) { return value >= '0' && value <= '9'; }
+
+        static int CompareFileNames(string left, string right)
+        {
+            string a = Path.GetFileName(left), b = Path.GetFileName(right);
+            int i = 0, j = 0;
+            while (i < a.Length && j < b.Length)
+            {
+                if (Digit(a[i]) && Digit(b[j]))
+                {
+                    int endA = i, endB = j;
+                    while (endA < a.Length && Digit(a[endA])) endA++;
+                    while (endB < b.Length && Digit(b[endB])) endB++;
+                    while (i < endA && a[i] == '0') i++;
+                    while (j < endB && b[j] == '0') j++;
+                    int lengths = (endA - i).CompareTo(endB - j);
+                    if (lengths != 0) return lengths;
+                    while (i < endA)
+                    {
+                        int digits = a[i++].CompareTo(b[j++]);
+                        if (digits != 0) return digits;
+                    }
+                    i = endA; j = endB;
+                }
+                else
+                {
+                    int letters = char.ToUpperInvariant(a[i++]).CompareTo(char.ToUpperInvariant(b[j++]));
+                    if (letters != 0) return letters;
+                }
+            }
+            int remaining = (a.Length - i).CompareTo(b.Length - j);
+            return remaining != 0 ? remaining : StringComparer.Ordinal.Compare(a, b);
+        }
+
+        static List<InputEntry> ReadDirectory(string directory, InputRequest request, IDirectoryScanner scanner,
+            InputBudget budget, InputResponse response, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
+        {
+            var entries = new List<InputEntry>();
+            try
+            {
+                foreach (string path in scanner.EnumerateEntries(directory))
+                {
+                    budget.Scan();
+                    string extension = Path.GetExtension(path).TrimStart('.');
+                    if (!FolderMedia(extension, extensions, subtitles, images)) continue;
+                    try
+                    {
+                        FileAttributes attributes = File.GetAttributes(path);
+                        if ((attributes & FileAttributes.Directory) != 0) continue;
+                    }
+                    catch (IOException) { response.skipped++; continue; }
+                    catch (UnauthorizedAccessException) { response.skipped++; continue; }
+                    var entry = Normalize(path, request.WorkingDirectory);
+                    if (entry == null) { response.skipped++; continue; }
+                    budget.Add(entry.path);
+                    entry.kind = "media";
+                    entries.Add(entry);
+                }
+            }
+            catch (IOException) { response.unreadable_directories++; return new List<InputEntry>(); }
+            catch (UnauthorizedAccessException) { response.unreadable_directories++; return new List<InputEntry>(); }
+            // No partially enumerated directory is committed when access fails.
+            entries.Sort(delegate(InputEntry a, InputEntry b) { return CompareFileNames(a.path, b.path); });
+            return entries;
+        }
+
+        static void AddEntry(InputEntry entry, HashSet<string> seen, InputResponse response)
+        {
+            if (!seen.Add(entry.key)) { response.duplicates++; return; }
+            response.entries.Add(entry);
+        }
+
+        public static InputResponse Process(InputRequest request, IInputSource source, IDirectoryScanner scanner = null)
         {
             var response = new InputResponse { request_id = request.RequestId };
-            string[] inputs = request.Operation == "files" ? source.SelectFiles(request) :
+            string[] inputs;
+            if (request.Operation == "folder")
+            {
+                string folder = source.SelectFolder(request);
+                inputs = folder == null ? null : new[] { folder };
+            }
+            else inputs = request.Operation == "files" ? source.SelectFiles(request) :
                 request.Operation == "clipboard" ? source.ReadClipboard() : request.Paths;
             if (inputs == null) { response.status = "cancelled"; return response; }
-            if (inputs.Length > MaxItems) throw new InputFailure("input_unavailable");
+            if (inputs.Length > MaxItems) throw new InputFailure("input_too_large");
+            scanner = scanner ?? new DirectoryScanner();
+            var budget = new InputBudget();
+            bool usedDirectory = false;
             var extensions = Extensions(request.VideoExtensions, request.AudioExtensions);
             var subtitles = Extensions(request.SubtitleExtensions);
+            var images = Extensions(request.ImageExtensions);
             // Local keys are already case-folded. URL paths remain case-sensitive.
             var seen = new HashSet<string>(StringComparer.Ordinal);
             if (request.Mode == "append")
@@ -223,30 +356,46 @@ namespace KitPlaylistInput
             foreach (string path in inputs)
             {
                 var entry = Normalize(path, request.WorkingDirectory);
-                if (entry == null) { response.skipped++; continue; }
+                if (entry == null) { budget.Add(path); response.skipped++; continue; }
                 if (entry.kind != "native")
                 {
+                    if (Directory.Exists(entry.path))
+                    {
+                        usedDirectory = true;
+                        foreach (var media in ReadDirectory(entry.path, request, scanner, budget, response, extensions, subtitles, images))
+                        {
+                            if (!File.Exists(media.path)) { response.skipped++; continue; }
+                            AddEntry(media, seen, response);
+                        }
+                        continue;
+                    }
+                    if (request.Operation == "folder")
+                    {
+                        budget.Add(entry.path);
+                        response.unreadable_directories++;
+                        continue;
+                    }
+                    budget.Add(entry.path);
                     if (!File.Exists(entry.path)) { response.skipped++; continue; }
                     string extension = Path.GetExtension(entry.path).TrimStart('.');
                     // These formats need mpv.net's private LoadFiles preprocessing.
                     // Reject the whole request before Lua can replace its queue.
-                    if (extension.Equals("iso", StringComparison.OrdinalIgnoreCase) ||
-                        extension.Equals("avs", StringComparison.OrdinalIgnoreCase) || extension.Equals("lnk", StringComparison.OrdinalIgnoreCase))
+                    if (HostFormat(extension))
                     {
                         if (request.Operation != "paths") throw new InputFailure("native_entry_required");
                         response.skipped++;
                         continue;
                     }
-                    bool playlist = extension.Equals("m3u", StringComparison.OrdinalIgnoreCase) ||
-                        extension.Equals("m3u8", StringComparison.OrdinalIgnoreCase) || extension.Equals("pls", StringComparison.OrdinalIgnoreCase);
-                    entry.kind = playlist ? "native" : subtitles.Contains(extension) ? "subtitle" : extensions.Contains(extension) ? "media" : "native";
+                    entry.kind = PlaylistFormat(extension) ? "native" : subtitles.Contains(extension) ? "subtitle" : extensions.Contains(extension) ? "media" : "native";
                 }
+                else budget.Add(entry.path);
                 if (request.Operation == "paths" && entry.kind != "media") { response.skipped++; continue; }
-                if (!seen.Add(entry.key)) { response.duplicates++; continue; }
-                response.entries.Add(entry);
+                AddEntry(entry, seen, response);
             }
-            response.single_media = request.Mode == "open" && inputs.Length == 1 &&
+            response.single_media = !usedDirectory && request.Operation != "folder" && request.Mode == "open" && inputs.Length == 1 &&
                 response.entries.Count == 1 && response.entries[0].kind == "media";
+            string json = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue }.Serialize(response);
+            if (Encoding.UTF8.GetByteCount(json) > MaxResponseBytes) throw new InputFailure("input_too_large");
             return response;
         }
     }
@@ -255,6 +404,100 @@ namespace KitPlaylistInput
     {
         public IntPtr Handle { get; private set; }
         public WindowOwner(IntPtr handle) { Handle = handle; }
+    }
+
+    // The system Common Item Dialog supplies the modern folder UI. Keep the
+    // complete IFileDialog vtable order, including members not used here.
+    static class FolderPicker
+    {
+        internal const uint FolderOptions = 0x20U | 0x40U | 0x800U | 0x8U;
+        [ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IFileDialog
+        {
+            [PreserveSig] int Show(IntPtr owner);
+            void SetFileTypes(uint count, IntPtr filters);
+            void SetFileTypeIndex(uint index);
+            void GetFileTypeIndex(out uint index);
+            void Advise(IntPtr events, out uint cookie);
+            void Unadvise(uint cookie);
+            void SetOptions(uint options);
+            void GetOptions(out uint options);
+            void SetDefaultFolder(IShellItem folder);
+            void SetFolder(IShellItem folder);
+            void GetFolder(out IShellItem folder);
+            void GetCurrentSelection(out IShellItem item);
+            void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+            void GetFileName(out IntPtr name);
+            void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+            void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+            void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+            void GetResult(out IShellItem item);
+            void AddPlace(IShellItem item, uint placement);
+            void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string extension);
+            void Close(int result);
+            void SetClientGuid(ref Guid guid);
+            void ClearClientData();
+            void SetFilter(IntPtr filter);
+        }
+
+        [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IShellItem
+        {
+            void BindToHandler(IntPtr context, ref Guid handler, ref Guid iid, out IntPtr result);
+            void GetParent(out IShellItem parent);
+            void GetDisplayName(uint format, out IntPtr name);
+            void GetAttributes(uint mask, out uint attributes);
+            void Compare(IShellItem item, uint hint, out int result);
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        static extern void SHCreateItemFromParsingName(string path, IntPtr context, ref Guid iid, out IShellItem item);
+
+        internal static IFileDialog Create()
+        {
+            var type = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"), true);
+            var dialog = (IFileDialog)Activator.CreateInstance(type);
+            try
+            {
+                uint options;
+                dialog.GetOptions(out options);
+                dialog.SetOptions((options | FolderOptions) & ~0x200U); // One directory, never multiselect.
+                return dialog;
+            }
+            catch { Marshal.FinalReleaseComObject(dialog); throw; }
+        }
+
+        internal static string Select(InputRequest request, IntPtr owner)
+        {
+            IFileDialog dialog = null;
+            IShellItem initial = null, result = null;
+            IntPtr name = IntPtr.Zero;
+            try
+            {
+                dialog = Create();
+                dialog.SetTitle(request.Mode == "append" ? "追加文件夹" : "打开文件夹");
+                if (Directory.Exists(request.WorkingDirectory))
+                {
+                    Guid iid = typeof(IShellItem).GUID;
+                    SHCreateItemFromParsingName(request.WorkingDirectory, IntPtr.Zero, ref iid, out initial);
+                    dialog.SetFolder(initial);
+                }
+                int status = dialog.Show(owner);
+                if (status == unchecked((int)0x800704C7)) return null; // ERROR_CANCELLED.
+                Marshal.ThrowExceptionForHR(status);
+                dialog.GetResult(out result);
+                result.GetDisplayName(0x80058000U, out name); // SIGDN_FILESYSPATH.
+                return Marshal.PtrToStringUni(name);
+            }
+            catch { throw new InputFailure("input_unavailable"); }
+            finally
+            {
+                if (name != IntPtr.Zero) Marshal.FreeCoTaskMem(name);
+                if (result != null) Marshal.FinalReleaseComObject(result);
+                if (initial != null) Marshal.FinalReleaseComObject(initial);
+                if (dialog != null) Marshal.FinalReleaseComObject(dialog);
+            }
+        }
     }
 
     sealed class WindowsInputSource : IInputSource
@@ -310,6 +553,11 @@ namespace KitPlaylistInput
                 dialog.InitialDirectory = request.WorkingDirectory;
                 return dialog.ShowDialog(new WindowOwner(owner)) == DialogResult.OK ? dialog.FileNames : null;
             }
+        }
+
+        public string SelectFolder(InputRequest request)
+        {
+            return FolderPicker.Select(request, ParentWindow());
         }
 
         public string[] ReadClipboard()

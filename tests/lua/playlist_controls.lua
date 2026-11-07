@@ -151,6 +151,7 @@ end
 function input_bindings_and_shutdown_delegate()
     reset()
     local cases={{'open-files','open','files'},{'append-files','append','files'},
+        {'open-folder','open','folder'},{'append-folder','append','folder'},
         {'open-clipboard','open','clipboard'},{'append-clipboard','append','clipboard'}}
     for index,case in ipairs(cases) do
         assert(bindings[case[1]],'missing binding '..case[1]);bindings[case[1]]()

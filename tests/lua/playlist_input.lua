@@ -7,7 +7,7 @@ local function host()
         path='X:/fixture/current.mkv', ['playlist-pos']=0, pause=true,
         playlist={{id=0,filename='X:/fixture/current.mkv'}, {id=92,filename='X:/fixture/later.mp4'}},
         ['options/video-exts']={'mkv','mp4'}, ['options/audio-exts']='flac,mp3',
-        ['options/sub-auto-exts']={'srt','ass'}},
+        ['options/sub-auto-exts']={'srt','ass'}, ['options/image-exts']={'png','jpg'}},
         calls={}, writes={}, messages={}, jobs={}, aborted={}, removed={}, files={}, payloads={}}
     local mp = {
         get_time=function() return 1 end,
@@ -94,6 +94,7 @@ function request_contract()
     eq(p.parent_pid,123);eq(p.working_directory,'X:/fixture')
     eq(table.concat(p.video_exts,','),'mkv,mp4');eq(table.concat(p.audio_exts,','),'flac,mp3')
     eq(table.concat(p.subtitle_exts,','),'srt,ass');eq(#p.existing_paths,2)
+    eq(table.concat(p.image_exts,','),'png,jpg')
     eq(p.existing_paths[1],'X:/fixture/current.mkv');eq(p.existing_paths[2],'X:/fixture/later.mp4')
     local job=h.jobs[1];eq(job.args.name,'subprocess');eq(job.args.args[1],'~~/helpers/KitPlaylistInput.exe')
     eq(job.args.args[2],'-RequestPath');eq(job.args.args[3],'X:/fixture/temp/mpvnet-input-'..p.request_id..'.json')
@@ -144,6 +145,25 @@ function preparation_failures()
         if failure=='write' or failure=='close' then eq(#h.removed,1) else eq(#h.removed,0) end
         eq(next(h.files),nil)
     end
+end
+function folder_input_and_feedback()
+    local h=host();h.start('open','folder')
+    eq(h.payloads[1].operation,'folder')
+    h.finish(h.result({entry('one.mkv')},{single_media=false}))
+    load(h,1,'one.mkv','replace',true);eq(h.properties.pause,false)
+    h=host();h.start('append','folder')
+    h.finish(h.result({entry('two.mp4')},{single_media=false}))
+    load(h,1,'two.mp4','append',true);eq(#h.writes,0)
+    h=host();h.start('open','folder');h.finish(h.result({}))
+    eq(#h.calls,0);message(h,'文件夹中没有可添加的音视频',1.5)
+    h=host();h.start('open','folder');h.finish(h.result({}, {unreadable_directories=1}))
+    eq(#h.calls,0);message(h,'无法读取所选文件夹',4)
+    h=host();h.start('append','paths')
+    h.finish(h.result({entry('one.mkv')},{unreadable_directories=2}))
+    eq(#h.calls,1);eq(#h.writes,0);message(h,'已添加可用文件，部分文件夹无法读取',4)
+    h=host();h.start('open','folder')
+    h.finish(h.result({}, {status='error',error_code='input_too_large'}))
+    eq(#h.calls,0);message(h,'文件数量或路径内容过多，未修改播放列表',4)
 end
 function invalid_results()
     local cases={'schema','token','json','worker','exit','missing-result','oversize','entries','kind','control-path','error','known-error','known-error-exit'}
