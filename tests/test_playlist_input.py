@@ -36,7 +36,7 @@ class PlaylistInput(unittest.TestCase):
                   '-codepage:65001', '-langversion:7.3', '-warnaserror+',
                   *(f'-reference:{references/name}' for name in ('mscorlib.dll', 'System.dll', 'System.Core.dll',
                     'System.Web.Extensions.dll', 'System.Windows.Forms.dll')),
-                  str(ROOT/'config/helpers/playlist-input.cs')]
+                  str(ROOT/'config/helpers/playlist-input.cs'), str(ROOT/'config/helpers/playlist-files.cs')]
         cls.executable = cls.directory/'KitPlaylistInput.exe'
         cls.probe = cls.directory/'PlaylistInputProbe.exe'
         for output, options in ((cls.executable, ['-target:winexe', '-main:KitPlaylistInput.Program']),
@@ -52,7 +52,7 @@ class PlaylistInput(unittest.TestCase):
         self.video = self.root/'视频 one.mkv'
         self.audio = self.root/'音频 two.FLAC'
         self.subtitle = self.root/'字幕.customsub'
-        self.native = self.root/'列表.m3u'
+        self.native = self.root/'列表.pls'
         for path in (self.video, self.audio, self.subtitle, self.native):
             path.write_text('synthetic input; never played', encoding='utf-8')
         self.request = dict(schema=1, request_id='synthetic-session-1', parent_pid=os.getpid(),

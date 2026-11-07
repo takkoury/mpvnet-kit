@@ -50,7 +50,7 @@ python -B dev-tools/build-settings-window.py --output D:/Builds/settings-window-
 
 ### 文件输入 helper 预编译
 
-文件选择与输入预检使用随包的 `config/helpers/KitPlaylistInput.exe`，源码是同目录 `playlist-input.cs`，应用声明在 `src/playlist-input/app.manifest`。修改输入后执行：
+文件选择、输入预检及列表文件读写使用随包的 `config/helpers/KitPlaylistInput.exe`，源码是同目录 `playlist-input.cs` 与 `playlist-files.cs`，应用声明在 `src/playlist-input/app.manifest`。修改输入后执行：
 
 ```powershell
 python -B dev-tools/build-playlist-input.py --output D:/Builds/playlist-input-check --apply

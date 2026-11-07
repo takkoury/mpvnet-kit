@@ -40,6 +40,9 @@ class PlaylistControls(unittest.TestCase):
     def test_input_bindings_and_shutdown_delegate(self):
         self.run_case('input_bindings_and_shutdown_delegate')
 
+    def test_save_binding_delegates_without_a_second_save_entrypoint(self):
+        self.run_case('save_binding_delegates_without_a_second_save_entrypoint')
+
     def test_actions_keep_queue_ids_and_token_boundary(self):
         self.run_case('actions_keep_queue_ids_and_token_boundary')
 

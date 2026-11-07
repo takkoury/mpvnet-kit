@@ -195,6 +195,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/playlist-files.cs",
+      "destination": "config/helpers/playlist-files.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/helpers/KitPlaylistInput.exe",
       "destination": "config/helpers/KitPlaylistInput.exe",
       "component": "author",

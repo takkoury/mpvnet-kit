@@ -25,6 +25,7 @@
 - `config/helpers/settings-host.cs`
 - `config/helpers/KitSettings.exe`
 - `config/helpers/playlist-input.cs`
+- `config/helpers/playlist-files.cs`
 - `config/helpers/KitPlaylistInput.exe`
 - `config/script-modules/playlist-input.lua`
 - `.gitignore`

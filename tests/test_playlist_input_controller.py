@@ -64,6 +64,63 @@ class PlaylistInputController(unittest.TestCase):
     def test_command_failures_report_partial_result_and_do_not_fake_unpause(self):
         self.run_case('command_failures')
 
+    def test_playlist_segments_keep_native_titles_repeats_and_mixed_input_order(self):
+        self.run_case('playlist_segments')
+
+    def test_import_loading_policy_belongs_only_to_new_live_ids_and_matching_paths(self):
+        self.run_case('playlist_loading_policy')
+
+    def test_failed_import_does_not_register_loading_policy_or_prevent_later_media(self):
+        self.run_case('playlist_segment_failure')
+
+    def test_playlist_empty_missing_partial_and_read_failure_feedback(self):
+        self.run_case('playlist_feedback')
+
+    def test_playlist_result_metadata_is_validated_before_any_commit(self):
+        self.run_case('playlist_invalid_metadata')
+
+    def test_save_uses_latest_complete_queue_after_dialog_and_always_prompts_again(self):
+        self.run_case('save_latest_queue')
+
+    def test_save_cancel_empty_incomplete_and_invalid_target_never_write(self):
+        self.run_case('save_rejections')
+
+    def test_save_dialog_is_retired_by_new_input_and_old_callbacks_cannot_write(self):
+        self.run_case('save_dialog_retired')
+
+    def test_save_write_survives_new_input_and_repeated_save_reports_busy(self):
+        self.run_case('save_independent_write')
+
+    def test_save_worker_errors_and_unconfirmed_success_never_report_saved(self):
+        self.run_case('save_result_validation')
+
+    def test_save_write_preparation_failure_releases_slot_for_retry(self):
+        self.run_case('save_write_preparation_failure_releases_slot')
+
+    def test_shutdown_cleans_owned_requests_without_aborting_active_write(self):
+        self.run_case('save_shutdown')
+
+    def test_all_import_sources_are_prepared_before_queue_changes_and_io_failure_cleans_them(self):
+        self.run_case('playlist_prepare_failure_preserves_queue')
+
+    def test_import_reentry_cleans_sources_and_cannot_tag_retired_ids(self):
+        self.run_case('playlist_reentry_cleans_prepared_sources')
+
+    def test_detached_writer_launch_failure_releases_saving_slot(self):
+        self.run_case('save_detach_launch_failure')
+
+    def test_detached_reply_ownership_and_timeout_cancel_without_killing_worker(self):
+        self.run_case('save_reply_ownership_and_timeout')
+
+    def test_shutdown_does_not_leave_cancel_file_when_worker_already_finished(self):
+        self.run_case('save_shutdown_without_worker_avoids_orphan_cancel')
+
+    def test_save_dialog_parse_reentry_cannot_launch_old_write(self):
+        self.run_case('save_dialog_parse_reentry_cannot_start_old_writer')
+
+    def test_internal_utf8_transport_borrows_forced_codepage_and_preserves_external_changes(self):
+        self.run_case('playlist_transport_encoding_ownership')
+
     def test_complete_module_syntax(self):
         self.lua.check_syntax(MODULE)
 

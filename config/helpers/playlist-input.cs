@@ -24,6 +24,12 @@ namespace KitPlaylistInput
         public string[] SubtitleExtensions;
         public string[] ImageExtensions;
         public string[] ExistingPaths;
+        public string MetadataCodepage;
+        public string SuggestedPath;
+        public string TargetPath;
+        public bool TargetExists;
+        public string TargetSha256;
+        public List<SaveEntry> SaveEntries;
     }
 
     public sealed class InputEntry
@@ -31,6 +37,8 @@ namespace KitPlaylistInput
         public string path;
         public string kind;
         public string key;
+        public bool from_playlist;
+        public string title = "";
     }
 
     public sealed class InputResponse
@@ -43,6 +51,12 @@ namespace KitPlaylistInput
         public int skipped;
         public int duplicates;
         public int unreadable_directories;
+        public bool had_playlist;
+        public int missing_files;
+        public bool saved;
+        public string target_path = "";
+        public bool target_exists;
+        public string target_sha256 = "";
         public string error_code = "";
     }
 
@@ -58,6 +72,7 @@ namespace KitPlaylistInput
     {
         string[] SelectFiles(InputRequest request);
         string SelectFolder(InputRequest request);
+        string SelectSavePath(InputRequest request);
         string[] ReadClipboard();
     }
 
@@ -82,7 +97,7 @@ namespace KitPlaylistInput
         public const int MaxScannedItems = 100000;
         public const int MaxResponseBytes = 4 * 1024 * 1024;
 
-        static bool Clean(string value, int limit)
+        internal static bool Clean(string value, int limit)
         {
             if (value == null || value.Length == 0 || value.Length > limit) return false;
             foreach (char c in value) if (char.IsControl(c)) return false;
@@ -139,14 +154,20 @@ namespace KitPlaylistInput
                     ImageExtensions = ArrayField(data, "image_exts", true),
                     ExistingPaths = ArrayField(data, "existing_paths"), Paths = ArrayField(data, "paths", true)
                 };
+                request.MetadataCodepage = data.ContainsKey("metadata_codepage") ? StringField(data, "metadata_codepage") : "";
+                request.SuggestedPath = data.ContainsKey("suggested_path") ? StringField(data, "suggested_path") : "";
+                bool save = request.Operation == "save" || request.Operation == "save-dialog";
                 if (!Clean(request.RequestId, 128) || request.ParentPid <= 0 ||
-                    (request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
-                    (request.Mode != "open" && request.Mode != "append") ||
+                    (!save && request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
+                    (save ? request.Mode != "save" : request.Mode != "open" && request.Mode != "append") ||
+                    (request.MetadataCodepage.Length != 0 && !Clean(request.MetadataCodepage, 128)) ||
+                    (request.SuggestedPath.Length != 0 && !Clean(request.SuggestedPath, MaxPathLength)) ||
                     !Clean(request.WorkingDirectory, MaxPathLength) || !IsFullyQualified(request.WorkingDirectory))
                     throw new InputFailure("invalid_request");
                 request.WorkingDirectory = Path.GetFullPath(request.WorkingDirectory);
                 if (request.Operation == "paths" && !data.ContainsKey("paths")) throw new InputFailure("invalid_request");
                 Extensions(request.VideoExtensions, request.AudioExtensions, request.SubtitleExtensions, request.ImageExtensions);
+                if (request.Operation == "save") PlaylistStorage.ParseSaveRequest(request, data);
                 return request;
             }
             catch (InputFailure) { throw; }
@@ -166,7 +187,7 @@ namespace KitPlaylistInput
             return extensions;
         }
 
-        static bool IsFullyQualified(string value)
+        internal static bool IsFullyQualified(string value)
         {
             return value.StartsWith(@"\\", StringComparison.Ordinal) ||
                 (value.Length >= 3 && char.IsLetter(value[0]) && value[1] == ':' && (value[2] == '\\' || value[2] == '/'));
@@ -245,7 +266,8 @@ namespace KitPlaylistInput
         static bool PlaylistFormat(string extension)
         {
             return extension.Equals("m3u", StringComparison.OrdinalIgnoreCase) ||
-                extension.Equals("m3u8", StringComparison.OrdinalIgnoreCase) || extension.Equals("pls", StringComparison.OrdinalIgnoreCase);
+                extension.Equals("m3u8", StringComparison.OrdinalIgnoreCase) || extension.Equals("pls", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals("xspf", StringComparison.OrdinalIgnoreCase);
         }
 
         static bool FolderMedia(string extension, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
@@ -326,9 +348,18 @@ namespace KitPlaylistInput
             response.entries.Add(entry);
         }
 
-        public static InputResponse Process(InputRequest request, IInputSource source, IDirectoryScanner scanner = null)
+        public static InputResponse Process(InputRequest request, IInputSource source, IDirectoryScanner scanner = null,
+            Func<PlaylistReader> createReader = null, Action ensureParent = null)
         {
             var response = new InputResponse { request_id = request.RequestId };
+            if (request.Operation == "save-dialog")
+            {
+                string target = source.SelectSavePath(request);
+                if (target == null) { response.status = "cancelled"; return response; }
+                PlaylistStorage.TakeSnapshot(target, response);
+                return response;
+            }
+            if (request.Operation == "save") return PlaylistStorage.Save(request, ensureParent);
             string[] inputs;
             if (request.Operation == "folder")
             {
@@ -353,46 +384,67 @@ namespace KitPlaylistInput
                     var existing = Normalize(path, request.WorkingDirectory);
                     if (existing != null) seen.Add(existing.key);
                 }
-            foreach (string path in inputs)
+            PlaylistReader reader = null;
+            try
             {
-                var entry = Normalize(path, request.WorkingDirectory);
-                if (entry == null) { budget.Add(path); response.skipped++; continue; }
-                if (entry.kind != "native")
+                foreach (string path in inputs)
                 {
-                    if (Directory.Exists(entry.path))
+                    var entry = Normalize(path, request.WorkingDirectory);
+                    if (entry == null) { budget.Add(path); response.skipped++; continue; }
+                    if (entry.kind != "native")
                     {
-                        usedDirectory = true;
-                        foreach (var media in ReadDirectory(entry.path, request, scanner, budget, response, extensions, subtitles, images))
+                        if (Directory.Exists(entry.path))
                         {
-                            if (!File.Exists(media.path)) { response.skipped++; continue; }
-                            AddEntry(media, seen, response);
+                            usedDirectory = true;
+                            foreach (var media in ReadDirectory(entry.path, request, scanner, budget, response, extensions, subtitles, images))
+                            {
+                                if (!File.Exists(media.path)) { response.skipped++; continue; }
+                                AddEntry(media, seen, response);
+                            }
+                            continue;
                         }
-                        continue;
-                    }
-                    if (request.Operation == "folder")
-                    {
+                        if (request.Operation == "folder")
+                        {
+                            budget.Add(entry.path);
+                            response.unreadable_directories++;
+                            continue;
+                        }
+                        if (!File.Exists(entry.path)) { budget.Add(entry.path); response.skipped++; continue; }
+                        string extension = Path.GetExtension(entry.path).TrimStart('.');
+                        if (extension.Equals("m3u", StringComparison.OrdinalIgnoreCase) || extension.Equals("m3u8", StringComparison.OrdinalIgnoreCase))
+                        {
+                            response.had_playlist = true;
+                            if (reader == null) reader = createReader == null ? PlaylistReader.ForParent(request.ParentPid, request.MetadataCodepage) : createReader();
+                            foreach (var listed in reader.Read(entry.path))
+                            {
+                                budget.Add(listed.path);
+                                var local = Normalize(listed.path, request.WorkingDirectory);
+                                if (local != null && local.kind != "native" && !File.Exists(listed.path)) { response.missing_files++; continue; }
+                                // Explicit lists preserve every occurrence, including
+                                // items already queued. Later ordinary inputs dedupe.
+                                seen.Add(listed.key);
+                                response.entries.Add(listed);
+                            }
+                            continue;
+                        }
                         budget.Add(entry.path);
-                        response.unreadable_directories++;
-                        continue;
+                        // These formats need mpv.net's private LoadFiles preprocessing.
+                        // Reject the whole request before Lua can replace its queue.
+                        if (HostFormat(extension))
+                        {
+                            if (request.Operation != "paths") throw new InputFailure("native_entry_required");
+                            response.skipped++;
+                            continue;
+                        }
+                        entry.kind = PlaylistFormat(extension) ? "native" : subtitles.Contains(extension) ? "subtitle" : extensions.Contains(extension) ? "media" : "native";
                     }
-                    budget.Add(entry.path);
-                    if (!File.Exists(entry.path)) { response.skipped++; continue; }
-                    string extension = Path.GetExtension(entry.path).TrimStart('.');
-                    // These formats need mpv.net's private LoadFiles preprocessing.
-                    // Reject the whole request before Lua can replace its queue.
-                    if (HostFormat(extension))
-                    {
-                        if (request.Operation != "paths") throw new InputFailure("native_entry_required");
-                        response.skipped++;
-                        continue;
-                    }
-                    entry.kind = PlaylistFormat(extension) ? "native" : subtitles.Contains(extension) ? "subtitle" : extensions.Contains(extension) ? "media" : "native";
+                    else budget.Add(entry.path);
+                    if (request.Operation == "paths" && entry.kind != "media") { response.skipped++; continue; }
+                    AddEntry(entry, seen, response);
                 }
-                else budget.Add(entry.path);
-                if (request.Operation == "paths" && entry.kind != "media") { response.skipped++; continue; }
-                AddEntry(entry, seen, response);
             }
-            response.single_media = !usedDirectory && request.Operation != "folder" && request.Mode == "open" && inputs.Length == 1 &&
+            finally { if (reader != null) reader.Dispose(); }
+            response.single_media = !usedDirectory && !response.had_playlist && request.Operation != "folder" && request.Mode == "open" && inputs.Length == 1 &&
                 response.entries.Count == 1 && response.entries[0].kind == "media";
             string json = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue }.Serialize(response);
             if (Encoding.UTF8.GetByteCount(json) > MaxResponseBytes) throw new InputFailure("input_too_large");
@@ -560,6 +612,32 @@ namespace KitPlaylistInput
             return FolderPicker.Select(request, ParentWindow());
         }
 
+        public string SelectSavePath(InputRequest request)
+        {
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Title = "保存播放列表";
+                dialog.Filter = "UTF-8 播放列表 (*.m3u8)|*.m3u8";
+                dialog.DefaultExt = "m3u8";
+                dialog.AddExtension = true;
+                dialog.OverwritePrompt = true;
+                dialog.CheckPathExists = true;
+                dialog.RestoreDirectory = true;
+                dialog.InitialDirectory = request.WorkingDirectory;
+                dialog.FileName = "播放列表.m3u8";
+                if (request.SuggestedPath.Length != 0)
+                {
+                    var suggested = InputProcessor.Normalize(request.SuggestedPath, request.WorkingDirectory);
+                    if (suggested != null && suggested.kind != "native")
+                    {
+                        dialog.InitialDirectory = Path.GetDirectoryName(suggested.path);
+                        dialog.FileName = Path.GetFileName(suggested.path);
+                    }
+                }
+                return dialog.ShowDialog(new WindowOwner(ParentWindow())) == DialogResult.OK ? dialog.FileName : null;
+            }
+        }
+
         public string[] ReadClipboard()
         {
             try
@@ -584,6 +662,8 @@ namespace KitPlaylistInput
         [STAThread]
         public static int Main(string[] args)
         {
+            if (args.Length == 3 && args[2] == "-DetachedSave")
+                return args[0] == "-RequestPath" ? DetachedSave(args[1]) : 1;
             // Setting OutputEncoding calls console APIs, which fail for winexe.
             // Open the inherited pipe directly; mpv captures it without a console.
             Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
@@ -591,25 +671,7 @@ namespace KitPlaylistInput
             try
             {
                 if (args.Length != 2 || args[0] != "-RequestPath") throw new InputFailure("invalid_arguments");
-                string text;
-                using (var stream = new FileStream(args[1], FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    if (stream.Length > InputProcessor.MaxBytes) throw new InputFailure("invalid_request");
-                    using (var bytes = new MemoryStream())
-                    {
-                        var buffer = new byte[8192];
-                        int count;
-                        while ((count = stream.Read(buffer, 0, Math.Min(buffer.Length, InputProcessor.MaxBytes + 1 - (int)bytes.Length))) > 0)
-                        {
-                            bytes.Write(buffer, 0, count);
-                            if (bytes.Length > InputProcessor.MaxBytes) throw new InputFailure("invalid_request");
-                        }
-                        var data = bytes.ToArray();
-                        int start = data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF ? 3 : 0;
-                        try { text = new UTF8Encoding(false, true).GetString(data, start, data.Length - start); }
-                        catch { throw new InputFailure("invalid_request"); }
-                    }
-                }
+                string text = ReadRequestText(args[1]);
                 var request = InputProcessor.ParseRequest(text);
                 response.request_id = request.RequestId;
                 Application.EnableVisualStyles();
@@ -624,13 +686,122 @@ namespace KitPlaylistInput
         public static InputResponse Execute(InputRequest request, IInputSource source)
         {
             using (var parent = FindParent(request.ParentPid))
+                return ExecuteForParent(request, source, parent, null);
+        }
+
+        static InputResponse ExecuteForParent(InputRequest request, IInputSource source, Process parent, string cancellation)
+        {
+            // Dialog/input workers exit immediately. A detached writer instead
+            // reaches its commit check and finally cleanup after parent exit.
+            bool saving = request.Operation == "save";
+            parent.Exited += delegate { if (!saving) Environment.Exit(0); };
+            parent.EnableRaisingEvents = true;
+            if (parent.HasExited) throw new InputFailure("parent_unavailable");
+            return InputProcessor.Process(request, source ?? new WindowsInputSource(parent), null, null,
+                delegate {
+                    if (parent.HasExited || (cancellation != null && File.Exists(cancellation)))
+                        throw new InputFailure("parent_unavailable");
+                });
+        }
+
+        static string ReadRequestText(string path)
+        {
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                // Observe exit even while the native dialog pumps messages.
-                // Terminate only this single-request helper, never the player.
-                parent.Exited += delegate { Environment.Exit(0); };
-                parent.EnableRaisingEvents = true;
-                if (parent.HasExited) throw new InputFailure("parent_unavailable");
-                return InputProcessor.Process(request, source ?? new WindowsInputSource(parent));
+                if (stream.Length > InputProcessor.MaxBytes) throw new InputFailure("invalid_request");
+                using (var bytes = new MemoryStream())
+                {
+                    var buffer = new byte[8192];
+                    int count;
+                    while ((count = stream.Read(buffer, 0, Math.Min(buffer.Length, InputProcessor.MaxBytes + 1 - (int)bytes.Length))) > 0)
+                    {
+                        bytes.Write(buffer, 0, count);
+                        if (bytes.Length > InputProcessor.MaxBytes) throw new InputFailure("invalid_request");
+                    }
+                    var data = bytes.ToArray();
+                    int start = data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF ? 3 : 0;
+                    try { return new UTF8Encoding(false, true).GetString(data, start, data.Length - start); }
+                    catch { throw new InputFailure("invalid_request"); }
+                }
+            }
+        }
+
+        static void DeleteOwned(string path)
+        {
+            if (path != null) try { File.Delete(path); } catch { }
+        }
+
+        static bool MayPublish(Process parent, string cancellation)
+        {
+            try { return parent != null && !parent.HasExited && !File.Exists(cancellation); }
+            catch { return false; }
+        }
+
+        static int DetachedSave(string inputPath)
+        {
+            // The result/cancel names derive only from the command's own request
+            // path. No field in JSON can direct result writes or cleanup.
+            if (!InputProcessor.Clean(inputPath, InputProcessor.MaxPathLength - 48) || !InputProcessor.IsFullyQualified(inputPath)) return 1;
+            string requestPath;
+            try { requestPath = Path.GetFullPath(inputPath); }
+            catch { return 1; }
+            string resultPath = requestPath + ".result", cancellation = requestPath + ".cancel", temporary = null;
+            bool published = false, ownedRequest = false;
+            Process parent = null;
+            var response = new InputResponse();
+            try
+            {
+                try
+                {
+                    string text = ReadRequestText(requestPath);
+                    // Read only a valid top-level identity before validating the
+                    // remaining schema, so an invalid save still gets its own
+                    // matching error receipt without ever touching its target.
+                    var identity = new JavaScriptSerializer { MaxJsonLength = InputProcessor.MaxBytes, RecursionLimit = 16 }
+                        .DeserializeObject(text) as Dictionary<string, object>;
+                    object id, pid;
+                    if (identity == null || !identity.TryGetValue("request_id", out id) || !(id is string) ||
+                        !Regex.IsMatch((string)id, @"\A[A-Za-z0-9_-]{1,128}\z") ||
+                        !identity.TryGetValue("parent_pid", out pid) || !(pid is int) || (int)pid <= 0 ||
+                        !String.Equals(Path.GetFileName(requestPath), "mpvnet-input-" + (string)id + ".json", StringComparison.Ordinal))
+                        throw new InputFailure("invalid_request");
+                    ownedRequest = true;
+                    response.request_id = (string)id;
+                    parent = FindParent((int)pid);
+                    var request = InputProcessor.ParseRequest(text);
+                    if (request.Operation != "save") throw new InputFailure("invalid_request");
+                    response = ExecuteForParent(request, null, parent, cancellation);
+                }
+                catch (InputFailure failure) { response.status = "error"; response.error_code = failure.Code; }
+                catch { response.status = "error"; response.error_code = "internal_error"; }
+                if (!MayPublish(parent, cancellation)) return 1;
+                byte[] data = new UTF8Encoding(false).GetBytes(new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue }.Serialize(response));
+                string candidate = Path.Combine(Path.GetDirectoryName(requestPath), ".mpvnet-result-" + Guid.NewGuid().ToString("N") + ".tmp");
+                using (var stream = new FileStream(candidate, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    temporary = candidate;
+                    stream.Write(data, 0, data.Length);
+                    stream.Flush(true);
+                }
+                if (!MayPublish(parent, cancellation)) return 1;
+                // Move never overwrites an existing unknown result. Publishing
+                // failure cannot roll back an already committed playlist file.
+                File.Move(temporary, resultPath);
+                temporary = null;
+                published = true;
+                return response.status == "error" ? 1 : 0;
+            }
+            catch { return 1; }
+            finally
+            {
+                DeleteOwned(temporary);
+                if (published && !MayPublish(parent, cancellation)) DeleteOwned(resultPath);
+                if (ownedRequest)
+                {
+                    DeleteOwned(requestPath);
+                    DeleteOwned(cancellation);
+                }
+                if (parent != null) parent.Dispose();
             }
         }
 

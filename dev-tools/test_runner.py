@@ -49,6 +49,7 @@ PROFILES = {
     ),
     'helpers': (
         'test_playlist_input.PlaylistInput',
+        'test_playlist_files.PlaylistFiles',
         'test_playlist_input_build.PlaylistInputCompilation',
         'test_install_launcher.InstallLauncher',
         'test_watch_later_data.WatchLaterStore',
@@ -71,7 +72,7 @@ PROFILES = {
 REQUIREMENTS = {
     'core': 'Python 标准库；Git（源码文档清单）',
     'lua': 'MPVNET_TEST_LUA51：已有的 Lua 5.1 共享库',
-    'helpers': 'Windows PowerShell、Git、本地 .NET 10 SDK 与 Framework 4.7.2 引用；MPVNET_TEST_PLAYLIST_ARTIFACTS：仓外证据目录',
+    'helpers': 'Windows PowerShell、Git、本地 .NET 10 SDK 与 Framework 4.7.2 引用；MPVNET_TEST_LIBMPV；MPVNET_TEST_PLAYLIST_ARTIFACTS：仓外证据目录',
     'install': ('Windows PowerShell、Git 与固定旧发行历史；MPVNET_INSTALL_TARGET_ROOT、'
                 'MPVNET_LEGACY_ROOT/PACKAGE、MPVNET_MAINTENANCE_ROOT/PACKAGE、'
                 'MPVNET_USER_UPGRADE_ROOT/OLD_PACKAGE/NEW_PACKAGE'),
@@ -144,6 +145,8 @@ def preflight(profiles):
         if not shutil.which('powershell.exe'):
             raise RuntimeError('helpers 组需要 PATH 中可用的 powershell.exe')
         helper_root = _required('MPVNET_TEST_PLAYLIST_ARTIFACTS')
+        _required('MPVNET_TEST_LIBMPV')
+        _optional_file('MPVNET_TEST_LIBMPV')
         _optional_file('MPVNET_TEST_FFMPEG')
         _optional_file('MPVNET_TEST_MEDIAINFO')
     if 'install' not in profiles:

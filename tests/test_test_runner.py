@@ -56,6 +56,9 @@ class RunnerContract(unittest.TestCase):
                      'MPVNET_MAINTENANCE_ROOT', 'MPVNET_USER_UPGRADE_ROOT')
             env.update({name: str(root / name) for name in names})
             env['MPVNET_TEST_PLAYLIST_ARTIFACTS'] = str(root / 'helpers')
+            library = root / 'libmpv-fixture.dll'
+            library.write_bytes(b'fixture; preflight checks existence only')
+            env['MPVNET_TEST_LIBMPV'] = str(library)
             with patch.object(runner, 'powershell_path'), patch.object(runner.shutil, 'which', return_value='available'), \
                  patch('support.install_fixtures.source_worktrees', return_value=[runner.ROOT]):
                 for name in (*names, 'MPVNET_TEST_PLAYLIST_ARTIFACTS'):

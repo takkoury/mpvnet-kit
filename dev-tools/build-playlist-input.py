@@ -15,7 +15,7 @@ ASSEMBLY = 'KitPlaylistInput.exe'
 ASSET_PATH = 'config/helpers/' + ASSEMBLY
 SOURCE_METADATA_KEY = 'KitPlaylistInput.SourceSha256'
 MANIFEST = 'src/playlist-input/app.manifest'
-SOURCE_FILES = ('config/helpers/playlist-input.cs', MANIFEST)
+SOURCE_FILES = ('config/helpers/playlist-input.cs', 'config/helpers/playlist-files.cs', MANIFEST)
 FRAMEWORK_VERSION = 'v4.7.2'
 REFERENCE_FILES = ('mscorlib.dll', 'System.dll', 'System.Core.dll',
                    'System.Web.Extensions.dll', 'System.Windows.Forms.dll')

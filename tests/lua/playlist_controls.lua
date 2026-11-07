@@ -5,12 +5,13 @@ local properties = {pid = 123, ['working-directory'] = 'X:/fixture', path = 'X:/
     ['options/audio-exts'] = {'flac', 'mp3'}, playlist = {{id=71}, {id=92}}}
 local failure, callback, removed, temp = '', nil, {}, 'X:/fixture/temp'
 local parsed, emitted_payload
-local input_requests, input_shutdowns = {}, 0
+local input_requests, input_shutdowns, input_saves = {}, 0, 0
 local input_module = {new=function(actual_mp, actual_utils, feedback)
     assert(actual_mp ~= nil and actual_utils ~= nil and type(feedback.show) == 'function')
     return {request=function(mode, operation, files)
         input_requests[#input_requests+1]={mode=mode,operation=operation,files=files}
-    end,shutdown=function() input_shutdowns=input_shutdowns+1 end}
+    end,save=function() input_saves=input_saves+1 end,
+    shutdown=function() input_shutdowns=input_shutdowns+1 end}
 end}
 local observers = {}
 local function set_property(name, value)
@@ -83,7 +84,7 @@ end
 local function reset(mode)
     failure=mode or '';messages,commands,logs,removed={}, {}, {}, {};temp='X:/fixture/temp'
     callback,parsed=nil,nil
-    input_requests,input_shutdowns={},0
+    input_requests,input_shutdowns,input_saves={},0,0
     properties['options/input-ipc-server']=''
 end
 local function open()
@@ -239,4 +240,12 @@ function initial_shortcuts_define_forwarding()
     script_messages.key(token,'press','Space');eq(#commands,0)
     script_messages.key(token,'press','F8')
     eq(#commands,1);key_command(1,'keypress','F8')
+end
+
+function save_binding_delegates_without_a_second_save_entrypoint()
+    reset();assert(type(bindings['save-playlist'])=='function')
+    local save_bindings=0
+    for name in pairs(bindings) do if name:find('save',1,true) then save_bindings=save_bindings+1 end end
+    eq(save_bindings,1);bindings['save-playlist']();bindings['save-playlist']()
+    eq(input_saves,2);eq(#input_requests,0);eq(#commands,0);eq(#messages,0)
 end

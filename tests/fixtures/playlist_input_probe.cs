@@ -27,6 +27,11 @@ public sealed class PlaylistInputProbe : IInputSource
         return paths == null || paths.Length == 0 ? null : paths[0];
     }
     public string[] ReadClipboard() { return Read(); }
+    public string SelectSavePath(InputRequest request)
+    {
+        var paths = Read();
+        return paths == null || paths.Length == 0 ? null : paths[0];
+    }
 
     sealed class InjectedScanner : IDirectoryScanner
     {
@@ -81,10 +86,13 @@ public sealed class PlaylistInputProbe : IInputSource
                 Console.WriteLine(json.Serialize(entries));
                 return 0;
             }
-            string[] values = args.Length > 2 ? InputProcessor.ParseClipboardText(File.ReadAllText(args[2], Encoding.UTF8)) : request.Paths;
+            string[] values = args.Length > 2 && args[2].Length != 0 ? InputProcessor.ParseClipboardText(File.ReadAllText(args[2], Encoding.UTF8)) : request.Paths;
             var source = new PlaylistInputProbe(values, args[1]);
             var scanner = args[1].StartsWith("scanner-", StringComparison.Ordinal) ? new InjectedScanner(args[1]) : null;
-            var response = args[1] == "wait" ? Program.Execute(request, source) : InputProcessor.Process(request, source, scanner);
+            Func<PlaylistReader> reader = args.Length > 3 && args[3].Length != 0 ?
+                (Func<PlaylistReader>)(() => new PlaylistReader(args[3], request.MetadataCodepage)) : null;
+            Action ensureParent = args[1] == "parent-exited" ? (Action)(() => { throw new InputFailure("parent_unavailable"); }) : null;
+            var response = args[1] == "wait" ? Program.Execute(request, source) : InputProcessor.Process(request, source, scanner, reader, ensureParent);
             Console.WriteLine(json.Serialize(response));
         }
         catch (InputFailure error)
