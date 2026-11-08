@@ -214,17 +214,71 @@ class PlaylistInput(unittest.TestCase):
                 self.assertEqual(response['unreadable_directories'], 1)
         # This is an injected scanner failure, not evidence of real ACL behavior.
 
-    def test_image_exclusions_apply_only_to_folder_expansion(self):
-        folder = self.root/'images'
-        folder.mkdir()
-        image = folder/'cover.png'
+    def test_images_default_off_across_explicit_sources_even_in_video_extensions(self):
+        images = [self.root/'静止.PNG', self.root/'动画.gif']
+        for image in images:
+            image.write_bytes(b'synthetic input; classification never decodes images')
+        for operation in ('files', 'clipboard', 'paths'):
+            for options in ({}, dict(include_images=False)):
+                with self.subTest(operation=operation, options=options):
+                    response = self.invoke(operation=operation, paths=[str(images[0]), str(self.video), str(images[1])],
+                        video_exts=['png', 'mkv'], image_exts=['png', 'gif'], **options)
+                    self.assertEqual([entry['path'] for entry in response['entries']], [str(self.video)])
+                    self.assertEqual(response['skipped_images'], 2)
+                    self.assertEqual(response['skipped'], 0)
+            response = self.invoke(operation=operation, paths=[str(images[0]), str(self.video), str(images[1])],
+                video_exts=['png', 'mkv'], image_exts=['png', 'gif'], include_images=True)
+            self.assertEqual([entry['kind'] for entry in response['entries']], ['image', 'media', 'image'])
+            self.assertEqual(response['skipped_images'], 0)
+
+    def test_enabled_images_deduplicate_and_never_enable_single_media_auto_grouping(self):
+        image = self.root/'image.avif'
         image.touch()
-        (folder/'movie.mkv').touch()
-        response = self.invoke(paths=[str(folder)], video_exts=['png', 'mkv'], image_exts=['png'])
-        self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/'movie.mkv')])
-        response = self.invoke(paths=[str(image)], video_exts=['png', 'mkv'], image_exts=['png'])
-        self.assertEqual([entry['path'] for entry in response['entries']], [str(image)])
-        self.assertTrue(response['single_media'])
+        response = self.invoke(paths=[str(image)], image_exts=['avif'], include_images=True)
+        self.assertEqual(response['entries'][0]['kind'], 'image')
+        self.assertFalse(response['single_media'])
+        response = self.invoke(mode='append', paths=[str(image), str(self.video), str(image).upper()],
+            existing_paths=[str(image)], image_exts=['avif'], include_images=True)
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(self.video)])
+        self.assertEqual(response['duplicates'], 2)
+        self.assertTrue(self.invoke(paths=[str(self.video)], image_exts=['avif'], include_images=True)['single_media'])
+        unknown = self.root/'unknown.source'
+        unknown.touch()
+        response = self.invoke(paths=[str(unknown), 'https://example.invalid/image.avif'], image_exts=['avif'])
+        self.assertEqual([entry['kind'] for entry in response['entries']], ['native', 'native'])
+        self.assertEqual(response['skipped_images'], 0)
+
+    def test_directory_images_follow_switch_and_mixed_natural_order_without_per_image_notices(self):
+        folder = self.root/'images'
+        for relative in ['item10.png', 'item2.mkv', 'item1.gif', 'item3.FLAC', 'child/image.avif',
+                         'child/subtitle.customsub', 'child/list.m3u8']:
+            path = folder/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        for recursive in (False, True):
+            with self.subTest(recursive=recursive):
+                response = self.invoke(paths=[str(folder)], video_exts=['png', 'mkv'],
+                    image_exts=['png', 'gif', 'avif'], include_subdirectories=recursive)
+                self.assertEqual([entry['path'] for entry in response['entries']],
+                    [str(folder/'item2.mkv'), str(folder/'item3.FLAC')])
+                self.assertEqual(response['skipped_images'], 0)
+                expected = ['item1.gif', 'item2.mkv', 'item3.FLAC', 'item10.png']
+                if recursive:
+                    expected.append('child/image.avif')
+                response = self.invoke(paths=[str(folder), str(folder/'item10.png')], video_exts=['png', 'mkv'],
+                    image_exts=['png', 'gif', 'avif'], include_subdirectories=recursive, include_images=True)
+                self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/path) for path in expected])
+                self.assertEqual([entry['kind'] for entry in response['entries']],
+                    ['image', 'media', 'media', 'image'] + (['image'] if recursive else []))
+                self.assertEqual(response['duplicates'], 1)
+
+    def test_file_filters_keep_all_files_and_include_images_only_when_enabled(self):
+        for enabled in (False, True):
+            response = self.invoke(behavior='file-filter', include_images=enabled, image_exts=['png', 'gif'],
+                video_exts=['mkv', 'png', 'iso', 'm3u8'], audio_exts=['flac'])
+            categories = response['filter'].split('|')
+            self.assertEqual(categories[:2], ['所有文件 (*.*)', '*.*'])
+            self.assertEqual(set(categories[3].split(';')), {'*.flac', '*.mkv'} | ({'*.gif', '*.png'} if enabled else set()))
 
     def test_directory_item_and_enumeration_limits_are_global_without_partial_results(self):
         folders = [self.root/'first', self.root/'second']
@@ -399,7 +453,8 @@ class PlaylistInput(unittest.TestCase):
                         dict(request_id='bad\nrequest'), dict(working_directory='relative'),
                         dict(paths=['bad\tpath']), dict(paths=['a' * 32768]), dict(paths=['a'] * 10001),
                         dict(subtitle_exts=['*']), dict(parent_pid=0), dict(include_subdirectories=1),
-                        dict(include_subdirectories='true'), dict(include_subdirectories=None)):
+                        dict(include_subdirectories='true'), dict(include_subdirectories=None),
+                        dict(include_images=1), dict(include_images='true'), dict(include_images=None)):
             with self.subTest(changes=str(changes)[:80]):
                 self.assertEqual(self.invoke(**changes)['error_code'], 'invalid_request')
 

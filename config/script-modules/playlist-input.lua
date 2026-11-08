@@ -2,7 +2,7 @@
 -- paths and dialogs; this module alone decides whether a result is still current.
 local M = {}
 
-function M.new(mp, utils, feedback)
+function M.new(mp, utils, feedback, read_include_images)
     local executable = mp.command_native({'expand-path', '~~/helpers/KitPlaylistInput.exe'})
     local session = string.format('%.0f-%.0f', mp.get_property_number('pid', 0), mp.get_time() * 1000000)
     local sequence, pending, saving, closing = 0, nil, nil, false
@@ -10,6 +10,7 @@ function M.new(mp, utils, feedback)
     -- These are per-entry loading policies, not another queue or title store.
     -- mpv owns both the IDs and the titles parsed from the validated M3U body.
     local exact_entries = {}
+    local function image_key(path) return path:gsub("\\", "/"):lower() end
 
     local function snapshot()
         local entries = {}
@@ -54,15 +55,17 @@ function M.new(mp, utils, feedback)
         for _, entry in ipairs(mp.get_property_native('playlist', {})) do
             if entry.id ~= nil then live[entry.id] = entry.filename end
         end
-        for id, path in pairs(exact_entries) do
-            if live[id] ~= path then exact_entries[id] = nil end
+        for id, policy in pairs(exact_entries) do
+            if live[id] ~= policy.path then exact_entries[id] = nil end
         end
     end)
     mp.add_hook('on_load', 50, function()
         local list = mp.get_property_native('playlist', {})
         local entry = list[mp.get_property_number('playlist-pos', -1) + 1]
-        if entry and entry.id ~= nil and exact_entries[entry.id] == entry.filename then
+        local policy = entry and exact_entries[entry.id]
+        if policy and policy.path == entry.filename then
             mp.set_property('file-local-options/autocreate-playlist', 'no')
+            if policy.image then mp.set_property('file-local-options/image-display-duration', 'inf') end
         end
     end)
 
@@ -84,7 +87,7 @@ function M.new(mp, utils, feedback)
         for _, entry in ipairs(entries) do
             if type(entry) ~= 'table' or type(entry.path) ~= 'string' or entry.path == ''
                 or #entry.path > 131072 or entry.path:find('[%z\1-\31\127]')
-                or (entry.kind ~= 'media' and entry.kind ~= 'subtitle' and entry.kind ~= 'native') then return false end
+                or (entry.kind ~= 'media' and entry.kind ~= 'image' and entry.kind ~= 'subtitle' and entry.kind ~= 'native') then return false end
             if entry.from_playlist ~= nil and type(entry.from_playlist) ~= 'boolean' then return false end
             if entry.title ~= nil and type(entry.title) ~= 'string' then return false end
             if entry.from_playlist and entry.kind == 'subtitle' then return false end
@@ -105,13 +108,14 @@ function M.new(mp, utils, feedback)
         local segments, index = {}, 1
         while index <= #entries do
             if entries[index].from_playlist then
-                local first, lines = index, {'#EXTM3U'}
+                local first, lines, images = index, {'#EXTM3U'}, {}
                 repeat
                     local entry = entries[index]
                     if entry.title and entry.title ~= '' then
                         lines[#lines+1] = '#EXTINF:-1,' .. entry.title:gsub('[%z\1-\31\127]', ' ')
                     end
                     lines[#lines+1] = entry.path
+                    if entry.kind == 'image' then images[image_key(entry.path)] = true end
                     index = index + 1
                 until not entries[index] or not entries[index].from_playlist
                 local temp = os.getenv('TEMP') or os.getenv('TMP')
@@ -119,7 +123,7 @@ function M.new(mp, utils, feedback)
                 local path = utils.join_path(temp, 'mpvnet-import-' .. session .. '-' .. generation .. '-' .. first .. '.m3u8')
                 local file = io.open(path, 'wb')
                 if not file then cleanup_segments(segments); return nil end
-                segments[first] = {path=path, last=index-1}
+                segments[first] = {path=path, last=index-1, images=images}
                 local written = file:write(table.concat(lines, '\n') .. '\n')
                 local closed = file:close()
                 if not written or not closed then cleanup_segments(segments); return nil end
@@ -151,7 +155,7 @@ function M.new(mp, utils, feedback)
         if not err and not closing and generation == sequence then
             for _, entry in ipairs(mp.get_property_native('playlist', {})) do
                 if entry.id ~= nil and not before[entry.id] and entry['playlist-path'] == segment.path then
-                    exact_entries[entry.id] = entry.filename
+                    exact_entries[entry.id] = {path=entry.filename, image=segment.images[image_key(entry.filename)] == true}
                 end
             end
         end
@@ -162,6 +166,8 @@ function M.new(mp, utils, feedback)
         if #data.entries == 0 then
             if (tonumber(data.unreadable_directories) or 0) > 0 then
                 feedback.show(string.format('无法读取 %d 个文件夹，当前队列保持不变', count(data.unreadable_directories)), 'error')
+            elseif count(data.skipped_images) > 0 then
+                feedback.show(string.format('图片管理未开启，已跳过 %d 个图片文件', count(data.skipped_images)), 'action')
             elseif count(data.skipped_links) > 0 then
                 feedback.show(string.format('已跳过 %d 个目录链接，当前队列保持不变', count(data.skipped_links)), 'action')
             elseif count(data.missing_files) > 0 then
@@ -170,7 +176,7 @@ function M.new(mp, utils, feedback)
                 feedback.show('播放列表文件中没有可用条目', 'action')
             elseif (tonumber(data.duplicates) or 0) > 0 then
                 feedback.show('所选文件已在播放列表中', 'action')
-            elseif operation == 'folder' then feedback.show('文件夹中没有可添加的音视频', 'action')
+            elseif operation == 'folder' then feedback.show('文件夹中没有可添加的媒体', 'action')
             else feedback.show('没有可添加的媒体文件', 'error') end
             return
         end
@@ -202,8 +208,11 @@ function M.new(mp, utils, feedback)
                 local args = {'loadfile', entry.path, replace and 'replace' or 'append'}
                 -- Explicit batches are exact selections. Retain the user's
                 -- autocreate-playlist preference only for one selected media.
-                if entry.kind == 'media' and not (replace and data.single_media == true) then
+                if entry.kind == 'image' or entry.kind == 'media' and not (replace and data.single_media == true) then
                     args[4], args[5] = -1, {['autocreate-playlist']='no'}
+                    -- mpv applies this only to single-frame images. Animated
+                    -- images retain core timing; the option stays file-local.
+                    if entry.kind == 'image' then args[5]['image-display-duration'] = 'inf' end
                 end
                 local _, err = mp.command_native(args)
                 if err then failed = failed + 1
@@ -219,6 +228,7 @@ function M.new(mp, utils, feedback)
         local notices = {}
         if failed > 0 then notices[#notices+1] = '部分文件未能加入播放列表' end
         if count(data.unreadable_directories) > 0 then notices[#notices+1] = string.format('已添加可用文件，%d 个文件夹无法读取', count(data.unreadable_directories)) end
+        if count(data.skipped_images) > 0 then notices[#notices+1] = string.format('图片管理未开启，已跳过 %d 个图片文件', count(data.skipped_images)) end
         if count(data.skipped_links) > 0 then notices[#notices+1] = string.format('已跳过 %d 个目录链接', count(data.skipped_links)) end
         if count(data.missing_files) > 0 then notices[#notices+1] = string.format('已跳过 %d 个缺失文件', count(data.missing_files)) end
         if count(data.skipped) > 0 then notices[#notices+1] = '已跳过无法加入的文件' end
@@ -233,6 +243,7 @@ function M.new(mp, utils, feedback)
         end
         return {schema=1, request_id=id, parent_pid=mp.get_property_number('pid', 0),
             operation=operation, mode=mode, paths=files or {}, working_directory=state.cwd,
+            include_images=read_include_images ~= nil and read_include_images() == true,
             video_exts=extensions('video-exts'), audio_exts=extensions('audio-exts'),
             image_exts=extensions('image-exts'), subtitle_exts=extensions('sub-auto-exts'),
             metadata_codepage=mp.get_property('options/metadata-codepage', 'auto'), existing_paths=existing}

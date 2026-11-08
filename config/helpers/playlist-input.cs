@@ -22,6 +22,7 @@ namespace KitPlaylistInput
         public string WorkingDirectory;
         public string[] Paths;
         public bool IncludeSubdirectories;
+        public bool IncludeImages;
         public string[] VideoExtensions;
         public string[] AudioExtensions;
         public string[] SubtitleExtensions;
@@ -55,6 +56,7 @@ namespace KitPlaylistInput
         public int duplicates;
         public int unreadable_directories;
         public int skipped_links;
+        public int skipped_images;
         public bool had_playlist;
         public int missing_files;
         public bool saved;
@@ -127,6 +129,14 @@ namespace KitPlaylistInput
             return (int)value;
         }
 
+        static bool OptionalBooleanField(Dictionary<string, object> data, string name)
+        {
+            object value;
+            if (!data.TryGetValue(name, out value)) return false;
+            if (!(value is bool)) throw new InputFailure("invalid_request");
+            return (bool)value;
+        }
+
         static string[] ArrayField(Dictionary<string, object> data, string name, bool optional = false)
         {
             object value;
@@ -161,16 +171,12 @@ namespace KitPlaylistInput
                     VideoExtensions = ArrayField(data, "video_exts"), AudioExtensions = ArrayField(data, "audio_exts"),
                     SubtitleExtensions = ArrayField(data, "subtitle_exts"),
                     ImageExtensions = ArrayField(data, "image_exts", true),
-                    ExistingPaths = ArrayField(data, "existing_paths"), Paths = ArrayField(data, "paths", true)
+                    ExistingPaths = ArrayField(data, "existing_paths"), Paths = ArrayField(data, "paths", true),
+                    IncludeSubdirectories = OptionalBooleanField(data, "include_subdirectories"),
+                    IncludeImages = OptionalBooleanField(data, "include_images")
                 };
                 request.MetadataCodepage = data.ContainsKey("metadata_codepage") ? StringField(data, "metadata_codepage") : "";
                 request.SuggestedPath = data.ContainsKey("suggested_path") ? StringField(data, "suggested_path") : "";
-                object recursive;
-                if (data.TryGetValue("include_subdirectories", out recursive))
-                {
-                    if (!(recursive is bool)) throw new InputFailure("invalid_request");
-                    request.IncludeSubdirectories = (bool)recursive;
-                }
                 bool save = request.Operation == "save" || request.Operation == "save-dialog";
                 if (!Clean(request.RequestId, 128) || request.ParentPid <= 0 ||
                     (!save && request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
@@ -285,10 +291,33 @@ namespace KitPlaylistInput
                 extension.Equals("xspf", StringComparison.OrdinalIgnoreCase);
         }
 
-        static bool FolderMedia(string extension, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
+        static string LocalFileKind(string extension, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
         {
-            return extensions.Contains(extension) && !subtitles.Contains(extension) && !images.Contains(extension) &&
-                !HostFormat(extension) && !PlaylistFormat(extension);
+            if (HostFormat(extension) || PlaylistFormat(extension)) return "native";
+            // The core's image list owns this classification even if a custom
+            // audio/video list also includes the same extension.
+            if (images.Contains(extension)) return "image";
+            if (subtitles.Contains(extension)) return "subtitle";
+            return extensions.Contains(extension) ? "media" : "native";
+        }
+
+        internal static string FileDialogFilter(InputRequest request)
+        {
+            const string all = "所有文件 (*.*)|*.*";
+            var extensions = Extensions(request.VideoExtensions, request.AudioExtensions);
+            var subtitles = Extensions(request.SubtitleExtensions);
+            var images = Extensions(request.ImageExtensions);
+            var candidates = new HashSet<string>(extensions, StringComparer.OrdinalIgnoreCase);
+            if (request.IncludeImages) candidates.UnionWith(images);
+            var patterns = new List<string>();
+            foreach (string extension in candidates)
+            {
+                string kind = LocalFileKind(extension, extensions, subtitles, images);
+                if (kind == "media" || (kind == "image" && request.IncludeImages)) patterns.Add("*." + extension);
+            }
+            patterns.Sort(StringComparer.OrdinalIgnoreCase);
+            if (patterns.Count == 0) return all;
+            return all + (request.IncludeImages ? "|音视频与图片|" : "|音视频文件|") + String.Join(";", patterns);
         }
 
         static bool Digit(char value) { return value >= '0' && value <= '9'; }
@@ -363,11 +392,12 @@ namespace KitPlaylistInput
                         continue;
                     }
                     string extension = Path.GetExtension(path).TrimStart('.');
-                    if (!FolderMedia(extension, extensions, subtitles, images)) continue;
+                    string kind = LocalFileKind(extension, extensions, subtitles, images);
+                    if (kind != "media" && !(kind == "image" && request.IncludeImages)) continue;
                     var entry = Normalize(path, request.WorkingDirectory);
                     if (entry == null) { response.skipped++; continue; }
                     budget.Add(entry.path);
-                    entry.kind = "media";
+                    entry.kind = kind;
                     contents.Files.Add(entry);
                 }
             }
@@ -501,6 +531,10 @@ namespace KitPlaylistInput
                                 budget.Add(listed.path);
                                 var local = Normalize(listed.path, request.WorkingDirectory);
                                 if (local != null && local.kind != "native" && !File.Exists(listed.path)) { response.missing_files++; continue; }
+                                // An explicit playlist keeps its own contents,
+                                // including image titles and repeated entries.
+                                if (listed.kind == "media" && images.Contains(Path.GetExtension(listed.path).TrimStart('.')))
+                                    listed.kind = "image";
                                 // Explicit lists preserve every occurrence, including
                                 // items already queued. Later ordinary inputs dedupe.
                                 seen.Add(listed.key);
@@ -517,10 +551,11 @@ namespace KitPlaylistInput
                             response.skipped++;
                             continue;
                         }
-                        entry.kind = PlaylistFormat(extension) ? "native" : subtitles.Contains(extension) ? "subtitle" : extensions.Contains(extension) ? "media" : "native";
+                        entry.kind = LocalFileKind(extension, extensions, subtitles, images);
+                        if (entry.kind == "image" && !request.IncludeImages) { response.skipped_images++; continue; }
                     }
                     else budget.Add(entry.path);
-                    if (request.Operation == "paths" && entry.kind != "media") { response.skipped++; continue; }
+                    if (request.Operation == "paths" && entry.kind != "media" && entry.kind != "image") { response.skipped++; continue; }
                     AddEntry(entry, seen, response);
                 }
             }
@@ -815,7 +850,7 @@ namespace KitPlaylistInput
             using (var dialog = new OpenFileDialog())
             {
                 dialog.Title = request.Mode == "append" ? "追加文件" : "打开文件";
-                dialog.Filter = "所有文件 (*.*)|*.*";
+                dialog.Filter = InputProcessor.FileDialogFilter(request);
                 dialog.Multiselect = true;
                 dialog.CheckFileExists = true;
                 dialog.CheckPathExists = true;

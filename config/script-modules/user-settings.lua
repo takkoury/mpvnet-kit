@@ -13,6 +13,7 @@ M.fields = {
     {id='fullscreen',page='window',label='默认全屏',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='ontop',page='window',label='默认置顶',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='playlist.open-on-startup',page='window',label='启动时打开播放列表',kind='boolean',default=false,timing='startup',script='playlist_controls',search_terms='播放列表 侧窗 启动 自动 打开 playlist'},
+    {id='playlist.include-images',page='window',label='将图片纳入播放列表',kind='boolean',default=false,timing='next-task',script='playlist_controls',search_terms='图片 照片 动图 播放列表 目录 image playlist'},
     {id='modernz.scalewindowed',page='controlbar',label='窗口控制栏缩放',kind='number',display='percent',search_terms='控制栏大小 比例 OSC',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.scalefullscreen',page='controlbar',label='全屏控制栏缩放',kind='number',display='percent',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.hidetimeout',page='controlbar',label='自动隐藏时间',kind='number',display='seconds',default=1.5,min=0,max=60,slider_min=0,slider_max=10,step=0.1,timing='preview',section='显示',script='modernz'},
@@ -234,6 +235,11 @@ function M.owner(mp,spec)
         local value=snapshot.values[spec.id]
         if value~=nil and not M.valid(field,value) then return end
         saved=M.value_or(value,baseline);override=value~=nil;revision=snapshot.revision or ''
+        if field.timing=='next-task' then
+            initialized=true
+            if not M.same(current(),saved) then apply_saved('task') else refresh() end
+            return
+        end
         if not initialized then
             initialized=true
             -- Startup inheritance leaves host initialization intact; overrides are

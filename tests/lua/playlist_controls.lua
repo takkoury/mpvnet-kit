@@ -6,7 +6,9 @@ local properties = {pid = 123, ['working-directory'] = 'X:/fixture', path = 'X:/
 local failure, callback, removed, temp = '', nil, {}, 'X:/fixture/temp'
 local parsed, emitted_payload
 local input_requests, input_shutdowns, input_saves = {}, 0, 0
-local input_module = {new=function(actual_mp, actual_utils, feedback)
+local read_images
+local input_module = {new=function(actual_mp, actual_utils, feedback, images)
+    read_images=images
     assert(actual_mp ~= nil and actual_utils ~= nil and type(feedback.show) == 'function')
     return {request=function(mode, operation, files)
         input_requests[#input_requests+1]={mode=mode,operation=operation,files=files}
@@ -371,4 +373,16 @@ function startup_initial_false_wins_over_new_saved_true()
     eq(callback,nil)
     local state=properties['user-data/mpvnet/settings-runtime/playlist.open-on-startup']
     eq(state.saved,true);eq(state.effective,false);eq(state.status,'pending-startup')
+end
+
+function image_preference_applies_to_new_input_without_touching_visibility()
+    eq(read_images(),false)
+    local function preference(value)
+        set_property('user-data/mpvnet/settings-values',{schema=1,revision='image-pref',
+            values={['playlist.include-images']=value},startup={available=true,values={}}})
+    end
+    preference(true);eq(read_images(),true);eq(callback,nil);eq(#commands,0)
+    local runtime=properties['user-data/mpvnet/settings-runtime/playlist.include-images']
+    eq(runtime.default,false);eq(runtime.saved,true);eq(runtime.effective,true);eq(runtime.status,'effective')
+    preference(false);eq(read_images(),false);eq(callback,nil);eq(#commands,0)
 end

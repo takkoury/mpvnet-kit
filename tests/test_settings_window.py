@@ -514,14 +514,20 @@ class SettingsWindow(unittest.TestCase):
             label='启动时打开播放列表', kind='boolean', default=False, saved=False,
             has_override=False, effective=False, status='effective', apply_error='',
             timing='startup', section='', default_source='套件默认关闭'))
+        initial['fields'].append(dict(id='playlist.include-images', page='window',
+            label='将图片纳入播放列表', kind='boolean', default=False, saved=False,
+            has_override=False, effective=False, status='effective', apply_error='',
+            timing='next-task', section='', default_source='套件默认关闭'))
         for field in initial['fields']:
             if field['page'] == 'window': field['section'] = ''
         for width in (760, 1040):
             with self.subTest(width=width):
                 data = self.run_window([dict(op='page', page='window'),
-                    dict(op='choose', id='playlist.open-on-startup', index=1), dict(op='save')], initial, width=width)
+                    dict(op='choose', id='playlist.open-on-startup', index=1),
+                    dict(op='choose', id='playlist.include-images', index=1), dict(op='save')], initial, width=width)
                 self.assertEqual(data['editor_types']['playlist.open-on-startup'], 'CheckBox')
                 self.assertIs(json.loads(data['sent'][-1][-1])['playlist.open-on-startup'], True)
+                self.assertIs(json.loads(data['sent'][-1][-1])['playlist.include-images'], True)
                 self.assertEqual([command[2] for command in data['sent']], ['save'])
                 self.assertEqual(data['section_headers'], [])
                 self.assertTrue(all(data['label_content_fits'].values()), data['label_content_fits'])

@@ -112,6 +112,11 @@ public sealed class PlaylistInputProbe : IInputSource
                 Console.WriteLine(json.Serialize(entries));
                 return 0;
             }
+            if (args[1] == "file-filter")
+            {
+                Console.WriteLine(json.Serialize(new { filter = InputProcessor.FileDialogFilter(request) }));
+                return 0;
+            }
             string[] values = args.Length > 2 && args[2].Length != 0 ? InputProcessor.ParseClipboardText(File.ReadAllText(args[2], Encoding.UTF8)) : request.Paths;
             var source = new PlaylistInputProbe(values, args[1]);
             if (args[1] == "cancel-blocked-scan")

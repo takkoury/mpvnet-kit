@@ -108,7 +108,7 @@ local function host()
             end,
         }
     end
-    h.controller=input_module.new(mp,utils,feedback_module.new(mp))
+    h.controller=input_module.new(mp,utils,feedback_module.new(mp),function() return h.include_images == true end)
     function h.start(mode, operation, files) h.controller.request(mode or 'open',operation or 'files',files) end
     function h.result(entries, extra, index)
         local payload=h.payloads[index or #h.payloads]
@@ -218,7 +218,7 @@ function folder_input_and_feedback()
     h.finish(h.result({entry('two.mp4')},{single_media=false}))
     load(h,1,'two.mp4','append',true);eq(#h.writes,0)
     h=host();h.start('open','folder');h.finish(h.result({}))
-    eq(#h.calls,0);message(h,'文件夹中没有可添加的音视频',1.5)
+    eq(#h.calls,0);message(h,'文件夹中没有可添加的媒体',1.5)
     h=host();h.start('open','folder');h.finish(h.result({}, {unreadable_directories=1}))
     eq(#h.calls,0);message(h,'无法读取 1 个文件夹，当前队列保持不变',4)
     h=host();h.start('append','paths')
@@ -617,4 +617,33 @@ function playlist_transport_encoding_ownership()
         h.finish(h.result({listed('中文路径.mkv','中文标题')},{had_playlist=true}))
         eq(#h.calls,1);eq(#h.writes,0);eq(h.properties['options/metadata-codepage'],encoding)
     end
+end
+
+function image_inputs_capture_setting_and_use_local_still_duration()
+    local h=host();h.start('append');eq(h.payloads[1].include_images,false)
+    h.finish(h.result({}, {skipped_images=1}));eq(#h.calls,0);eq(#h.writes,0)
+    message(h,'图片管理未开启，已跳过 1 个图片文件',1.5)
+    h=host();h.include_images=true;h.start('append');eq(h.payloads[1].include_images,true)
+    h.include_images=false -- The started request keeps its own input choice.
+    h.finish(h.result({entry('photo.png','image'),entry('next.mkv')}))
+    load(h,1,'photo.png','append',true);eq(h.calls[1][5]['image-display-duration'],'inf')
+    load(h,2,'next.mkv','append',true);eq(h.calls[2][5]['image-display-duration'],nil)
+    eq(#h.writes,0);eq(h.properties.pause,true)
+    h.start('append');eq(h.payloads[2].include_images,false)
+end
+function image_lists_keep_policy_by_real_id_and_retire_it_on_replacement()
+    local h=host()
+    local image=listed('photo.png');image.kind='image'
+    h.on_command=function(args)
+        if args[1]=='loadlist' then
+            h.queue({{id=101,filename='X:/fixture/photo.png',['playlist-path']=args[2]},
+                {id=102,filename='X:/fixture/video.mkv',['playlist-path']=args[2]}})
+        end
+    end
+    h.start('append');eq(h.payloads[1].include_images,false)
+    h.finish(h.result({image,listed('video.mkv')},{had_playlist=true}))
+    h.loading(0);eq(h.properties['file-local-options/image-display-duration'],'inf');eq(#h.writes,2)
+    h.writes={};h.loading(1);eq(#h.writes,1);eq(h.writes[1][1],'file-local-options/autocreate-playlist')
+    h.queue({{id=101,filename='X:/fixture/replacement.mkv'}})
+    h.writes={};h.loading(0);eq(#h.writes,0)
 end

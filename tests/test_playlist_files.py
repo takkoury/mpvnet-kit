@@ -151,6 +151,25 @@ class PlaylistFiles(unittest.TestCase):
                          [str(self.audio)] + [str(self.video), str(self.audio), str(self.video)] * 2)
         self.assertEqual(response['duplicates'], 2)
 
+    def test_explicit_playlist_images_keep_titles_and_duplicates_with_switch_off_or_on(self):
+        image = self.root/'明确图片.gif'
+        image.write_bytes(b'synthetic reference; playlist reader does not decode it')
+        path = self.playlist(content='#EXTM3U\n#EXTINF:-1,第一幅\n' + image.name + '\n' +
+                             self.video.name + '\n#EXTINF:-1,重复图片\n' + image.name + '\n')
+        before = path.read_bytes()
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                response = self.invoke(operation='paths', mode='append', paths=[str(path), str(image)],
+                    existing_paths=[str(image)], image_exts=['gif'], include_images=enabled)
+                self.assertEqual([entry['path'] for entry in response['entries']],
+                    [str(image), str(self.video), str(image)])
+                self.assertEqual([entry['kind'] for entry in response['entries']], ['image', 'media', 'image'])
+                self.assertEqual([entry['title'] for entry in response['entries']], ['第一幅', '', '重复图片'])
+                self.assertTrue(all(entry['from_playlist'] for entry in response['entries']))
+                self.assertEqual(response['skipped_images'], 0 if enabled else 1)
+                self.assertEqual(response['duplicates'], 1 if enabled else 0)
+                self.assertEqual(path.read_bytes(), before)
+
     def test_side_paths_expand_explicit_lists_and_never_attach_list_subtitles(self):
         path = self.playlist(content='#EXTM3U\n' + self.subtitle.name + '\n' + self.video.name + '\n')
         response = self.invoke(operation='paths', paths=[str(path)])

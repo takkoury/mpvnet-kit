@@ -2,7 +2,9 @@
 local mp = require('mp')
 local utils = require('mp.utils')
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
-local input = dofile(mp.command_native({'expand-path', '~~/script-modules/playlist-input.lua'})).new(mp, utils, feedback_client)
+local include_images = false
+local input = dofile(mp.command_native({'expand-path', '~~/script-modules/playlist-input.lua'})).new(mp, utils, feedback_client,
+    function() return include_images end)
 
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local helper = mp.command_native({'expand-path', '~~/helpers/playlist-window.ps1'})
@@ -319,4 +321,10 @@ settings.owner(mp, {
         end
         return true
     end,
+})
+
+settings.owner(mp, {
+    id='playlist.include-images', default_source='套件默认关闭',
+    read=function() return include_images end,
+    write=function(value) include_images = value; return true end,
 })

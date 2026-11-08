@@ -29,9 +29,13 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 受管打开单个普通音视频保留当前`autocreate-playlist`偏好；明确多选、文件夹展开及追加媒体通过loadfile的单文件选项设置`autocreate-playlist=no`，不改全局默认。字幕使用sub-add；其它核心来源沿用loadfile。直接选择ISO、AviSynth及Windows快捷方式需要宿主特定预处理，整批拒绝并提示拖入主窗，避免将其当普通文件误加载。原生光盘入口、主窗拖入、资源管理器调起及原生近期文件仍由宿主处理，不承诺新规则覆盖这些路径。
 
-`operation=folder`使用系统现代目录选择器，以原生复选框提供本次`include_subdirectories`，每次默认false。文件、剪贴板和侧窗paths输入仍默认单层。helper逐层枚举，每层文件自然排序后先加入，再按目录名自然排序深度遍历子目录；所有条目在原输入位置展开，共用本地路径去重。图片、字幕和列表不自动加入，目录reparse point不展开；即使最终只有一个文件也不设置single_media。`unreadable_directories`及`skipped_links`分别记录不可读目录和目录链接跳过数量，与原skipped／duplicates分开。候选数量、扫描总量和输出字节均有界，超限整次拒绝，不能返回部分结果冒充完整列表。目录选择、扫描与取消不改变实际队列，只有控制层通过旧请求检查后提交。
+`operation=folder`使用系统现代目录选择器，以原生复选框提供本次`include_subdirectories`，每次默认false。文件、剪贴板和侧窗paths输入仍默认单层。helper逐层枚举，每层文件自然排序后先加入，再按目录名自然排序深度遍历子目录；所有条目在原输入位置展开，共用本地路径去重。图片按本次`include_images`决定是否纳入，字幕和列表不自动加入，目录reparse point不展开；即使最终只有一个文件也不设置single_media。`unreadable_directories`及`skipped_links`分别记录不可读目录和目录链接跳过数量，与原skipped／duplicates分开。候选数量、扫描总量和输出字节均有界，超限整次拒绝，不能返回部分结果冒充完整列表。目录选择、扫描与取消不改变实际队列，只有控制层通过旧请求检查后提交。
 
 输入选择仍在STA主线程；选择后的读取与目录扫描通过`IScanTaskRunner`放入本次helper的后台线程，保存对话框及写入不走此路径。400ms内完成不显示进度窗；较慢时显示属于父播放器的可取消窗口。取消立即返回`cancelled`和空条目，不等待阻塞的文件系统调用；后台线程不阻止helper退出，父进程退出仍沿既有生命周期结束helper。控制层继续用请求代次和队列快照决定最终提交。
+
+`playlist.include-images`由playlist-controls持有，默认false、next-task时机；共享设置owner在有效保存快照变化时更新该偏好，不发预览或操作队列。输入模块通过只读回调在每个请求开始捕获`include_images`，后续设置变化不改在途请求。helper使用本次core `image-exts`，图片分类优先于AV扩展重叠；显式图片关闭时计入`skipped_images`，目录图片关闭时静默排除。M3U/M3U8本地图片仍保留并标记`kind=image`，不做逐图解码预检。
+
+普通图片条目以loadfile的单文件选项附带`autocreate-playlist=no`、`image-display-duration=inf`；mpv只对单帧图片采用该时长，动画仍由核心处理。列表导入按新条目真实ID、来源清单和本地路径关联图片策略，在on_load设置同样的局部选项；重排保留策略，移除／同ID路径替换退休策略。后续音视频恢复自己的选项，不改全局时长；关闭图片管理不回收已有条目或其播放策略。M3U8仅写路径／标题，不导出这些播放器选项。
 
 构建工具通过源码摘要校验受管EXE，普通构包不编译、不下载依赖；与设置构建共用本地托管程序构建基础。验证分别覆盖实际C#输入规则、完整Lua控制层和隔离核心；真实选择对话框与键鼠体验仍需用户验收。
 

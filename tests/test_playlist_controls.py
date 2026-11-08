@@ -78,6 +78,9 @@ class PlaylistControls(unittest.TestCase):
             with self.subTest(case=case):
                 self.run_case(case)
 
+    def test_image_preference_applies_only_to_future_inputs(self):
+        self.run_case('image_preference_applies_to_new_input_without_touching_visibility')
+
     def test_complete_script_syntax(self):
         self.lua.check_syntax(SCRIPT)
 
