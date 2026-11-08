@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
@@ -19,6 +21,7 @@ namespace KitPlaylistInput
         public string Mode;
         public string WorkingDirectory;
         public string[] Paths;
+        public bool IncludeSubdirectories;
         public string[] VideoExtensions;
         public string[] AudioExtensions;
         public string[] SubtitleExtensions;
@@ -51,6 +54,7 @@ namespace KitPlaylistInput
         public int skipped;
         public int duplicates;
         public int unreadable_directories;
+        public int skipped_links;
         public bool had_playlist;
         public int missing_files;
         public bool saved;
@@ -79,6 +83,11 @@ namespace KitPlaylistInput
     public interface IDirectoryScanner
     {
         IEnumerable<string> EnumerateEntries(string directory);
+    }
+
+    public interface IScanTaskRunner
+    {
+        InputResponse RunScan(InputRequest request, Func<Action, InputResponse> scan);
     }
 
     sealed class DirectoryScanner : IDirectoryScanner
@@ -156,6 +165,12 @@ namespace KitPlaylistInput
                 };
                 request.MetadataCodepage = data.ContainsKey("metadata_codepage") ? StringField(data, "metadata_codepage") : "";
                 request.SuggestedPath = data.ContainsKey("suggested_path") ? StringField(data, "suggested_path") : "";
+                object recursive;
+                if (data.TryGetValue("include_subdirectories", out recursive))
+                {
+                    if (!(recursive is bool)) throw new InputFailure("invalid_request");
+                    request.IncludeSubdirectories = (bool)recursive;
+                }
                 bool save = request.Operation == "save" || request.Operation == "save-dialog";
                 if (!Clean(request.RequestId, 128) || request.ParentPid <= 0 ||
                     (!save && request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
@@ -310,36 +325,76 @@ namespace KitPlaylistInput
             return remaining != 0 ? remaining : StringComparer.Ordinal.Compare(a, b);
         }
 
-        static List<InputEntry> ReadDirectory(string directory, InputRequest request, IDirectoryScanner scanner,
-            InputBudget budget, InputResponse response, HashSet<string> extensions, HashSet<string> subtitles, HashSet<string> images)
+        sealed class DirectoryContents
         {
-            var entries = new List<InputEntry>();
+            internal readonly List<InputEntry> Files = new List<InputEntry>();
+            internal readonly List<string> Directories = new List<string>();
+        }
+
+        static DirectoryContents ReadDirectory(string directory, InputRequest request, IDirectoryScanner scanner,
+            InputBudget budget, InputResponse response, HashSet<string> extensions, HashSet<string> subtitles,
+            HashSet<string> images, Action checkCancellation)
+        {
+            var contents = new DirectoryContents();
             try
             {
+                checkCancellation();
+                // Recheck at entry, including explicitly selected roots. Links
+                // may lead outside the selected tree or form directory cycles.
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                {
+                    response.skipped_links++;
+                    return contents;
+                }
                 foreach (string path in scanner.EnumerateEntries(directory))
                 {
+                    checkCancellation();
                     budget.Scan();
-                    string extension = Path.GetExtension(path).TrimStart('.');
-                    if (!FolderMedia(extension, extensions, subtitles, images)) continue;
+                    FileAttributes attributes;
                     try
                     {
-                        FileAttributes attributes = File.GetAttributes(path);
-                        if ((attributes & FileAttributes.Directory) != 0) continue;
+                        attributes = File.GetAttributes(path);
                     }
                     catch (IOException) { response.skipped++; continue; }
                     catch (UnauthorizedAccessException) { response.skipped++; continue; }
+                    if ((attributes & FileAttributes.Directory) != 0)
+                    {
+                        if (request.IncludeSubdirectories) contents.Directories.Add(path);
+                        continue;
+                    }
+                    string extension = Path.GetExtension(path).TrimStart('.');
+                    if (!FolderMedia(extension, extensions, subtitles, images)) continue;
                     var entry = Normalize(path, request.WorkingDirectory);
                     if (entry == null) { response.skipped++; continue; }
                     budget.Add(entry.path);
                     entry.kind = "media";
-                    entries.Add(entry);
+                    contents.Files.Add(entry);
                 }
             }
-            catch (IOException) { response.unreadable_directories++; return new List<InputEntry>(); }
-            catch (UnauthorizedAccessException) { response.unreadable_directories++; return new List<InputEntry>(); }
+            catch (IOException) { response.unreadable_directories++; return new DirectoryContents(); }
+            catch (UnauthorizedAccessException) { response.unreadable_directories++; return new DirectoryContents(); }
             // No partially enumerated directory is committed when access fails.
-            entries.Sort(delegate(InputEntry a, InputEntry b) { return CompareFileNames(a.path, b.path); });
-            return entries;
+            contents.Files.Sort(delegate(InputEntry a, InputEntry b) { return CompareFileNames(a.path, b.path); });
+            contents.Directories.Sort(CompareFileNames);
+            return contents;
+        }
+
+        static IEnumerable<InputEntry> ReadTree(string root, InputRequest request, IDirectoryScanner scanner,
+            InputBudget budget, InputResponse response, HashSet<string> extensions, HashSet<string> subtitles,
+            HashSet<string> images, Action checkCancellation)
+        {
+            var pending = new Stack<string>();
+            pending.Push(root);
+            while (pending.Count != 0)
+            {
+                checkCancellation();
+                var contents = ReadDirectory(pending.Pop(), request, scanner, budget, response,
+                    extensions, subtitles, images, checkCancellation);
+                foreach (var entry in contents.Files) yield return entry;
+                // Reverse the push order so each naturally sorted child is
+                // completed depth first, after its parent's own media files.
+                for (int i = contents.Directories.Count - 1; i >= 0; i--) pending.Push(contents.Directories[i]);
+            }
         }
 
         static void AddEntry(InputEntry entry, HashSet<string> seen, InputResponse response)
@@ -349,7 +404,14 @@ namespace KitPlaylistInput
         }
 
         public static InputResponse Process(InputRequest request, IInputSource source, IDirectoryScanner scanner = null,
-            Func<PlaylistReader> createReader = null, Action ensureParent = null)
+            Func<PlaylistReader> createReader = null, Action ensureParent = null, Action checkCancellation = null)
+        {
+            try { return ProcessRequest(request, source, scanner, createReader, ensureParent, checkCancellation); }
+            catch (OperationCanceledException) { return new InputResponse { request_id = request.RequestId, status = "cancelled" }; }
+        }
+
+        static InputResponse ProcessRequest(InputRequest request, IInputSource source, IDirectoryScanner scanner,
+            Func<PlaylistReader> createReader, Action ensureParent, Action checkCancellation)
         {
             var response = new InputResponse { request_id = request.RequestId };
             if (request.Operation == "save-dialog")
@@ -370,6 +432,22 @@ namespace KitPlaylistInput
                 request.Operation == "clipboard" ? source.ReadClipboard() : request.Paths;
             if (inputs == null) { response.status = "cancelled"; return response; }
             if (inputs.Length > MaxItems) throw new InputFailure("input_too_large");
+            var runner = source as IScanTaskRunner;
+            if (runner != null)
+                return runner.RunScan(request, cancel => Prepare(request, inputs, scanner, createReader, ensureParent,
+                    delegate { cancel(); if (checkCancellation != null) checkCancellation(); }));
+            return Prepare(request, inputs, scanner, createReader, ensureParent, checkCancellation);
+        }
+
+        static InputResponse Prepare(InputRequest request, string[] inputs, IDirectoryScanner scanner,
+            Func<PlaylistReader> createReader, Action ensureParent, Action checkCancellation)
+        {
+            var response = new InputResponse { request_id = request.RequestId };
+            Action check = delegate {
+                if (checkCancellation != null) checkCancellation();
+                if (ensureParent != null) ensureParent();
+            };
+            check();
             scanner = scanner ?? new DirectoryScanner();
             var budget = new InputBudget();
             bool usedDirectory = false;
@@ -389,6 +467,7 @@ namespace KitPlaylistInput
             {
                 foreach (string path in inputs)
                 {
+                    check();
                     var entry = Normalize(path, request.WorkingDirectory);
                     if (entry == null) { budget.Add(path); response.skipped++; continue; }
                     if (entry.kind != "native")
@@ -396,8 +475,9 @@ namespace KitPlaylistInput
                         if (Directory.Exists(entry.path))
                         {
                             usedDirectory = true;
-                            foreach (var media in ReadDirectory(entry.path, request, scanner, budget, response, extensions, subtitles, images))
+                            foreach (var media in ReadTree(entry.path, request, scanner, budget, response, extensions, subtitles, images, check))
                             {
+                                check();
                                 if (!File.Exists(media.path)) { response.skipped++; continue; }
                                 AddEntry(media, seen, response);
                             }
@@ -417,6 +497,7 @@ namespace KitPlaylistInput
                             if (reader == null) reader = createReader == null ? PlaylistReader.ForParent(request.ParentPid, request.MetadataCodepage) : createReader();
                             foreach (var listed in reader.Read(entry.path))
                             {
+                                check();
                                 budget.Add(listed.path);
                                 var local = Normalize(listed.path, request.WorkingDirectory);
                                 if (local != null && local.kind != "native" && !File.Exists(listed.path)) { response.missing_files++; continue; }
@@ -448,6 +529,7 @@ namespace KitPlaylistInput
                 response.entries.Count == 1 && response.entries[0].kind == "media";
             string json = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue }.Serialize(response);
             if (Encoding.UTF8.GetByteCount(json) > MaxResponseBytes) throw new InputFailure("input_too_large");
+            check();
             return response;
         }
     }
@@ -463,6 +545,7 @@ namespace KitPlaylistInput
     static class FolderPicker
     {
         internal const uint FolderOptions = 0x20U | 0x40U | 0x800U | 0x8U;
+        internal const uint RecursiveControl = 1001;
         [ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         internal interface IFileDialog
         {
@@ -502,6 +585,38 @@ namespace KitPlaylistInput
             void Compare(IShellItem item, uint hint, out int result);
         }
 
+        [ComImport, Guid("E6FDD21A-163F-4975-9C8C-A69F1BA37034"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IFileDialogCustomize
+        {
+            void EnableOpenDropDown(uint id);
+            void AddMenu(uint id, [MarshalAs(UnmanagedType.LPWStr)] string label);
+            void AddPushButton(uint id, [MarshalAs(UnmanagedType.LPWStr)] string label);
+            void AddComboBox(uint id);
+            void AddRadioButtonList(uint id);
+            void AddCheckButton(uint id, [MarshalAs(UnmanagedType.LPWStr)] string label, [MarshalAs(UnmanagedType.Bool)] bool selected);
+            void AddEditBox(uint id, [MarshalAs(UnmanagedType.LPWStr)] string text);
+            void AddSeparator(uint id);
+            void AddText(uint id, [MarshalAs(UnmanagedType.LPWStr)] string text);
+            void SetControlLabel(uint id, [MarshalAs(UnmanagedType.LPWStr)] string label);
+            void GetControlState(uint id, out uint state);
+            void SetControlState(uint id, uint state);
+            void GetEditBoxText(uint id, out IntPtr text);
+            void SetEditBoxText(uint id, [MarshalAs(UnmanagedType.LPWStr)] string text);
+            void GetCheckButtonState(uint id, [MarshalAs(UnmanagedType.Bool)] out bool selected);
+            void SetCheckButtonState(uint id, [MarshalAs(UnmanagedType.Bool)] bool selected);
+            void AddControlItem(uint id, uint item, [MarshalAs(UnmanagedType.LPWStr)] string label);
+            void RemoveControlItem(uint id, uint item);
+            void RemoveAllControlItems(uint id);
+            void GetControlItemState(uint id, uint item, out uint state);
+            void SetControlItemState(uint id, uint item, uint state);
+            void GetSelectedControlItem(uint id, out uint item);
+            void SetSelectedControlItem(uint id, uint item);
+            void StartVisualGroup(uint id, [MarshalAs(UnmanagedType.LPWStr)] string label);
+            void EndVisualGroup();
+            void MakeProminent(uint id);
+            void SetControlItemText(uint id, uint item, [MarshalAs(UnmanagedType.LPWStr)] string label);
+        }
+
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         static extern void SHCreateItemFromParsingName(string path, IntPtr context, ref Guid iid, out IShellItem item);
 
@@ -514,6 +629,7 @@ namespace KitPlaylistInput
                 uint options;
                 dialog.GetOptions(out options);
                 dialog.SetOptions((options | FolderOptions) & ~0x200U); // One directory, never multiselect.
+                ((IFileDialogCustomize)dialog).AddCheckButton(RecursiveControl, "包含子文件夹", false);
                 return dialog;
             }
             catch { Marshal.FinalReleaseComObject(dialog); throw; }
@@ -539,6 +655,7 @@ namespace KitPlaylistInput
                 Marshal.ThrowExceptionForHR(status);
                 dialog.GetResult(out result);
                 result.GetDisplayName(0x80058000U, out name); // SIGDN_FILESYSPATH.
+                ((IFileDialogCustomize)dialog).GetCheckButtonState(RecursiveControl, out request.IncludeSubdirectories);
                 return Marshal.PtrToStringUni(name);
             }
             catch { throw new InputFailure("input_unavailable"); }
@@ -552,7 +669,109 @@ namespace KitPlaylistInput
         }
     }
 
-    sealed class WindowsInputSource : IInputSource
+    // A cancelled read-only worker need not finish a blocked filesystem call.
+    // It is a background thread and cannot keep this request process alive.
+    sealed class ScanTask
+    {
+        readonly string requestId;
+        readonly Thread worker;
+        volatile bool cancelled, completed;
+        InputResponse response;
+        Exception failure;
+        internal ScanTask(string id, Func<Action, InputResponse> scan)
+        {
+            requestId = id;
+            worker = new Thread(delegate() {
+                try { response = scan(CheckCancellation); }
+                catch (OperationCanceledException) { cancelled = true; }
+                catch (Exception error) { failure = error; }
+                finally { completed = true; }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+        internal bool Completed { get { return completed; } }
+        internal bool Wait(int milliseconds) { return worker.Join(milliseconds); }
+        internal void Cancel() { cancelled = true; }
+        void CheckCancellation() { if (cancelled) throw new OperationCanceledException(); }
+        internal InputResponse Result
+        {
+            get
+            {
+                if (cancelled) return new InputResponse { request_id = requestId, status = "cancelled" };
+                if (!completed) throw new InvalidOperationException();
+                if (failure != null) throw failure;
+                return response;
+            }
+        }
+    }
+
+    sealed class ScanProgressWindow : Form
+    {
+        readonly ScanTask task;
+        bool finished;
+        [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window, uint attribute, ref int value, int size);
+        internal ScanProgressWindow(ScanTask scan)
+        {
+            task = scan;
+            Text = "读取文件";
+            ClientSize = new Size(360, 120);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterParent;
+            BackColor = Color.FromArgb(17, 17, 17);
+            ForeColor = Color.FromArgb(222, 223, 224);
+            Font = new Font("Microsoft YaHei UI", 9F);
+            var label = new Label { Text = "正在读取所选内容…", AutoSize = true, Location = new Point(20, 18) };
+            var hint = new Label { Text = "按 Esc 或取消可停止读取", AutoSize = true,
+                ForeColor = Color.FromArgb(171, 171, 171), Location = new Point(20, 46) };
+            var cancel = new Button { Text = "取消", AccessibleName = "取消读取", Size = new Size(80, 30),
+                Location = new Point(260, 74), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(36, 36, 36) };
+            cancel.FlatAppearance.BorderColor = Color.FromArgb(43, 43, 43);
+            cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(52, 52, 52);
+            cancel.Click += delegate { task.Cancel(); Close(); };
+            CancelButton = cancel;
+            Controls.AddRange(new Control[] { label, hint, cancel });
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            int dark = 1;
+            DwmSetWindowAttribute(Handle, 20, ref dark, sizeof(int));
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (!finished) task.Cancel();
+            base.OnFormClosing(e);
+        }
+
+        internal static InputResponse Run(InputRequest request, Func<Action, InputResponse> scan, Func<IntPtr> owner)
+        {
+            var task = new ScanTask(request.RequestId, scan);
+            if (!task.Wait(400))
+            {
+                using (var window = new ScanProgressWindow(task))
+                using (var timer = new System.Windows.Forms.Timer { Interval = 50 })
+                {
+                    // Only this task window handles Esc. Completion closes it
+                    // without changing a fully prepared result to cancellation.
+                    timer.Tick += delegate {
+                        if (task.Completed) { window.finished = true; window.Close(); }
+                    };
+                    timer.Start();
+                    window.ShowDialog(new WindowOwner(owner()));
+                }
+            }
+            return task.Result;
+        }
+    }
+
+    sealed class WindowsInputSource : IInputSource, IScanTaskRunner
     {
         readonly Process parent;
         public WindowsInputSource(Process process) { parent = process; }
@@ -610,6 +829,11 @@ namespace KitPlaylistInput
         public string SelectFolder(InputRequest request)
         {
             return FolderPicker.Select(request, ParentWindow());
+        }
+
+        public InputResponse RunScan(InputRequest request, Func<Action, InputResponse> scan)
+        {
+            return ScanProgressWindow.Run(request, scan, ParentWindow);
         }
 
         public string SelectSavePath(InputRequest request)

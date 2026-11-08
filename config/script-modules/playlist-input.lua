@@ -161,7 +161,9 @@ function M.new(mp, utils, feedback)
     local function commit(mode, operation, data, generation)
         if #data.entries == 0 then
             if (tonumber(data.unreadable_directories) or 0) > 0 then
-                feedback.show('无法读取所选文件夹', 'error')
+                feedback.show(string.format('无法读取 %d 个文件夹，当前队列保持不变', count(data.unreadable_directories)), 'error')
+            elseif count(data.skipped_links) > 0 then
+                feedback.show(string.format('已跳过 %d 个目录链接，当前队列保持不变', count(data.skipped_links)), 'action')
             elseif count(data.missing_files) > 0 then
                 feedback.show(string.format('已跳过 %d 个缺失文件，当前队列保持不变', count(data.missing_files)), 'error')
             elseif data.had_playlist then
@@ -216,7 +218,8 @@ function M.new(mp, utils, feedback)
         if closing or generation ~= sequence then return end
         local notices = {}
         if failed > 0 then notices[#notices+1] = '部分文件未能加入播放列表' end
-        if count(data.unreadable_directories) > 0 then notices[#notices+1] = '已添加可用文件，部分文件夹无法读取' end
+        if count(data.unreadable_directories) > 0 then notices[#notices+1] = string.format('已添加可用文件，%d 个文件夹无法读取', count(data.unreadable_directories)) end
+        if count(data.skipped_links) > 0 then notices[#notices+1] = string.format('已跳过 %d 个目录链接', count(data.skipped_links)) end
         if count(data.missing_files) > 0 then notices[#notices+1] = string.format('已跳过 %d 个缺失文件', count(data.missing_files)) end
         if count(data.skipped) > 0 then notices[#notices+1] = '已跳过无法加入的文件' end
         if #notices > 0 then feedback.show(table.concat(notices, '\n'),

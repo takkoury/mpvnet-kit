@@ -23,6 +23,7 @@ public sealed class PlaylistInputProbe : IInputSource
     public string[] SelectFiles(InputRequest request) { return Read(); }
     public string SelectFolder(InputRequest request)
     {
+        if (behavior == "recursive-select") request.IncludeSubdirectories = true;
         var paths = Read();
         return paths == null || paths.Length == 0 ? null : paths[0];
     }
@@ -41,6 +42,8 @@ public sealed class PlaylistInputProbe : IInputSource
         {
             if (behavior == "scanner-denied") throw new UnauthorizedAccessException();
             if (behavior == "scanner-disappeared") throw new DirectoryNotFoundException();
+            if (Path.GetFileName(directory) == "blocked" && behavior == "scanner-denied-child") throw new UnauthorizedAccessException();
+            if (Path.GetFileName(directory) == "cancel" && behavior == "scanner-cancel-child") throw new OperationCanceledException();
             if (behavior == "scanner-many-unrelated")
             {
                 for (int i = 0; i < 60000; i++) yield return Path.Combine(directory, "ignored.txt");
@@ -54,8 +57,22 @@ public sealed class PlaylistInputProbe : IInputSource
             foreach (string path in Directory.EnumerateFileSystemEntries(directory))
             {
                 yield return path;
-                if (behavior == "scanner-late-denied") throw new UnauthorizedAccessException();
+                if (behavior == "scanner-late-denied" ||
+                    (behavior == "scanner-denied-child" && Path.GetFileName(directory) == "late-blocked"))
+                    throw new UnauthorizedAccessException();
             }
+        }
+    }
+
+    sealed class BlockingScanner : IDirectoryScanner
+    {
+        readonly ManualResetEvent entered;
+        internal BlockingScanner(ManualResetEvent signal) { entered = signal; }
+        public IEnumerable<string> EnumerateEntries(string directory)
+        {
+            entered.Set();
+            new ManualResetEvent(false).WaitOne();
+            return new string[0];
         }
     }
 
@@ -74,7 +91,16 @@ public sealed class PlaylistInputProbe : IInputSource
                 {
                     uint options;
                     dialog.GetOptions(out options);
-                    Console.WriteLine(json.Serialize(new { options = options, required = FolderPicker.FolderOptions }));
+                    var custom = (FolderPicker.IFileDialogCustomize)dialog;
+                    bool initial, selected, fresh;
+                    custom.GetCheckButtonState(FolderPicker.RecursiveControl, out initial);
+                    custom.SetCheckButtonState(FolderPicker.RecursiveControl, true);
+                    custom.GetCheckButtonState(FolderPicker.RecursiveControl, out selected);
+                    var next = FolderPicker.Create();
+                    try { ((FolderPicker.IFileDialogCustomize)next).GetCheckButtonState(FolderPicker.RecursiveControl, out fresh); }
+                    finally { Marshal.FinalReleaseComObject(next); }
+                    Console.WriteLine(json.Serialize(new { options = options, required = FolderPicker.FolderOptions,
+                        initial = initial, selected = selected, fresh = fresh }));
                 }
                 finally { Marshal.FinalReleaseComObject(dialog); }
                 return 0;
@@ -88,6 +114,18 @@ public sealed class PlaylistInputProbe : IInputSource
             }
             string[] values = args.Length > 2 && args[2].Length != 0 ? InputProcessor.ParseClipboardText(File.ReadAllText(args[2], Encoding.UTF8)) : request.Paths;
             var source = new PlaylistInputProbe(values, args[1]);
+            if (args[1] == "cancel-blocked-scan")
+            {
+                var entered = new ManualResetEvent(false);
+                var blocked = new BlockingScanner(entered);
+                var task = new ScanTask(request.RequestId, cancel => InputProcessor.Process(request, source, blocked,
+                    checkCancellation: cancel));
+                if (!entered.WaitOne(3000)) throw new InputFailure("scan_not_started");
+                task.Cancel();
+                if (task.Completed) throw new InputFailure("scan_was_not_blocked");
+                Console.WriteLine(json.Serialize(task.Result));
+                return 0;
+            }
             var scanner = args[1].StartsWith("scanner-", StringComparison.Ordinal) ? new InjectedScanner(args[1]) : null;
             Func<PlaylistReader> reader = args.Length > 3 && args[3].Length != 0 ?
                 (Func<PlaylistReader>)(() => new PlaylistReader(args[3], request.MetadataCodepage)) : null;

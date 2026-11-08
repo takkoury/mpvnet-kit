@@ -18,7 +18,7 @@ MANIFEST = 'src/playlist-input/app.manifest'
 SOURCE_FILES = ('config/helpers/playlist-input.cs', 'config/helpers/playlist-files.cs', MANIFEST)
 FRAMEWORK_VERSION = 'v4.7.2'
 REFERENCE_FILES = ('mscorlib.dll', 'System.dll', 'System.Core.dll',
-                   'System.Web.Extensions.dll', 'System.Windows.Forms.dll')
+                   'System.Web.Extensions.dll', 'System.Windows.Forms.dll', 'System.Drawing.dll')
 
 
 def _source_snapshot(source):

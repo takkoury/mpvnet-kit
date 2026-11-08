@@ -35,7 +35,7 @@ class PlaylistInput(unittest.TestCase):
         common = [dotnet, str(compiler), '-nologo', '-noconfig', '-nostdlib+', '-utf8output',
                   '-codepage:65001', '-langversion:7.3', '-warnaserror+',
                   *(f'-reference:{references/name}' for name in ('mscorlib.dll', 'System.dll', 'System.Core.dll',
-                    'System.Web.Extensions.dll', 'System.Windows.Forms.dll')),
+                    'System.Web.Extensions.dll', 'System.Windows.Forms.dll', 'System.Drawing.dll')),
                   str(ROOT/'config/helpers/playlist-input.cs'), str(ROOT/'config/helpers/playlist-files.cs')]
         cls.executable = cls.directory/'KitPlaylistInput.exe'
         cls.probe = cls.directory/'PlaylistInputProbe.exe'
@@ -268,8 +268,72 @@ class PlaylistInput(unittest.TestCase):
         response = self.invoke(behavior='folder-com')
         self.assertEqual(response['options'] & response['required'], response['required'])
         self.assertEqual(response['options'] & 0x200, 0)
+        self.assertFalse(response['initial'])
+        self.assertTrue(response['selected'])
+        self.assertFalse(response['fresh'], 'The recursive checkbox belongs only to one dialog request')
 
-    def test_explicit_junction_directory_scans_one_layer_without_following_nested_junction(self):
+    def test_recursive_directory_order_is_parent_first_then_natural_depth_first(self):
+        folder = self.root/'再生 目录'
+        for relative in ['root10.mkv', 'root2.mkv', '目录10/child1.mkv', '目录2/child10.mkv',
+                         '目录2/child2.FLAC', '目录2/深い/a.mkv', '目录1/first.mkv',
+                         '目录2/list.m3u', '目录2/cover.png', '目录2/captions.customsub']:
+            path = folder/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        expected = ['root2.mkv', 'root10.mkv', '目录1/first.mkv', '目录2/child2.FLAC',
+                    '目录2/child10.mkv', '目录2/深い/a.mkv', '目录10/child1.mkv']
+        for behavior, changes in [('select', dict(include_subdirectories=True)), ('recursive-select', {})]:
+            with self.subTest(behavior=behavior):
+                response = self.invoke(behavior=behavior, operation='folder', paths=[str(folder)], image_exts=['png'], **changes)
+                self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/path) for path in expected])
+                self.assertFalse(response['single_media'])
+        # A subsequent request and ordinary paths/drop input keep the default.
+        for operation in ('folder', 'paths'):
+            response = self.invoke(operation=operation, paths=[str(folder)])
+            self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/path) for path in expected[:2]])
+
+    def test_recursive_overlap_deduplicates_flattened_paths_and_existing_queue(self):
+        folder = self.root/'tree'
+        child = folder/'child'
+        child.mkdir(parents=True)
+        first, second = folder/'root.mkv', child/'child.mkv'
+        first.touch()
+        second.touch()
+        response = self.invoke(operation='paths', mode='append', paths=[str(folder), str(child), str(second)],
+                               include_subdirectories=True, existing_paths=[str(first).upper()])
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(second)])
+        self.assertEqual(response['duplicates'], 3)
+
+    def test_recursive_unreadable_children_are_counted_without_their_partial_results(self):
+        folder = self.root/'tree'
+        for relative in ['root.mkv', 'blocked/skip.mkv', 'late-blocked/partial.mkv',
+                         'late-blocked/nested/skip.mkv', 'ok/kept.mkv']:
+            path = folder/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        response = self.invoke(behavior='scanner-denied-child', operation='folder', paths=[str(folder)],
+                               include_subdirectories=True)
+        self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/'root.mkv'), str(folder/'ok/kept.mkv')])
+        self.assertEqual(response['unreadable_directories'], 2)
+        response = self.invoke(behavior='scanner-denied', operation='folder', paths=[str(folder)], include_subdirectories=True)
+        self.assertEqual(response['entries'], [])
+        self.assertEqual(response['unreadable_directories'], 1)
+
+    def test_recursive_cancel_discards_prepared_roots_and_blocked_worker_does_not_delay_exit(self):
+        folder = self.root/'tree'
+        (folder/'cancel').mkdir(parents=True)
+        (folder/'root.mkv').touch()
+        response = self.invoke(behavior='scanner-cancel-child', operation='paths',
+                               paths=[str(self.video), str(folder)], include_subdirectories=True)
+        self.assertEqual(response['status'], 'cancelled')
+        self.assertEqual(response['entries'], [])
+        response = self.invoke(behavior='cancel-blocked-scan', operation='folder', paths=[str(folder)],
+                               include_subdirectories=True)
+        self.assertEqual(response['request_id'], self.request['request_id'])
+        self.assertEqual(response['status'], 'cancelled')
+        self.assertEqual(response['entries'], [])
+
+    def test_directory_junctions_are_not_followed_including_explicit_roots_and_cycles(self):
         outside = self.root/'outside'
         outside.mkdir()
         (outside/'outside.mkv').touch()
@@ -277,11 +341,16 @@ class PlaylistInput(unittest.TestCase):
         folder.mkdir()
         (folder/'inside.mkv').touch()
         nested, selected = folder/'nested', self.root/'selected'
-        for link, target in ((nested, outside), (selected, folder)):
+        for link, target in ((nested, outside), (selected, folder), (folder/'cycle', folder)):
             subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/j', str(link), str(target)],
                            check=True, capture_output=True)
         response = self.invoke(operation='folder', paths=[str(selected)])
-        self.assertEqual([entry['path'] for entry in response['entries']], [str(selected/'inside.mkv')])
+        self.assertEqual(response['entries'], [])
+        self.assertEqual(response['skipped_links'], 1)
+        for recursive in (False, True):
+            response = self.invoke(operation='folder', paths=[str(folder)], include_subdirectories=recursive)
+            self.assertEqual([entry['path'] for entry in response['entries']], [str(folder/'inside.mkv')])
+            self.assertEqual(response['skipped_links'], 2 if recursive else 0)
 
     def test_side_paths_accept_mixed_audio_video_but_filter_subtitles_native_urls(self):
         response = self.invoke(executable=True, operation='paths', paths=[str(self.audio), str(self.video),
@@ -329,7 +398,8 @@ class PlaylistInput(unittest.TestCase):
         for changes in (dict(schema=2), dict(schema=True), dict(mode='replace'), dict(operation='folders'),
                         dict(request_id='bad\nrequest'), dict(working_directory='relative'),
                         dict(paths=['bad\tpath']), dict(paths=['a' * 32768]), dict(paths=['a'] * 10001),
-                        dict(subtitle_exts=['*']), dict(parent_pid=0)):
+                        dict(subtitle_exts=['*']), dict(parent_pid=0), dict(include_subdirectories=1),
+                        dict(include_subdirectories='true'), dict(include_subdirectories=None)):
             with self.subTest(changes=str(changes)[:80]):
                 self.assertEqual(self.invoke(**changes)['error_code'], 'invalid_request')
 
