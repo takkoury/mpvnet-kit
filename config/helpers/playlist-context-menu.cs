@@ -57,6 +57,8 @@ public sealed class PlaylistContextMenu : ContextMenuStrip
         Add(order.DropDownItems, "跳到列表末项", "last");
         order.DropDownItems.Add(new ToolStripSeparator());
         Add(order.DropDownItems, "打乱播放列表", "shuffle");
+        Items.Add(new ToolStripSeparator());
+        Add(Items, "清空当前列表", "clear-playlist");
         hook = new ContextWindow(this);
         list.HandleCreated += OnListHandleCreated;
         list.HandleDestroyed += OnListHandleDestroyed;
@@ -135,6 +137,7 @@ public sealed class PlaylistContextMenu : ContextMenuStrip
         bool row = TargetId.Length != 0 && targetExists;
         commands["play"].Visible = row; commands["remove"].Visible = row; rowSeparator.Visible = row;
         commands["save-playlist"].Enabled = total > 0;
+        commands["clear-playlist"].Enabled = total > 0;
         commands["locate"].Enabled = hasCurrent;
         order.Enabled = total > 0;
         foreach (string action in new[] { "previous", "next", "first", "last" }) commands[action].Enabled = total > 0;

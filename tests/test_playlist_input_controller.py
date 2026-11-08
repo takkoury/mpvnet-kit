@@ -26,6 +26,9 @@ class PlaylistInputController(unittest.TestCase):
         self.run_case('image_inputs_capture_setting_and_use_local_still_duration')
         self.run_case('image_lists_keep_policy_by_real_id_and_retire_it_on_replacement')
 
+    def test_clear_retires_input_but_keeps_confirmed_save_independent(self):
+        self.run_case('clear_cancels_input_without_cancelling_confirmed_save')
+
     def test_request_captures_current_inputs_and_launches_direct_helper(self):
         self.run_case('request_contract')
 

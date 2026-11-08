@@ -5,7 +5,7 @@ local properties = {pid = 123, ['working-directory'] = 'X:/fixture', path = 'X:/
     ['options/audio-exts'] = {'flac', 'mp3'}, playlist = {{id=71}, {id=92}}}
 local failure, callback, removed, temp = '', nil, {}, 'X:/fixture/temp'
 local parsed, emitted_payload
-local input_requests, input_shutdowns, input_saves = {}, 0, 0
+local input_requests, input_shutdowns, input_saves, input_clears = {}, 0, 0, 0
 local read_images
 local input_module = {new=function(actual_mp, actual_utils, feedback, images)
     read_images=images
@@ -13,6 +13,7 @@ local input_module = {new=function(actual_mp, actual_utils, feedback, images)
     return {request=function(mode, operation, files)
         input_requests[#input_requests+1]={mode=mode,operation=operation,files=files}
     end,save=function() input_saves=input_saves+1 end,
+    clear=function() input_clears=input_clears+1 end,
     shutdown=function() input_shutdowns=input_shutdowns+1 end}
 end}
 local observers, hooks, event_handlers = {}, {}, {}
@@ -95,7 +96,7 @@ end
 local function reset(mode)
     failure=mode or '';messages,commands,logs,removed={}, {}, {}, {};temp='X:/fixture/temp'
     callback,parsed=nil,nil
-    input_requests,input_shutdowns,input_saves={},0,0
+    input_requests,input_shutdowns,input_saves,input_clears={},0,0,0
     properties['options/input-ipc-server']=''
 end
 local function open()
@@ -385,4 +386,12 @@ function image_preference_applies_to_new_input_without_touching_visibility()
     local runtime=properties['user-data/mpvnet/settings-runtime/playlist.include-images']
     eq(runtime.default,false);eq(runtime.saved,true);eq(runtime.effective,true);eq(runtime.status,'effective')
     preference(false);eq(read_images(),false);eq(callback,nil);eq(#commands,0)
+end
+
+function context_clear_is_instance_bound_and_not_row_bound()
+    reset();local token=properties['user-data/mpvnet/playlist-window'].token
+    script_messages.action('stale','clear-playlist','71');eq(input_clears,0)
+    script_messages.action(token,'clear-playlist','missing-row');eq(input_clears,1)
+    eq(#commands,0);eq(#input_requests,0)
+    events.shutdown();script_messages.action(token,'clear-playlist');eq(input_clears,1)
 end

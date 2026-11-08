@@ -27,13 +27,13 @@ class PlaylistContextMenuTests(unittest.TestCase):
         cls.data = json.loads(result.stdout.decode('utf-8-sig'))
         (cls.output / 'result.json').write_text(json.dumps(cls.data, ensure_ascii=False, indent=2), encoding='utf-8')
 
-    def test_menu_contains_only_existing_actions_in_the_expected_groups(self):
-        self.assertEqual(len(self.data['commands']), 16)
+    def test_menu_contains_accepted_actions_in_the_expected_groups(self):
+        self.assertEqual(len(self.data['commands']), 17)
         self.assertEqual(self.data['groups'], ['打开', '追加', '播放顺序'])
 
     def test_hidden_prepare_and_execute_respect_row_identity_and_queue_state(self):
         self.assertTrue(self.data['state_and_target'])
-        self.assertEqual(self.data['global_events'], 14)
+        self.assertEqual(self.data['global_events'], 15)
         self.assertEqual(self.data['prepared'], 5)
 
     def test_hints_and_real_menu_input_handoff_preserve_local_shortcuts(self):

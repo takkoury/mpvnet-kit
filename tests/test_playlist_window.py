@@ -122,6 +122,14 @@ class PlaylistWindow(unittest.TestCase):
         self.assertFalse(data['context_menu']['visible'])
         self.assertFalse(data['shown'])
 
+    def test_context_menu_clear_sends_global_action_even_when_filtered(self):
+        data = self.run_helper({'playlist': [{'id': 71, 'filename': 'X:/one.mkv'},
+            {'id': 92, 'filename': 'X:/two.mkv'}], 'position': 0, 'filter': 'one',
+            'menu_probe': {'id': '71', 'action': 'clear-playlist'}})
+        self.assertTrue(data['context_menu']['items']['clear-playlist']['enabled'])
+        self.assertEqual(data['actions'][-1]['action'], 'clear-playlist')
+        self.assertEqual(data['actions'][-1]['id'], '')
+
     def test_context_menu_glue_keeps_empty_search_local_and_disables_queue_actions(self):
         data = self.run_helper({'playlist': [], 'position': -1, 'menu_probe': {'id': '', 'action': 'search'}})
         self.assertTrue(data['context_menu']['searching'])

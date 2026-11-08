@@ -133,6 +133,7 @@ local function action(received_token, operation, id, target_id, side)
     local selected = input_actions[operation]
     if selected then input.request(selected[1], selected[2]); return end
     if operation == 'save-playlist' then input.save(); return end
+    if operation == 'clear-playlist' then input.clear(); return end
     if operation == 'previous' then step(-1); return end
     if operation == 'next' then step(1); return end
     if operation == 'first' or operation == 'last' then

@@ -39,7 +39,7 @@ public static class PlaylistContextMenuProbe
             {
                 var commands = Commands(menu);
                 string[] expected = { "play", "remove", "open-files", "open-folder", "open-clipboard", "append-files",
-                    "append-folder", "append-clipboard", "save-playlist", "search", "locate", "previous", "next", "first", "last", "shuffle" };
+                    "append-folder", "append-clipboard", "save-playlist", "search", "locate", "previous", "next", "first", "last", "shuffle", "clear-playlist" };
                 Check(commands.Keys.OrderBy(x => x).SequenceEqual(expected.OrderBy(x => x)), "menu must expose only accepted actions");
                 var groups = menu.Items.OfType<ToolStripMenuItem>().Where(x => x.DropDownItems.Count != 0).ToArray();
                 Check(groups.Select(x => x.Text).SequenceEqual(new[] { "打开", "追加", "播放顺序" }), "menu group order");
@@ -67,8 +67,8 @@ public static class PlaylistContextMenuProbe
                 int validActions = actions.Count; menu.Execute("clear"); menu.Execute("exec");
                 Check(actions.Count == validActions, "unknown menu action accepted");
                 total = 0; current = false; menu.PrepareTarget(null); actions.Clear();
-                foreach (var action in new[] { "save-playlist", "locate", "previous", "next", "first", "last", "shuffle" }) menu.Execute(action);
-                Check(actions.Count == 0 && !commands["save-playlist"].Enabled && !commands["locate"].Enabled && !groups[2].Enabled, "empty actions enabled");
+                foreach (var action in new[] { "save-playlist", "locate", "previous", "next", "first", "last", "shuffle", "clear-playlist" }) menu.Execute(action);
+                Check(actions.Count == 0 && !commands["save-playlist"].Enabled && !commands["clear-playlist"].Enabled && !commands["locate"].Enabled && !groups[2].Enabled, "empty actions enabled");
                 menu.Execute("open-files"); menu.Execute("append-folder"); menu.Execute("search");
                 Check(actions.SequenceEqual(new[] { "open-files:", "append-folder:", "search:" }), "empty queue globals disabled");
                 total = 1; targetExists = true; menu.PrepareTarget("71");

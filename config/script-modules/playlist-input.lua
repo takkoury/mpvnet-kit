@@ -397,6 +397,14 @@ function M.new(mp, utils, feedback, read_include_images)
     return {
         request=request,
         save=save,
+        clear=function()
+            if closing then return end
+            -- Retire pending input before stopping, so late scan/dialog results
+            -- cannot refill the cleared queue. A confirmed save stays independent.
+            retire(); sequence=sequence+1
+            local _, err=mp.command_native({'stop'})
+            if err then feedback.show('无法清空播放列表，请重试', 'error') end
+        end,
         shutdown=function()
             closing=true; retire()
             -- Parent-exit cancellation is owned by the writer, which can finish

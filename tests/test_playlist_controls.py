@@ -81,6 +81,9 @@ class PlaylistControls(unittest.TestCase):
     def test_image_preference_applies_only_to_future_inputs(self):
         self.run_case('image_preference_applies_to_new_input_without_touching_visibility')
 
+    def test_context_clear_targets_current_instance_and_whole_queue(self):
+        self.run_case('context_clear_is_instance_bound_and_not_row_bound')
+
     def test_complete_script_syntax(self):
         self.lua.check_syntax(SCRIPT)
 

@@ -52,7 +52,7 @@ local function host()
                 h.loaded_lists[#h.calls]={path=args[2],content=h.files[args[2]]}
             end
             if h.on_command then h.on_command(args) end
-            if args[2]==h.failed_path then return nil,'command failed' end
+            if h.failed_path and args[2]==h.failed_path then return nil,'command failed' end
             return true
         end,
         command_native_async=function(args, done)
@@ -646,4 +646,18 @@ function image_lists_keep_policy_by_real_id_and_retire_it_on_replacement()
     h.writes={};h.loading(1);eq(#h.writes,1);eq(h.writes[1][1],'file-local-options/autocreate-playlist')
     h.queue({{id=101,filename='X:/fixture/replacement.mkv'}})
     h.writes={};h.loading(0);eq(#h.writes,0)
+end
+
+function clear_cancels_input_without_cancelling_confirmed_save()
+    local h=host();h.start('append','folder')
+    local old=h.result({entry('late.mkv')})
+    h.controller.clear();eq(#h.aborted,1);eq(#h.calls,1);eq(h.calls[1][1],'stop')
+    h.finish(old);eq(#h.calls,1);eq(#h.messages,0)
+    h.controller.shutdown();h.controller.clear();eq(#h.calls,1)
+    h=host();h.controller.save()
+    h.finish(h.result({}, {target_path='X:/saved.m3u8',target_exists=false,target_sha256=''}))
+    eq(#h.detached,1)
+    local path=h.jobs[2].args.args[3]
+    h.controller.clear();eq(h.files[path..'.cancel'],nil);eq(#h.aborted,0)
+    eq(h.calls[#h.calls][1],'stop')
 end
