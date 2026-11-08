@@ -20,6 +20,7 @@ RECEIPT = '.mpvnet-kit-install.json'
 USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "playback.pause" : ["Ctrl+p"],'
               b' "playlist.toggle" : [] },\r\n'
               b'  "settings" : { "mute" : false, "volume" : 0, "alang" : "",'
+              b' "playlist.open-on-startup" : true, "playlist.include-images" : true,'
               b' "future" : { "disabled" : false, "zero" : 0, "empty" : "" } },\r\n'
               b'  "unknown" : { "future" : [null, 7] },'
               b' "rawformat" : "\\u4fdd\\u7559"\r\n}\r\n')
@@ -191,6 +192,7 @@ class UserSettingsUpgrade(unittest.TestCase):
 
     def save_personal_changes(self):
         settings_text = USER_BYTES.decode('utf-8').replace('"volume" : 0', '"volume" : 17')
+        settings_text = settings_text.replace('"playlist.open-on-startup" : true', '"playlist.open-on-startup" : false')
         saved = self.save_preferences(document_text=settings_text)
         self.assertEqual(saved, settings_text.encode('utf-8'))
         shortcuts_text = settings_text.replace('"Ctrl+p"', '"Ctrl+Alt+p"')
@@ -200,6 +202,8 @@ class UserSettingsUpgrade(unittest.TestCase):
                                     'python_path': 'C:/fixture/python.exe'})
         self.assertEqual(local, LOCAL_BYTES.decode('utf-8').replace('D:\\旧输出', 'D:\\新输出').encode('utf-8'))
         self.assert_user_preserved(saved, local)
+        self.assertIs(read(self.target / 'mpvnet-user.json')['settings']['playlist.open-on-startup'], False)
+        self.assertIs(read(self.target / 'mpvnet-user.json')['settings']['playlist.include-images'], True)
         self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['mute'], False)
         self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['alang'], '')
         self.assertEqual(read(self.target / 'mpvnet-user.json')['settings']['future'],

@@ -16,7 +16,7 @@
 | 控制栏 | 窗口／全屏缩放、隐藏时间、暂停显示、章节标题、时间格式、进度条常驻 | 当前实例预览 |
 | 解码 | 视频解码方式：默认、自动使用硬件加速、仅使用软件解码 | 下一媒体 |
 | 输出与组件 | 截图／片段目录、FFmpeg／Python／进度预览程序路径 | 输出目录用于新任务；程序路径重启后生效 |
-| 快捷键 | 195 项动作的按键录入、冲突检查和恢复默认 | 保存后应用，默认仍为 40 个全局键盘映射 |
+| 快捷键 | 198 项动作的按键录入、冲突检查和恢复默认 | 保存后应用，默认仍为 40 个全局键盘映射 |
 | 高级 | 编辑配置文件、打开配置目录 | 打开对应工具 |
 
 “将图片纳入播放列表”默认关闭，保存后供后续打开、追加和文件夹扫描使用；已有队列不随开关清理，显式列表中的图片仍保留。图片格式与播放边界见[功能说明](features.md)。
@@ -147,8 +147,8 @@ PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有�
 | `osd-playing-msg` | 加载媒体时的文字 | 显式空值；脚本也强制清空 | 本实现会覆盖此配置；不要依赖此项自定义开场信息 | `osd-playing-msg=` |
 | `input-default-bindings` | mpv 默认绑定 | 显式 `no`；脚本再次强制关闭 | yes/no；本实现不能只改成 yes 恢复默认键 | `input-default-bindings=no` |
 | `autocreate-playlist` | 打开单个文件时从当前目录创建同类队列 | 显式 `same` | no/filter/same；套件多选和追加媒体不自动补队，不改此默认 | `autocreate-playlist=same` |
-| `directory-filter-types` | 目录队列文件类别 | 显式 `video,audio` | 播放器支持的类型列表；按手册检查 | `directory-filter-types=video,audio` |
-| `directory-mode` | 播放核心如何处理目录条目 | 显式 `ignore` | auto/lazy/recursive/ignore；套件文件夹入口固定只读取一层，不修改此默认 | `directory-mode=ignore` |
+| `directory-filter-types` | 目录队列文件类别 | 显式 `video,audio` | 核心目录过滤；套件文件夹另按图片开关收集，不修改本项 | `directory-filter-types=video,audio` |
+| `directory-mode` | 播放核心如何处理目录条目 | 显式 `ignore` | auto/lazy/recursive/ignore；套件文件夹入口默认单层，可显式包含子文件夹，不修改此默认 | `directory-mode=ignore` |
 | `vo` | 渲染输出优先列表 | 显式 `gpu-next,gpu` | 逗号分隔驱动列表，首项不可用才回退；非强制单一驱动 | `vo=gpu-next,gpu` |
 | `hwdec` | 主播放器硬件解码 | 显式 `auto-safe` | `auto-safe` 沿用随包策略，`no` 关闭硬解；其他后端见对应版本手册 | `hwdec=auto-safe` |
 | `target-trc` | 渲染目标传递曲线 | 显式 `auto` | 可按实际显示链路选 srgb；不是 ICC 校准 | `target-trc=auto` |
@@ -343,7 +343,7 @@ v0.4.0 显式设置下表中的音轨语言、字幕语言和字幕显隐默认�
 
 ### 用户快捷键
 
-用户快捷键及独立用户配置机制自 v0.3.0 提供；v0.4.0 将快捷键编辑内嵌到“常用设置 > 快捷键”，日常优先使用此入口。当前动作目录有 195 项，默认仍为 40 个全局键盘映射；没有默认键的动作可按需录入。
+用户快捷键及独立用户配置机制自 v0.3.0 提供；v0.4.0 将快捷键编辑内嵌到“常用设置 > 快捷键”，日常优先使用此入口。当前动作目录有 198 项，默认仍为 40 个全局键盘映射；没有默认键的动作可按需录入。
 
 从“工具与设置 > 常用设置…”进入快捷键页。页内顶部可选择功能分类，并筛选全部、已绑定、未绑定和已修改；搜索可匹配动作、分组或当前／默认按键。“已修改”表示与默认键位不同，不等于尚未保存。既有“打开快捷键设置…”用户绑定仍可直达该页，窗口已打开时会保留其他分类的草稿。保存或确认对话框尚未结束时，会在当前操作结束后再切换。
 
@@ -459,9 +459,9 @@ ModernZ 还支持以下未显式写入的常用参数，可按上一节相同方
 | GIF | 最高 12fps，边界框 640×640，128 色，Bayer 抖动 | 源码常量 | 保持比例、不放大；循环输出 |
 | Capture 子目录 | 清理标题并去一个已识别媒体后缀 | 没有标题模板配置 | 不迁移已有目录 |
 | Playlist Delete | 从队列移除条目 | 没有删除磁盘文件的配置模式 | 不删除源文件 |
-| Playlist 搜索、拖动排序 | 已有队列中的过滤和重排 | 无专用 conf 参数 | 不是目录扫描规则；目录规则在 mpv.conf |
+| Playlist 搜索、拖动排序 | 已有队列中的过滤和重排 | 无专用 conf 参数 | 不改变实际队列；套件目录输入按本次递归选择与图片开关收集 |
 | Playlist 初始窗口 | 340×420，随 DPI 调整并跟随主窗 | 可拖动侧窗调整宽度；持久默认值需改源码 | `helpers/playlist-window.ps1` 中的窗口初始化和 `PlaylistFollower.UserWidth` 共同影响布局 |
-| Playlist 字体与配色 | Segoe UI 9；背景 #111111、文字 #E6E8ED | 源码常量，不读取 ModernZ 颜色选项 | 在 `helpers/playlist-window.ps1` 窗口初始化处维护；其他子控件另有自己的颜色 |
+| Playlist 字体与配色 | 主列表 Microsoft YaHei UI 9.75pt；背景 #111111、文字 #DEDFE0 | 源码常量，不读取 ModernZ 颜色选项 | 字体在 `helpers/playlist-window.ps1` 初始化，颜色由 `playlist-window-controls.cs` 的 PlaylistStyle 维护 |
 
 改变主播放器 `screenshot-format` 不会自动把本版源 PNG 按钮改成 JPEG；改变 `screenshot-directory` 也不是本版 Capture 根目录入口。本版明确走专用 helper。helper 的 `ValidateOnly`、`NoClipboard`、`TestOutputRoot`、`TestFailPhase` 是调用/测试接口，不是推荐给用户加入配置文件的参数。
 
