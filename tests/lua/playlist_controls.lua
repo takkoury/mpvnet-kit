@@ -13,7 +13,7 @@ local input_module = {new=function(actual_mp, actual_utils, feedback)
     end,save=function() input_saves=input_saves+1 end,
     shutdown=function() input_shutdowns=input_shutdowns+1 end}
 end}
-local observers = {}
+local observers, hooks, event_handlers = {}, {}, {}
 local function set_property(name, value)
     local previous = properties[name]
     properties[name] = value
@@ -50,7 +50,15 @@ local mp = {
     end,
     command_native_async=function(_, done) callback=done end,
     add_key_binding=function(_, name, fn) bindings[name]=fn end,
-    register_event=function(name, fn) events[name]=fn end,
+    register_event=function(name, fn)
+        event_handlers[name]=event_handlers[name] or {}
+        table.insert(event_handlers[name],fn)
+        events[name]=function(...) for _,handler in ipairs(event_handlers[name]) do handler(...) end end
+    end,
+    add_hook=function(name, priority, fn)
+        assert(priority==50)
+        hooks[name]=hooks[name] or {};table.insert(hooks[name],fn)
+    end,
     register_script_message=function(name, fn) script_messages[name]=fn end,
     msg={warn=function(value) logs[#logs+1]=value end},
 }
@@ -65,6 +73,7 @@ local original_dofile, original_open, original_getenv, original_remove=dofile,io
 dofile=function(path)
     if path == '~~/script-modules/feedback.lua' then return feedback_module end
     if path == '~~/script-modules/playlist-input.lua' then return input_module end
+    if path == '~~/script-modules/user-settings.lua' then return settings_model end
     assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
     return {powershell=function() return 'powershell.exe' end}
 end
@@ -296,4 +305,70 @@ function context_order_actions_keep_existing_boundaries_and_host_commands()
     events.shutdown();commands={};properties.playlist=queue
     for _,action in ipairs({'previous','next','first','last','shuffle'}) do script_messages.action(token,action) end
     eq(#commands,0)
+end
+
+local function startup_snapshot(initial, current, available)
+    local values, saved = {}, {}
+    values['playlist.open-on-startup']=initial
+    saved['playlist.open-on-startup']=current
+    set_property('user-data/mpvnet/settings-values',{schema=1,revision='test',values=saved,
+        startup={available=available~=false,values=values}})
+end
+function startup_default_and_next_instance_only()
+    eq(callback,nil)
+    startup_snapshot(nil,nil)
+    eq(callback,nil)
+    startup_snapshot(nil,true)
+    eq(callback,nil)
+    local state=properties['user-data/mpvnet/settings-runtime/playlist.open-on-startup']
+    eq(state.default,false);eq(state.saved,true);eq(state.effective,false);eq(state.status,'pending-startup')
+end
+function startup_opens_once_even_if_settings_follow_first_media()
+    for _,fn in ipairs(hooks.on_load or {}) do fn() end
+    startup_snapshot(true,true)
+    assert(callback~=nil);eq(emitted_payload.visible,true)
+    local first=callback
+    local token=properties['user-data/mpvnet/playlist-window'].token
+    script_messages['window-hidden'](token)
+    eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+    startup_snapshot(true,true)
+    for _,fn in ipairs(hooks.on_load or {}) do fn() end
+    events['start-file']();events['end-file']()
+    eq(properties['user-data/mpvnet/playlist-window'].visible,false);eq(callback,first)
+    startup_snapshot(true,false)
+    eq(properties['user-data/mpvnet/settings-runtime/playlist.open-on-startup'].status,'pending-startup')
+end
+function startup_uses_initial_seed_and_honors_manual_visibility()
+    open();bindings.toggle()
+    eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+    local first=callback
+    startup_snapshot(true,true)
+    eq(properties['user-data/mpvnet/playlist-window'].visible,false);eq(callback,first)
+end
+function startup_does_not_apply_a_repair_or_later_value()
+    startup_snapshot(nil,nil,false)
+    startup_snapshot(nil,true,false)
+    eq(callback,nil);eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+end
+function startup_failure_is_not_retried_by_settings_or_media()
+    startup_snapshot(true,true)
+    callback(false,{status=1})
+    eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+    local first=callback
+    startup_snapshot(true,true)
+    for _,fn in ipairs(hooks.on_load or {}) do fn() end
+    eq(callback,first);eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+    bindings.toggle();assert(callback~=first)
+end
+function startup_shutdown_prevents_late_open()
+    events.shutdown()
+    startup_snapshot(true,true)
+    eq(callback,nil);eq(properties['user-data/mpvnet/playlist-window'].visible,false)
+end
+
+function startup_initial_false_wins_over_new_saved_true()
+    startup_snapshot(false,true)
+    eq(callback,nil)
+    local state=properties['user-data/mpvnet/settings-runtime/playlist.open-on-startup']
+    eq(state.saved,true);eq(state.effective,false);eq(state.status,'pending-startup')
 end

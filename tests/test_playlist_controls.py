@@ -1,5 +1,6 @@
 """Exercise the complete Playlist script with host and input-delegation doubles."""
 from pathlib import Path
+import json
 import unittest
 
 from lua_runtime import load_lua51
@@ -14,7 +15,8 @@ class PlaylistControls(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
-        cls.fixture = ('local feedback_module = ' + feedback_module() + '\n'
+        cls.fixture = ('local settings_model = dofile(' + json.dumps((ROOT / 'config/script-modules/user-settings.lua').as_posix()) + ')\n'
+                       + 'local feedback_module = ' + feedback_module() + '\n'
                        + (ROOT / 'tests/lua/playlist_controls.lua').read_text(encoding='utf-8'))
 
     def run_case(self, name, initial_properties=''):
@@ -64,6 +66,17 @@ class PlaylistControls(unittest.TestCase):
 
     def test_context_order_actions_keep_existing_boundaries_and_host_commands(self):
         self.run_case('context_order_actions_keep_existing_boundaries_and_host_commands')
+
+    def test_startup_visibility_setting_lifecycle(self):
+        for case in ('startup_default_and_next_instance_only',
+                     'startup_initial_false_wins_over_new_saved_true',
+                     'startup_opens_once_even_if_settings_follow_first_media',
+                     'startup_uses_initial_seed_and_honors_manual_visibility',
+                     'startup_does_not_apply_a_repair_or_later_value',
+                     'startup_failure_is_not_retried_by_settings_or_media',
+                     'startup_shutdown_prevents_late_open'):
+            with self.subTest(case=case):
+                self.run_case(case)
 
     def test_complete_script_syntax(self):
         self.lua.check_syntax(SCRIPT)

@@ -666,12 +666,14 @@ function typed_values_and_raw_page_patch()
 end
 function all_fields_publish_their_type_timing_and_page()
     local host=instance(71)
-    eq(#host.state().fields,23);eq(#host.state().pages,8);eq(#host.state().actions,5)
+    eq(#host.state().fields,#model.fields+#model.path_fields);eq(#host.state().pages,8);eq(#host.state().actions,5)
     for _,field in ipairs(host.state().fields) do
         assert(field.kind=='number' or field.kind=='string' or field.kind=='boolean' or field.kind=='choice')
         assert(field.timing and field.default~=nil and field.saved~=nil and field.status)
         if field.kind=='choice' then assert(#field.choices>0) end
     end
+    local startup=host.field('playlist.open-on-startup')
+    eq(startup.page,'window');eq(startup.kind,'boolean');eq(startup.default,false);eq(startup.timing,'startup')
     eq(host.field('mute').default,true);eq(host.field('modernz.timems').default,false)
     eq(host.field('modernz.timems').saved,false);eq(host.field('sub-pos').display,'position')
 end

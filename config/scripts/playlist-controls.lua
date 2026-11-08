@@ -9,6 +9,7 @@ local helper = mp.command_native({'expand-path', '~~/helpers/playlist-window.ps1
 local powershell = paths.powershell()
 local token = string.format('%.0f-%.0f', mp.get_property_number('pid', 0), mp.get_time() * 1000000)
 local wanted, running, ready, closing = false, false, false, false
+local manually_toggled, startup_enabled = false, false
 local payload_path, helper_pid
 local forwarded_keys = {}
 local default_keys = {
@@ -244,6 +245,7 @@ local function start_window()
 end
 
 mp.add_key_binding(nil, 'toggle', function()
+    manually_toggled = true
     wanted = not wanted
     if not wanted then release_keys() end
     publish()
@@ -300,3 +302,21 @@ end)
 mp.set_property('keep-open', 'yes')
 mp.set_property('loop-playlist', 'no')
 publish()
+
+-- The startup preference owns only this instance's initial visibility intent.
+-- Later saves and media changes must not reopen a window the user has closed.
+local settings = dofile(mp.command_native({'expand-path', '~~/script-modules/user-settings.lua'}))
+settings.owner(mp, {
+    id='playlist.open-on-startup', initialize_on_ready=true,
+    default_source='套件默认关闭',
+    read=function() return startup_enabled end,
+    write=function(value)
+        startup_enabled = value
+        if value and not closing and not manually_toggled then
+            wanted = true
+            publish()
+            if not running then start_window() end
+        end
+        return true
+    end,
+})

@@ -368,7 +368,7 @@ public sealed partial class SettingsEditor : Window
                 if (page == "subtitles" && (f.Section == "外观" || f.Section == "字幕外观")) content.Children.Add(SubtitleExample());
             }
             var row = new Grid { MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : page == "window" ? 160 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
             var title = new Label { Content = f.Label, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; row.Children.Add(title);
             Control input; FrameworkElement control;
             if (f.Id == "slang" || f.Id == "alang") { control = LanguageControl(field, out input); }
@@ -970,8 +970,16 @@ public sealed partial class SettingsEditor : Window
             action_ids = actionButtons.Keys.ToArray(),
             row_alignment = settingRows.Values.All(r => {
                 var control = (FrameworkElement)r.Children[1]; var bounds = control.TransformToAncestor(r).TransformBounds(new Rect(control.RenderSize));
-                return Math.Abs(bounds.Left - (page == "paths" ? 154 : 136)) < 1 && bounds.Width >= 100 && bounds.Right <= r.ActualWidth + 1;
+                return Math.Abs(bounds.Left - r.ColumnDefinitions[0].ActualWidth) < 1 && bounds.Width >= 100 && bounds.Right <= r.ActualWidth + 1;
             }), dirty_pages = DirtyPages(),
+            section_headers = content.Children.OfType<TextBlock>().Select(label => label.Text).ToArray(),
+            label_content_fits = settingRows.ToDictionary(pair => pair.Key, pair => {
+                var label = (Label)pair.Value.Children[0];
+                var text = new TextBlock { Text = label.Content as string, FontFamily = label.FontFamily,
+                    FontSize = label.FontSize, FontWeight = label.FontWeight, FontStyle = label.FontStyle };
+                text.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                return text.DesiredSize.Width <= label.ActualWidth - label.Padding.Left - label.Padding.Right;
+            }),
             drafts = model.Fields.ToDictionary(x => x.Key, x => new { text = x.Value.Text, overridden = x.Value.Override }),
             revisions = model.Revisions, can_save = save.IsEnabled, saving = saving, notice = notice.Text,
             preview_visible = subtitleExample != null || previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,

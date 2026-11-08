@@ -12,6 +12,7 @@ M.fields = {
     {id='mute',page='audio',label='启动静音',kind='boolean',default=false,timing='startup',first_media=true,section='启动',script='settings_options'},
     {id='fullscreen',page='window',label='默认全屏',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='ontop',page='window',label='默认置顶',kind='boolean',default=false,timing='startup',script='settings_options'},
+    {id='playlist.open-on-startup',page='window',label='启动时打开播放列表',kind='boolean',default=false,timing='startup',script='playlist_controls',search_terms='播放列表 侧窗 启动 自动 打开 playlist'},
     {id='modernz.scalewindowed',page='controlbar',label='窗口控制栏缩放',kind='number',display='percent',search_terms='控制栏大小 比例 OSC',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.scalefullscreen',page='controlbar',label='全屏控制栏缩放',kind='number',display='percent',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.hidetimeout',page='controlbar',label='自动隐藏时间',kind='number',display='seconds',default=1.5,min=0,max=60,slider_min=0,slider_max=10,step=0.1,timing='preview',section='显示',script='modernz'},
@@ -140,6 +141,7 @@ function M.owner(mp,spec)
     end
     local baseline=baseline_value(spec.read())
     local first_media=spec.initialize_on_load==true
+    local ready_startup=field.timing=='startup' and spec.initialize_on_ready==true
     local startup_ready,startup_applied,startup_override,startup_value=false,false,false,nil
     local saved,revision,initialized,override=baseline,'',false,false
     local generation,version,preview,apply_error=0,0,nil,''
@@ -217,6 +219,17 @@ function M.owner(mp,spec)
                 end
             end
         end
+        -- Window startup must also run in an empty player. Consume only the
+        -- controller's immutable first read; a later save/repair is next-start.
+        if ready_startup and not initialized then
+            local seed=snapshot.startup
+            if type(seed)~='table' or type(seed.values)~='table' then refresh();return end
+            initialized=true
+            local initial=seed.values[spec.id]
+            if seed.available==true and initial~=nil and M.valid(field,initial) then
+                write(initial,'startup')
+            end
+        end
         if type(snapshot.values)~='table' then refresh();return end
         local value=snapshot.values[spec.id]
         if value~=nil and not M.valid(field,value) then return end
@@ -280,6 +293,7 @@ function M.owner(mp,spec)
         end)
     elseif field.timing=='startup' then
         mp.add_hook('on_load',50,function()
+            if ready_startup then sync(mp.get_property_native('user-data/mpvnet/settings-values'));refresh();return end
             if first_media and startup_applied then refresh();return end
             if first_media then baseline=baseline_value(current()) end
             -- Read the latest bus directly even if its observer is delayed. The

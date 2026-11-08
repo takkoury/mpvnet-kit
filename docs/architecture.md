@@ -217,6 +217,8 @@ Playlist在父进程仍存活时遇IPC读取失败或EOF，沿已有helper失败
 
 Playlist跟随器保持已确认的主窗句柄，不因`Process.MainWindowHandle`在菜单打开期间指向另一个窗口而改绑。首次发现或原句柄失效后按父PID查找无owner的顶层窗口，并排除子窗口、工具窗口和不激活的弹出窗口；不排除普通`WS_POPUP`，以兼容无边框／全屏主窗。主窗隐藏或最小化时保留身份并隐藏侧窗，原主窗销毁后重新发现。
 
+`playlist.open-on-startup`由playlist-controls持有，设置元数据位于窗口页，默认false、startup时机。共享owner通过可选`initialize_on_ready`消费设置控制层不可变的首次读取快照：无需等待首个媒体，提前on_load不消耗启动机会；首次读取失败后修复或后续保存只影响下一实例。它只设置初始显示意图并复用既有start_window，手动切换优先，换媒体／轮询／保存不重新显示，不恢复队列。
+
 Playlist 的 WinForms 控件位于[playlist-window-controls.cs](../config/helpers/playlist-window-controls.cs)，与[侧窗菜单](../config/helpers/playlist-context-menu.cs)和共享键名代码编译为`KitPlaylistWindow.dll`。`playlist-window.ps1`继续负责IPC、视图数据和事件接线，按需加载DLL，不再现场编译；缺失或过期资产由构包检查阻止。未增加启动预热或改变首开后显示／隐藏生命周期。首次IPC快照在首秒使用15ms轮询，收到初始状态或到期后恢复原150ms间隔。
 
 侧窗右键菜单沿用 `src/context-menu/MenuStyles.xaml` 的视觉规格：13 DIP 正文、12 DIP 快捷提示、32 DIP 行高、6 DIP 外圆角，以及相同的颜色、分隔、细线箭头和交互状态。WinForms 展示适配集中在 `playlist-context-menu.cs`，按所属窗口 DPI 换算，保留原生菜单键鼠处理；后续调整菜单视觉时须同步核对这两处。
