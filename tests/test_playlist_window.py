@@ -111,6 +111,26 @@ class PlaylistWindow(unittest.TestCase):
         self.assertEqual(data['layout_bounds']['normal'], data['layout_bounds']['search'])
         self.assertEqual(data['layout_bounds']['normal'], data['layout_bounds']['restored'])
 
+    def test_context_menu_glue_keeps_captured_id_and_applied_shortcut_hints(self):
+        data = self.run_helper({'playlist': [{'id': 71, 'filename': 'X:/one.mkv'}, {'id': 92, 'filename': 'X:/two.mkv'}],
+            'position': 0, 'selected_id': '92', 'menu_probe': {'id': '71', 'action': 'remove',
+                'shortcuts': {'schema': 1, 'actions': [{'id': 'file.save-playlist', 'keys': ['Ctrl+s']}]}}})
+        self.assertEqual(data['actions'][-1]['action'], 'remove')
+        self.assertEqual(data['actions'][-1]['id'], '71')
+        self.assertEqual(data['context_menu']['items']['save-playlist']['hint'], 'Ctrl+s')
+        self.assertTrue(data['context_menu']['items']['play']['available'])
+        self.assertFalse(data['context_menu']['visible'])
+        self.assertFalse(data['shown'])
+
+    def test_context_menu_glue_keeps_empty_search_local_and_disables_queue_actions(self):
+        data = self.run_helper({'playlist': [], 'position': -1, 'menu_probe': {'id': '', 'action': 'search'}})
+        self.assertTrue(data['context_menu']['searching'])
+        self.assertFalse(data['context_menu']['items']['play']['available'])
+        self.assertFalse(data['context_menu']['items']['save-playlist']['enabled'])
+        self.assertFalse(data['context_menu']['items']['locate']['enabled'])
+        self.assertEqual(data['actions'], [])
+        self.assertFalse(data['shown'])
+
     def test_locate_reveals_current_id_and_clears_search(self):
         entries = [{'id': 100 + i, 'filename': 'X:/fixture/item-%02d.mkv' % i} for i in range(60)]
         # Selection follows the returned ID even when the cached position differs.
@@ -196,6 +216,15 @@ class PlaylistWindow(unittest.TestCase):
         self.assertTrue(data['presentation']['current_bold'])
         self.assertEqual(data['presentation']['row_columns'], 2)
         self.assertEqual([row['number'] for row in data['rows']], ['01', '02', '03', '04', '05'])
+        self.assertEqual(data['actions'], [])
+
+    def test_outside_click_dismisses_search_without_retargeting_the_click(self):
+        data = self.run_helper({'playlist': [{'id': 71, 'filename': 'X:/one.mkv'},
+            {'id': 92, 'filename': 'X:/two.mkv'}], 'position': 0, 'dismiss_probe': True})
+        state = data['presentation']['search_dismiss']
+        self.assertEqual(state.pop('filtered'), 1)
+        self.assertEqual(state.pop('restored'), 2)
+        self.assertTrue(all(state.values()), state)
         self.assertEqual(data['actions'], [])
 
     def test_narrow_search_footer_keeps_search_button_to_the_right(self):

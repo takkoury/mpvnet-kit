@@ -249,3 +249,51 @@ function save_binding_delegates_without_a_second_save_entrypoint()
     eq(save_bindings,1);bindings['save-playlist']();bindings['save-playlist']()
     eq(input_saves,2);eq(#input_requests,0);eq(#commands,0);eq(#messages,0)
 end
+
+function context_input_actions_delegate_without_changing_input_semantics()
+    reset();local token=properties['user-data/mpvnet/playlist-window'].token
+    local cases={{'open-files','open','files'},{'append-files','append','files'},
+        {'open-folder','open','folder'},{'append-folder','append','folder'},
+        {'open-clipboard','open','clipboard'},{'append-clipboard','append','clipboard'}}
+    for _,case in ipairs(cases) do script_messages.action('stale',case[1],'71') end
+    script_messages.action('stale','save-playlist');eq(#input_requests,0);eq(input_saves,0)
+    for index,case in ipairs(cases) do
+        script_messages.action(token,case[1],'71','92','after')
+        eq(#input_requests,index);eq(input_requests[index].mode,case[2])
+        eq(input_requests[index].operation,case[3]);eq(input_requests[index].files,nil)
+    end
+    script_messages.action(token,'save-playlist');eq(input_saves,1)
+    for _,action in ipairs({'clear','playlist-clear','loadfile','search','OPEN-FILES','exec'}) do
+        script_messages.action(token,action,'71')
+    end
+    eq(#input_requests,6);eq(input_saves,1);eq(#commands,0);eq(#messages,0)
+    events.shutdown();commands={}
+    for _,case in ipairs(cases) do script_messages.action(token,case[1]) end
+    script_messages.action(token,'save-playlist');eq(#input_requests,6);eq(input_saves,1);eq(#commands,0)
+end
+function context_order_actions_keep_existing_boundaries_and_host_commands()
+    reset();local token=properties['user-data/mpvnet/playlist-window'].token
+    properties.playlist={{id=71},{id=92}};local queue=properties.playlist
+    properties.pause=true;properties['playlist-pos']=0
+    script_messages.action(token,'previous');eq(commands[1][2],'playlist-play-index');eq(commands[1][3],0)
+    script_messages.action(token,'next');eq(commands[2][3],1)
+    properties['playlist-pos']=1
+    script_messages.action(token,'next');eq(commands[3][3],1)
+    script_messages.action(token,'previous');eq(commands[4][3],0)
+    script_messages.action(token,'first');eq(#commands[5],3);eq(commands[5][1],'script-message-to')
+    eq(commands[5][2],'mpvnet');eq(commands[5][3],'playlist-first')
+    script_messages.action(token,'last');eq(commands[6][1],'script-message-to')
+    eq(commands[6][2],'mpvnet');eq(commands[6][3],'playlist-last')
+    script_messages.action(token,'shuffle');eq(#commands[7],1);eq(commands[7][1],'playlist-shuffle')
+    eq(properties.pause,true);eq(properties.playlist,queue)
+    commands={}
+    for _,action in ipairs({'previous','next','first','last','shuffle'}) do script_messages.action('stale',action) end
+    eq(#commands,0)
+    properties.playlist={{id=71}};script_messages.action(token,'shuffle');eq(#commands,0)
+    properties.playlist={}
+    for _,action in ipairs({'previous','next','first','last','shuffle'}) do script_messages.action(token,action) end
+    eq(#commands,0);eq(#messages,0)
+    events.shutdown();commands={};properties.playlist=queue
+    for _,action in ipairs({'previous','next','first','last','shuffle'}) do script_messages.action(token,action) end
+    eq(#commands,0)
+end

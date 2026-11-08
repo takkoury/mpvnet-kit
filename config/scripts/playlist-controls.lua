@@ -119,8 +119,27 @@ local function step(direction)
     mp.commandv('no-osd', 'playlist-play-index', target)
 end
 
+local input_actions = {
+    ['open-files']={'open','files'}, ['append-files']={'append','files'},
+    ['open-folder']={'open','folder'}, ['append-folder']={'append','folder'},
+    ['open-clipboard']={'open','clipboard'}, ['append-clipboard']={'append','clipboard'},
+}
+
 local function action(received_token, operation, id, target_id, side)
     if received_token ~= token or closing then return end
+    local selected = input_actions[operation]
+    if selected then input.request(selected[1], selected[2]); return end
+    if operation == 'save-playlist' then input.save(); return end
+    if operation == 'previous' then step(-1); return end
+    if operation == 'next' then step(1); return end
+    if operation == 'first' or operation == 'last' then
+        if #queue() > 0 then mp.commandv('script-message-to', 'mpvnet', 'playlist-' .. operation) end
+        return
+    end
+    if operation == 'shuffle' then
+        if #queue() > 1 then mp.commandv('playlist-shuffle') end
+        return
+    end
     if operation == 'append' then
         local files = utils.parse_json(id or '')
         if type(files) ~= 'table' then feedback_client.show('没有可添加的媒体文件', 'error'); return end

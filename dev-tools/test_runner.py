@@ -20,6 +20,7 @@ PROFILES = {
     'core': (
         'test_context_menu.ContextMenu', 'test_context_menu_build.ContextMenuBuild', 'test_danmaku.DanmakuTests',
         'test_package_build.PackageBuild', 'test_settings_build.SettingsBuild', 'test_playlist_input_build.PlaylistInputBuild', 'test_user_preferences_export.UserPreferencesExport',
+        'test_playlist_window_build.PlaylistWindowBuild',
         'test_test_support.TestSupport', 'test_test_runner.RunnerContract',
         'test_documentation.DocumentationLinks',
     ),
@@ -51,6 +52,8 @@ PROFILES = {
         'test_playlist_input.PlaylistInput',
         'test_playlist_files.PlaylistFiles',
         'test_playlist_input_build.PlaylistInputCompilation',
+        'test_playlist_window_build.PlaylistWindowCompilation',
+        'test_playlist_context_menu.PlaylistContextMenuTests',
         'test_install_launcher.InstallLauncher',
         'test_watch_later_data.WatchLaterStore',
         'test_history_data.HistoryStore',

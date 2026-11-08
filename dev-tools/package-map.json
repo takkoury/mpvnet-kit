@@ -309,6 +309,24 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/playlist-window-controls.cs",
+      "destination": "config/helpers/playlist-window-controls.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/playlist-context-menu.cs",
+      "destination": "config/helpers/playlist-context-menu.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/KitPlaylistWindow.dll",
+      "destination": "config/helpers/KitPlaylistWindow.dll",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/helpers/media-path-action.ps1",
       "destination": "config/helpers/media-path-action.ps1",
       "component": "author",

@@ -215,7 +215,15 @@ Playlist在父进程仍存活时遇IPC读取失败或EOF，沿已有helper失败
 
 Playlist跟随器保持已确认的主窗句柄，不因`Process.MainWindowHandle`在菜单打开期间指向另一个窗口而改绑。首次发现或原句柄失效后按父PID查找无owner的顶层窗口，并排除子窗口、工具窗口和不激活的弹出窗口；不排除普通`WS_POPUP`，以兼容无边框／全屏主窗。主窗隐藏或最小化时保留身份并隐藏侧窗，原主窗销毁后重新发现。
 
-Playlist 的 WinForms 展示继续位于 `playlist-window.ps1`：`PlaylistStyle` 集中当前窗口配色，客户区标题栏沿用设置窗口的视觉；`WM_NCCALCSIZE`将绘制范围扩到整个窗口，`WM_NCPAINT`／`WM_NCACTIVATE`不再进入默认系统框绘制，普通`WM_ACTIVATE`仍由Form处理。保留sizing样式、水平命中映射和 `PlaylistFollower` 的可见边缘计算。标题栏／底栏尺寸按窗口 DPI 转为物理像素。关闭按钮进入原关闭拦截并隐藏窗口；搜索按钮位于底栏右侧，复用原搜索切换，展开后依次排列输入框、计数和按钮。两按钮聚焦时 Space／Enter 留给按钮激活，列表内仍沿用播放器快捷键转发。此层不持有真实队列或改变 IPC 契约。隐藏句柄消息、命中及离屏绘制检查不等同真实跨屏与跟随验收。
+Playlist 的 WinForms 控件位于[playlist-window-controls.cs](../config/helpers/playlist-window-controls.cs)，与[侧窗菜单](../config/helpers/playlist-context-menu.cs)和共享键名代码编译为`KitPlaylistWindow.dll`。`playlist-window.ps1`继续负责IPC、视图数据和事件接线，按需加载DLL，不再现场编译；缺失或过期资产由构包检查阻止。未增加启动预热或改变首开后显示／隐藏生命周期。首次IPC快照在首秒使用15ms轮询，收到初始状态或到期后恢复原150ms间隔。
+
+侧窗右键菜单沿用 `src/context-menu/MenuStyles.xaml` 的视觉规格：13 DIP 正文、12 DIP 快捷提示、32 DIP 行高、6 DIP 外圆角，以及相同的颜色、分隔、细线箭头和交互状态。WinForms 展示适配集中在 `playlist-context-menu.cs`，按所属窗口 DPI 换算，保留原生菜单键鼠处理；后续调整菜单视觉时须同步核对这两处。
+
+`PlaylistStyle`集中配色，客户区标题栏沿用设置窗口的视觉；`WM_NCCALCSIZE`将绘制范围扩到整个窗口，`WM_NCPAINT`／`WM_NCACTIVATE`不再进入默认系统框绘制，普通`WM_ACTIVATE`仍由Form处理。保留sizing样式、水平命中映射和`PlaylistFollower`的可见边缘计算。标题栏／底栏尺寸按窗口DPI转为物理像素。关闭按钮仍隐藏窗口；搜索按钮位于底栏右侧，展开后排列输入框、计数和按钮。`PlaylistSearchDismiss`只过滤侧窗自己的鼠标消息，在搜索框外按下时调用既有搜索关闭流程并消费本次按下／抬起及关联双击，避免过滤恢复后误命中别的条目；不拦截其他窗口。失焦收起时不抢回焦点，销毁时移除过滤器。此层不持有真实队列；隐藏句柄、命中及离屏绘制不等同真实跨屏与跟随验收。
+
+侧窗菜单只hook自己的列表WM_CONTEXTMENU，区分鼠标屏幕坐标与键盘调用；行Name保存真实队列ID，打开时捕获目标，执行仍交Lua现有token／ID校验。空白区隐藏条目操作，队列／当前项变化更新使能，已捕获条目消失则关闭菜单。打开／追加／保存转发既有input控制层，首末项使用原宿主指令，上下项复用step，打乱使用原核心命令；搜索只改变本地视图。没有新增清空或磁盘文件操作。
+
+菜单打开时释放已转发按键并设置MenuActive，阻断播放器按键转发；关闭时清除临时Delete／Ctrl+F原生ShortcutKeys，防止旧目标影响后续选择。导航、激活和上下文键的重复输入持续被抑制到抬起，新的按下恢复原行为。搜索框保留编辑菜单。全局动作提示读取已应用快捷键状态，本地Delete／Ctrl+F保持；打开对话框前沿原opening-key路径激活父窗。窗口隐藏／移动时关闭菜单，销毁时解除自己的NativeWindow hook和事件订阅。
 
 `PlaylistHover`只管理悬停计时：同目标稳定停留550毫秒显示，5秒后到期，移动或换目标才重新计时；`PlaylistTip`持有并释放自己的WinForms Timer，按鼠标和工作区放置提示。隐藏、失焦、点击、搜索切换和实际原生滚动路径取消旧提示，队列内容只用于当次显示、不落盘。底部计数按钮按文字测量命中范围，不覆盖整条底栏。
 

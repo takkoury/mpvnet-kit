@@ -96,8 +96,10 @@ def reference_snapshot(framework_version, reference_files):
     return references
 
 
-def compile_winexe(output, dotnet, compiler_path, contents, references, digest, *,
-                   assembly, manifest, framework_version, metadata_key, label):
+def compile_assembly(output, dotnet, compiler_path, contents, references, digest, *,
+                     assembly, framework_version, metadata_key, label, target='winexe', manifest=None):
+    if target not in ('winexe', 'library'):
+        raise ValueError('unsupported managed assembly target')
     output.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix='build-', dir=output) as directory:
         staging = Path(directory)
@@ -118,9 +120,9 @@ def compile_winexe(output, dotnet, compiler_path, contents, references, digest, 
         mapped_path = str(staging).replace('=', '==').replace(',', ',,')
         result = subprocess.run([
             dotnet, str(compiler_path), '-nologo', '-noconfig', '-nostdlib+', '-utf8output',
-            '-codepage:65001', '-target:winexe', '-platform:anycpu', '-langversion:7.3',
+            '-codepage:65001', '-target:' + target, '-platform:anycpu', '-langversion:7.3',
             '-deterministic+', '-optimize+', '-warnaserror+', f'-pathmap:{mapped_path}=/_/src',
-            f'-win32manifest:{manifest}', f'-out:{assembly}',
+            *([f'-win32manifest:{manifest}'] if manifest else []), f'-out:{assembly}',
             *(f'-reference:refs/{name}' for name in references),
             *(name for name in contents if name.endswith('.cs')), 'BuildEvidence.cs',
         ], cwd=staging, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -128,3 +130,11 @@ def compile_winexe(output, dotnet, compiler_path, contents, references, digest, 
             (output / 'build.log').write_bytes(result.stdout)
             raise ValueError(label + ' compilation failed; see build.log in the output directory')
         return (staging / assembly).read_bytes()
+
+
+def compile_winexe(output, dotnet, compiler_path, contents, references, digest, *,
+                   assembly, manifest, framework_version, metadata_key, label):
+    """Keep existing executable builders' call contract and default flags."""
+    return compile_assembly(output, dotnet, compiler_path, contents, references, digest,
+        assembly=assembly, manifest=manifest, framework_version=framework_version,
+        metadata_key=metadata_key, label=label)

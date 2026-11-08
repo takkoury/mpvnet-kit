@@ -34,6 +34,8 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 
 ## Lua 与 helper 条件
 
+`PlaylistWindowBuild`归入core，检查控件DLL与固定源码摘要、输出隔离及拒绝过期资产；`PlaylistWindowCompilation`归入helpers，用已有SDK构建并隐藏加载实际DLL。原几何／悬停／键位／父窗fixture直接读取`playlist-window-controls.cs`，不再从PS中截取inline C#。`PlaylistContextMenuTests`实际编译控件和菜单，验证分组、目标ID、使能、快捷提示及菜单重复键交接，离屏绘制不显示窗口。`PlaylistWindow`另覆盖真实PS事件接线、空态搜索和IPC退出；可见右键定位、键盘导航和首开体感由用户试用。
+
 `PlaylistFiles`归入helpers，要求显式设置`MPVNET_TEST_LIBMPV`为已有宿主`libmpv-2.dll`的绝对路径，不下载或安装播放器。检查实际隔离core的列表读取、HLS／嵌套／网络边界、完整队列UTF-8导出、路径策略、目标冲突及原子保存；以本地监听器核对不联网，以真实进程核对detached结果、取消和父退出清理。Lua保存对话框／写入生命周期由`PlaylistInputController`覆盖；实际mpv退出时的独立writer另用仓外核心探针验证。UI选择器在自动检查中注入输入，真正的覆盖确认、焦点及键鼠需用户试用。
 
 `PlaylistInputController`归入lua，执行完整文件输入模块，检查打开／追加、异步请求失效、取消、完整队列身份及不改变暂停状态。`PlaylistInput`归入helpers，需要已有本地.NET 10 SDK和.NET Framework 4.7.2引用，编译实际C#后用合成文件与注入输入源验证混排、路径去重、字幕、原生格式边界、stdout结果和父退出；不读写个人剪贴板、不打开桌面文件对话框。`PlaylistInputBuild`归入core，只用Python检查运行EXE摘要、输出隔离和构包拒绝过期资产；`PlaylistInputCompilation`归入helpers，实际运行构建工具与最终EXE。日常包构建不需要SDK。实际系统文件对话框的owner、焦点和键鼠体验由隔离试用另验。

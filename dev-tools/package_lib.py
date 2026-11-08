@@ -58,6 +58,16 @@ def _check_playlist_input_asset(source, destination, data):
         raise ValueError('playlist input executable does not match its sources; rebuild KitPlaylistInput.exe')
 
 
+def _check_playlist_window_asset(source, destination, data):
+    if destination.casefold() != 'config/helpers/kitplaylistwindow.dll':
+        return
+    spec = importlib.util.spec_from_file_location('kit_playlist_window_build', Path(__file__).with_name('build-playlist-window.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not module.matches_source_digest(data, module.source_digest(source)):
+        raise ValueError('playlist window assembly does not match its sources; rebuild KitPlaylistWindow.dll')
+
+
 def _relative(value):
     if not isinstance(value, str):
         raise ValueError('relative path must be a string: ' + repr(value))
@@ -232,6 +242,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
         _check_menu_asset(source, dst, data)
         _check_settings_asset(source, dst, data)
         _check_playlist_input_asset(source, dst, data)
+        _check_playlist_window_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
     entries.sort(key=lambda x: x['path'])

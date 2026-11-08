@@ -4,7 +4,7 @@ $source=[IO.File]::ReadAllText($SourcePath)
 $tokens=$null;$parseErrors=$null
 $null=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$parseErrors)
 if ($parseErrors.Count) {throw 'PowerShell parser rejected helper'}
-$code=[regex]::Match($source,"(?s)Add-Type -TypeDefinition \(?@'\r?\n(.*?)\r?\n'@").Groups[1].Value
+$code=[IO.File]::ReadAllText((Join-Path (Split-Path -Parent $SourcePath) 'playlist-window-controls.cs'))
 if (-not $code) {throw 'missing production C#'}
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 $code += "`n" + [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $SourcePath) 'shortcut-key-names.cs'))

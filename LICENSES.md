@@ -26,6 +26,9 @@
 - `config/helpers/KitSettings.exe`
 - `config/helpers/playlist-input.cs`
 - `config/helpers/playlist-files.cs`
+- `config/helpers/playlist-window-controls.cs`
+- `config/helpers/playlist-context-menu.cs`
+- `config/helpers/KitPlaylistWindow.dll`
 - `config/helpers/KitPlaylistInput.exe`
 - `config/script-modules/playlist-input.lua`
 - `.gitignore`

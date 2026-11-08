@@ -1,7 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$SourcePath)
 $ErrorActionPreference='Stop'
-$source=[IO.File]::ReadAllText($SourcePath)
-$code=[regex]::Match($source,"(?s)Add-Type -TypeDefinition \(?@'\r?\n(.*?)\r?\n'@").Groups[1].Value
+$code=[IO.File]::ReadAllText((Join-Path (Split-Path -Parent $SourcePath) 'playlist-window-controls.cs'))
 $code += "`n" + [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $SourcePath) 'shortcut-key-names.cs'))
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms,System.Drawing

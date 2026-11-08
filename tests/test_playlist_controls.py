@@ -59,6 +59,12 @@ class PlaylistControls(unittest.TestCase):
         self.run_case('initial_shortcuts_define_forwarding',
                       "properties['user-data/mpvnet/shortcuts']={schema=1,forward_keys={'F8'}}")
 
+    def test_context_input_actions_delegate_without_changing_input_semantics(self):
+        self.run_case('context_input_actions_delegate_without_changing_input_semantics')
+
+    def test_context_order_actions_keep_existing_boundaries_and_host_commands(self):
+        self.run_case('context_order_actions_keep_existing_boundaries_and_host_commands')
+
     def test_complete_script_syntax(self):
         self.lua.check_syntax(SCRIPT)
 
