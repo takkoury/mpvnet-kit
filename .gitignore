@@ -10,6 +10,7 @@ script-opts/mpvnet-local.conf
 
 # Installation receipts and backups stay outside the source package.
 .mpvnet-kit-install.json
+.mpvnet-kit-update.json
 backups/
 test-output/
 

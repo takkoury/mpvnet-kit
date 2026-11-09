@@ -36,7 +36,7 @@ function Assert-MaintenanceRuntimePath($Path) {
     & $script:MaintenanceCommon { param($Value) Assert-KitRelative $Value } $Path
     if ($Path.StartsWith('config/', [StringComparison]::OrdinalIgnoreCase) -or $Path.EndsWith('.example', [StringComparison]::OrdinalIgnoreCase) -or
         $Path -iin @('mpvnet-user.json', 'script-opts/mpvnet-local.conf', 'mpvnet-local.conf', 'local.conf', 'settings.xml', 'desktop.ini',
-            '.mpvnet-kit-install.json', '.mpvnet-kit-operation.json') -or $Path.Split('/')[0] -iin @('cache', 'watch_later')) {
+            '.mpvnet-kit-install.json', '.mpvnet-kit-operation.json', '.mpvnet-kit-update.json') -or $Path.Split('/')[0] -iin @('cache', 'watch_later')) {
         throw '操作记录不能包含个人配置、播放记录或安装状态文件。'
     }
 }

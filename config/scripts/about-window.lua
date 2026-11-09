@@ -39,7 +39,7 @@ open = function()
     local path = utils.join_path(directory, 'mpvnet-about-' .. token .. '.json')
     local session = {path=path, activation=path .. '.activate', serial=1}
     local payload = {schema=1, token=token, parent_pid=mp.get_property_number('pid', 0),
-        activation_path=session.activation, host_version=version('user-data/frontend/version'),
+        activation_path=session.activation, config_directory=expand(''), host_version=version('user-data/frontend/version'),
         mpv_version=version('mpv-version'), ffmpeg_version=version('ffmpeg-version')}
     if not write(path, utils.format_json(payload)) or not write(session.activation, '1') then
         cleanup(session); failure(); return

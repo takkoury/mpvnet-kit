@@ -21,6 +21,7 @@ USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "playback.pause" : ["Ctrl+p
               b' "playlist.toggle" : [] },\r\n'
               b'  "settings" : { "mute" : false, "volume" : 0, "alang" : "",'
               b' "playlist.open-on-startup" : true, "playlist.include-images" : true,'
+              b' "updates.auto-check" : false,'
               b' "future" : { "disabled" : false, "zero" : 0, "empty" : "" } },\r\n'
               b'  "unknown" : { "future" : [null, 7] },'
               b' "rawformat" : "\\u4fdd\\u7559"\r\n}\r\n')
@@ -80,6 +81,7 @@ class UserSettingsUpgrade(unittest.TestCase):
         (self.target / 'script-opts/mpvnet-local.conf').write_bytes(LOCAL_BYTES)
         self.unknown = self.target / 'unknown-user-file.txt'
         self.unknown.write_bytes(b'Preserve this unmanaged file.\r\n')
+        (self.target / '.mpvnet-kit-update.json').write_bytes(b'{"schema":1,"fixture":"keep update state"}\r\n')
         self.initial = self.snapshot(self.target)
 
     def tearDown(self):

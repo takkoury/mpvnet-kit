@@ -1,7 +1,37 @@
 {
   "schema": 1,
-  "version": "0.5.0",
+  "version": "0.5.0-m3.5-preview",
   "files": [
+    {
+      "source": "config/scripts/update-check.lua",
+      "destination": "config/scripts/update-check.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/update-check.cs",
+      "destination": "config/helpers/update-check.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/update-window.cs",
+      "destination": "config/helpers/update-window.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/update-host.cs",
+      "destination": "config/helpers/update-host.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/KitUpdate.exe",
+      "destination": "config/helpers/KitUpdate.exe",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
     {
       "source": "config/script-modules/feedback.lua",
       "destination": "config/script-modules/feedback.lua",

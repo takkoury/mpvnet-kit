@@ -16,6 +16,31 @@ try {
     foreach($field in @('host_version','mpv_version','ffmpeg_version')){
         if(-not ($data[$field] -is [string]) -or $data[$field].Length -gt 2048){throw '关于窗口版本字段无效。'}
     }
+    # Display identity only: no backup-chain or installed-file verification. The
+    # bounded read tolerates missing/invalid receipts without hiding host data.
+    $data['package_version']=''
+    if($data.config_directory -is [string] -and [IO.Path]::IsPathRooted($data.config_directory)){
+        $receiptStream=$null
+        try {
+            $configDirectory=[IO.Path]::GetFullPath($data.config_directory).TrimEnd('\','/')
+            $receiptPath=[IO.Path]::Combine($configDirectory,'.mpvnet-kit-install.json')
+            $receiptStream=New-Object IO.FileStream($receiptPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            if($receiptStream.Length -gt 0 -and $receiptStream.Length -le 1048576){
+                $bytes=New-Object byte[] ([int]$receiptStream.Length)
+                $count=0
+                while($count -lt $bytes.Length){$read=$receiptStream.Read($bytes,$count,$bytes.Length-$count);if($read -eq 0){break};$count+=$read}
+                if($count -eq $bytes.Length){
+                    $receipt=$json.DeserializeObject($utf8.GetString($bytes).TrimStart([char]0xFEFF))
+                    if($receipt -is [Collections.IDictionary] -and $receipt.schema -is [int] -and $receipt.schema -eq 1 -and $receipt.owner -ceq 'mpvnet-kit' -and $receipt.kind -ceq 'receipt' -and
+                       $receipt.target -is [string] -and [IO.Path]::IsPathRooted($receipt.target) -and
+                       [string]::Equals([IO.Path]::GetFullPath($receipt.target).TrimEnd('\','/'),$configDirectory,[StringComparison]::OrdinalIgnoreCase) -and
+                       $receipt.packageVersion -is [string] -and $receipt.packageVersion -cmatch '^[0-9A-Za-z][0-9A-Za-z._+\-]{0,127}$'){
+                        $data['package_version']=$receipt.packageVersion
+                    }
+                }
+            }
+        } catch { } finally { if($receiptStream){$receiptStream.Dispose()} }
+    }
     $parentProcess=[Diagnostics.Process]::GetProcessById([int]$data.parent_pid)
     if($parentProcess.HasExited){throw '播放器已退出。'}
     Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase

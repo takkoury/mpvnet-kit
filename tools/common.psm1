@@ -134,7 +134,7 @@ function Get-KitPackage([string]$PackageRoot) {
         }
         if ($file.path.StartsWith('config/', [StringComparison]::Ordinal) -and -not $file.path.EndsWith('.example', [StringComparison]::OrdinalIgnoreCase)) {
             $relative = $file.path.Substring(7)
-            if ($relative -eq 'mpvnet-user.json' -or $relative -eq 'script-opts/mpvnet-local.conf' -or $relative -eq $script:ReceiptName -or $relative -eq '.mpvnet-kit-operation.json') { throw 'Private or state files cannot be package runtime files.' }
+            if ($relative -eq 'mpvnet-user.json' -or $relative -eq 'script-opts/mpvnet-local.conf' -or $relative -eq $script:ReceiptName -or $relative -eq '.mpvnet-kit-operation.json' -or $relative -eq '.mpvnet-kit-update.json') { throw 'Private or state files cannot be package runtime files.' }
             $runtime += [pscustomobject]@{ path = $relative; sha256 = $file.sha256; bytes = $bytes }
         }
     }

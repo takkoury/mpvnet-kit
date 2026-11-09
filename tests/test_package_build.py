@@ -255,6 +255,7 @@ class PackageBuild(unittest.TestCase):
             ('config/script-opts/MPVNET-LOCAL.CONF', 'private or state file'),
             ('config/.mpvnet-kit-install.json', 'private or state file'),
             ('config/.MPVNET-KIT-OPERATION.JSON', 'private or state file'),
+            ('config/.MPVNET-KIT-UPDATE.JSON', 'private or state file'),
             ('config/local.conf', 'private or state runtime path'),
             ('config/watch_later/file', 'private or state runtime path'),
         ]
@@ -273,7 +274,7 @@ class PackageBuild(unittest.TestCase):
                 self.assertFalse((root / 'trial.zip').exists())
 
     def test_private_and_state_files_cannot_be_exported_under_another_name(self):
-        for name in ('script-opts/mpvnet-local.conf', '.mpvnet-kit-operation.json'):
+        for name in ('script-opts/mpvnet-local.conf', '.mpvnet-kit-operation.json', '.mpvnet-kit-update.json'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 source, spec, mapping = self.fixture(root, {name: b'private fixture'})

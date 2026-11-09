@@ -68,6 +68,16 @@ python -B dev-tools/build-playlist-window.py --output D:/Builds/playlist-window-
 
 构建和源码摘要校验沿用上述本地托管程序工具，目标是DLL，不附带独立应用清单。核对仓外证据后将DLL与源码一起交付；日常启动不再调用C#编译器，普通构包也不启动SDK。
 
+### 更新检查窗口预编译
+
+更新检查使用随包`config/helpers/KitUpdate.exe`，目标为Windows现有.NET Framework/WPF。修改`update-check.cs`、`update-window.cs`、`update-host.cs`或`src/update-window/app.manifest`后，用现有离线构建环境执行：
+
+```powershell
+python -B dev-tools/build-update-window.py --output D:/Builds/update-window-check --apply
+```
+
+省略`--apply`仅预览。核对仓外构建证据后将EXE复制回`config/helpers/KitUpdate.exe`，与源码一起交付；普通构包验证源码摘要，不调用SDK。检查器只提供版本查询与浏览器发行页入口，安装事务仍归`tools/`。
+
 ### 构建安装包
 
 在仓库根目录执行。将示例输出位置换成一个全新的仓外目录；不要指向播放器、源码检出或其他 Git 仓库。

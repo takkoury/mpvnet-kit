@@ -203,6 +203,7 @@ local additions = {
     {'help.mpv-manual', '工具与设置', '帮助：mpv 使用手册', 'script-message-to mpvnet shell-execute https://mpv.io/manual/stable', true},
     {'help.mpvnet-manual', '工具与设置', '帮助：mpv.net 使用手册', 'script-message-to mpvnet shell-execute https://github.com/mpvnet-player/mpv.net/blob/main/docs/manual.md', true},
     {'help.awesome-mpv', '工具与设置', '帮助：mpv 扩展资源', 'script-message-to mpvnet shell-execute https://github.com/stax76/awesome-mpv', true},
+    {'help.update-check', '工具与设置', '检查 mpvnet-kit 更新…', 'script-binding update_check/open', true},
     {'help.about', '工具与设置', '关于 mpv.net', 'script-binding about_window/open', true},
     {'tools.context-menu', '工具与设置', '打开右键菜单（鼠标需离开控制栏）', 'script-message-to mpvnet show-menu', true},
 }

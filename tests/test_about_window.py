@@ -73,12 +73,17 @@ assert(#calls==1 and #messages==0)""")
 
 @unittest.skipUnless(os.name == 'nt', 'Requires Windows WPF')
 class AboutWindowTests(unittest.TestCase):
-    def launch(self, update=None):
+    def launch(self, update=None, receipt=None):
         with tempfile.TemporaryDirectory(prefix='mpvnet-about-test-') as temp:
             request = Path(temp)/'request.json'
             data = dict(schema=1, token='fixture', parent_pid=os.getpid(), activation_path=str(request)+'.activate',
                         host_version='7.1.2.0', mpv_version='mpv fixture', ffmpeg_version='ffmpeg fixture')
             data.update(update or {})
+            if receipt is not None:
+                data['config_directory'] = temp
+                value = dict(schema=1, owner='mpvnet-kit', kind='receipt', target=temp, packageVersion='0.5.0-m3.5-preview')
+                value.update(receipt)
+                (Path(temp)/'.mpvnet-kit-install.json').write_text(json.dumps(value), encoding='utf-8')
             request.write_text(json.dumps(data), encoding='utf-8')
             result = subprocess.run(['powershell.exe','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',
                 str(ROOT/'config/helpers/about-window.ps1'),'-RequestPath',str(request),'-ValidateOnly'], capture_output=True, timeout=30)
@@ -91,6 +96,7 @@ class AboutWindowTests(unittest.TestCase):
         self.assertEqual(data['host_version'], '7.1.2.0')
         self.assertEqual(data['mpv_version'], 'mpv fixture')
         self.assertEqual(data['ffmpeg_version'], 'ffmpeg fixture')
+        self.assertEqual(data['package_version'], '未能读取')
         for key in ('handle_created','timer_running','show_in_taskbar','topmost','details_expanded'):
             self.assertFalse(data[key], (key, data))
         self.assertIn('GPL v2', data['license'])
@@ -102,3 +108,16 @@ class AboutWindowTests(unittest.TestCase):
         code, data = self.launch({'activation_path':'C:/unrelated.txt'})
         self.assertNotEqual(code, 0)
         self.assertFalse(data['ok'])
+
+    def test_package_version_comes_from_receipt_without_backup_chain(self):
+        code, data = self.launch(receipt={})
+        self.assertEqual(code, 0, data)
+        self.assertEqual(data['package_version'], '0.5.0-m3.5-preview')
+
+    def test_invalid_receipt_identity_or_version_preserves_host_information(self):
+        for receipt in ({'owner':'other'}, {'schema':True}, {'target':'C:/unrelated'}, {'packageVersion':'bad\nversion'}, {'padding':'x'*1048576}):
+            with self.subTest(receipt=receipt):
+                code, data = self.launch(receipt=receipt)
+                self.assertEqual(code, 0, data)
+                self.assertEqual(data['package_version'], '未能读取')
+                self.assertEqual(data['host_version'], '7.1.2.0')

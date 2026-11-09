@@ -508,7 +508,7 @@ class SettingsWindow(unittest.TestCase):
                 self.assertTrue(data['row_alignment'])
                 self.assertTrue(data['layout_valid'])
 
-    def test_playlist_startup_checkbox_uses_existing_window_page_save_flow(self):
+    def test_window_checkboxes_use_existing_page_save_flow(self):
         initial = complete_state()
         initial['fields'].append(dict(id='playlist.open-on-startup', page='window',
             label='启动时打开播放列表', kind='boolean', default=False, saved=False,
@@ -518,16 +518,22 @@ class SettingsWindow(unittest.TestCase):
             label='将图片纳入播放列表', kind='boolean', default=False, saved=False,
             has_override=False, effective=False, status='effective', apply_error='',
             timing='next-task', section='', default_source='套件默认关闭'))
+        initial['fields'].append(dict(id='updates.auto-check', page='window',
+            label='自动检查套件更新', kind='boolean', default=True, saved=True,
+            has_override=False, effective=True, status='effective', apply_error='',
+            timing='startup', section='', default_source='套件默认开启'))
         for field in initial['fields']:
             if field['page'] == 'window': field['section'] = ''
         for width in (760, 1040):
             with self.subTest(width=width):
                 data = self.run_window([dict(op='page', page='window'),
                     dict(op='choose', id='playlist.open-on-startup', index=1),
-                    dict(op='choose', id='playlist.include-images', index=1), dict(op='save')], initial, width=width)
+                    dict(op='choose', id='playlist.include-images', index=1),
+                    dict(op='choose', id='updates.auto-check', index=2), dict(op='save')], initial, width=width)
                 self.assertEqual(data['editor_types']['playlist.open-on-startup'], 'CheckBox')
                 self.assertIs(json.loads(data['sent'][-1][-1])['playlist.open-on-startup'], True)
                 self.assertIs(json.loads(data['sent'][-1][-1])['playlist.include-images'], True)
+                self.assertIs(json.loads(data['sent'][-1][-1])['updates.auto-check'], False)
                 self.assertEqual([command[2] for command in data['sent']], ['save'])
                 self.assertEqual(data['section_headers'], [])
                 self.assertTrue(all(data['label_content_fits'].values()), data['label_content_fits'])

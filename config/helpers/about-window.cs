@@ -102,6 +102,7 @@ public sealed class AboutWindow : Window, IDisposable
         body.Children.Add(new Border { Child = identity, BorderBrush = Color("#2B2B2B"),
             BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 0, 0, 18) });
         var versions = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        versions.Children.Add(VersionRow("mpvnet-kit", fields["package_version"]));
         versions.Children.Add(VersionRow("mpv", fields["mpv_version"]));
         versions.Children.Add(VersionRow("FFmpeg", fields["ffmpeg_version"]));
         versions.Children.Add(VersionRow("MediaInfo", fields["mediainfo_version"]));
@@ -240,6 +241,7 @@ public sealed class AboutWindow : Window, IDisposable
             catch (System.Security.SecurityException) { }
         }
         fields["host_version"] = Known(hostVersion);
+        fields["package_version"] = Known(Input(data, "package_version"));
         fields["mpv_version"] = Known(Input(data, "mpv_version"));
         fields["ffmpeg_version"] = Known(Input(data, "ffmpeg_version"));
         string mediaInfoVersion = "";
@@ -371,7 +373,7 @@ public sealed class AboutWindow : Window, IDisposable
         var result = new Dictionary<string, object>();
         foreach (var pair in fields) result[pair.Key] = pair.Value;
         result["copyright"] = CopyrightText; result["license"] = LicenseText;
-        result["text"] = "mpv.net\n版本 " + fields["host_version"] + "\nmpv " + fields["mpv_version"] +
+        result["text"] = "mpv.net\n版本 " + fields["host_version"] + "\nmpvnet-kit " + fields["package_version"] + "\nmpv " + fields["mpv_version"] +
             "\nFFmpeg " + fields["ffmpeg_version"] + "\nMediaInfo " + fields["mediainfo_version"] +
             "\n" + CopyrightText + "\n" + LicenseText + "\n文件最后修改日期\nmpv.net：" + fields["host_modified"] +
             "\nlibmpv-2.dll：" + fields["mpv_modified"] + "\nMediaInfo.dll：" + fields["mediainfo_modified"];

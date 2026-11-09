@@ -197,6 +197,16 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 ## 辅助进程与生命周期
 
+### 更新检查
+
+[update-check.lua](../config/scripts/update-check.lua)在设置快照就绪后安排本实例的一次启动检查，并持有`KitUpdate.exe -RequestPath`子进程、不可变请求和独立唤回序号文件。自动序号从0开始，手动从1开始；同实例显式打开只递增序号，将正在检查的自动会话转为手动窗口。退出中止子进程并清理本会话文件，迟到的显式打开按helper返回的`last_seen_serial`重放；媒体切换和全屏不触发或延迟检查。`updates.auto-check`属于用户设置，关闭会停止未完成的纯自动任务，重新开启用于下次启动。
+
+[update-check.cs](../config/helpers/update-check.cs)负责安装版本、固定官方Release响应、比较及跨实例检查状态；[update-host.cs](../config/helpers/update-host.cs)协调父进程、异步检查和激活序号，[update-window.cs](../config/helpers/update-window.cs)只展示结果及处理用户明确的浏览器操作。版本取实际配置目录的`.mpvnet-kit-install.json`，仅有界读取安装身份，不依赖历史备份存在，也不将此读取视为完整安装验证；开发／未知版本不自动提示或冒充最新。正式版本只接受数值三段，忽略草稿与预发布。
+
+`.mpvnet-kit-update.json`保存自动检查节流、检查结果及已提示版本，由helper按配置目录互斥并原子更新；它属于本机运行状态，不进包、不写安装收据或用户偏好。自动请求最多每24小时一次（失败也节流），手动请求可重试，并共享进行中的检查。自动弹窗仅在发现新版后显示一次，不主动激活、不暂停播放；父进程退出取消检查并关闭窗口。浏览器地址仅来自固定官方仓库及已验证的版本，既不下载包，也不调用安装器。
+
+### 关于与其他窗口
+
 关于窗口由[about-window.lua](../config/scripts/about-window.lua)持有单实例helper及两份自有临时文件：不可变JSON请求保存当前实例版本和父PID，独立序号文件传递重复打开请求。[启动器](../config/helpers/about-window.ps1)校验请求与序号路径配对，[WPF窗口](../config/helpers/about-window.cs)保留父Process对象、验证owner窗口PID，每250ms消费更大的序号并唤回；父进程退出时关闭。关闭回执携带最后处理序号，Lua仅重放窗口停止读取之后的新打开请求，清理仅限本会话文件；媒体切换不关闭窗口。菜单及稳定动作`help.about`转向新入口，原命令在快捷键模型中作为语义别名保留。
 
 版本取当前实例的`user-data/frontend/version`、`mpv-version`与`ffmpeg-version`，MediaInfo版本及各文件最后修改日期读取父进程程序所在目录。读取失败明确显示“未能读取”，不使用固定版本；原mpv.net 7.1.2关于窗的版权和GPL v2信息完整保留。自有窗口属于父播放器但不禁用播放器，不发起联网或打开外部链接；高级用户直接调用宿主底层命令仍可用。验证模式不创建句柄、计时器或显示窗口。
