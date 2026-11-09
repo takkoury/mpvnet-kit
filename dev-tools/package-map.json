@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.5.0-m3.5-preview",
+  "version": "0.6.0",
   "files": [
     {
       "source": "config/scripts/update-check.lua",
