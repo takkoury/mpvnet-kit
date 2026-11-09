@@ -372,7 +372,7 @@ public sealed partial class SettingsEditor : Window
                 if (page == "subtitles" && (f.Section == "外观" || f.Section == "字幕外观")) content.Children.Add(SubtitleExample());
             }
             var row = new Grid { MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : page == "window" ? 160 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(page == "paths" ? 154 : page == "window" ? 160 : page == "subtitles" ? 144 : 136) }); row.ColumnDefinitions.Add(new ColumnDefinition());
             var title = new Label { Content = f.Label, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; row.Children.Add(title);
             Control input; FrameworkElement control;
             if (f.Id == "slang" || f.Id == "alang") { control = LanguageControl(field, out input); }

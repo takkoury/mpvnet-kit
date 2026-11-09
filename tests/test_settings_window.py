@@ -40,7 +40,7 @@ def complete_state():
         f.update(metadata)
         result['fields'].append(f)
     add('slang', 'subtitles', '字幕语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
-    add('sub-visibility', 'subtitles', '默认显示字幕', 'boolean', True, 'next-media', section='下一媒体')
+    add('sub-visibility', 'subtitles', '打开视频时显示字幕', 'boolean', True, 'next-media', section='下一媒体')
     add('sub-font', 'subtitles', '字幕字体', 'string', 'sans-serif', 'preview', section='字幕外观')
     add('sub-pos', 'subtitles', '字幕位置', 'number', 100, 'preview', display='position', min=0, max=100, slider_min=0, slider_max=100, step=1, section='字幕外观')
     add('alang', 'audio', '音轨语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
@@ -507,6 +507,8 @@ class SettingsWindow(unittest.TestCase):
                 self.assertEqual(data['preview_visible'], page in ('subtitles', 'controlbar'))
                 self.assertTrue(data['row_alignment'])
                 self.assertTrue(data['layout_valid'])
+                if page == 'subtitles':
+                    self.assertTrue(data['label_content_fits']['sub-visibility'])
 
     def test_window_checkboxes_use_existing_page_save_flow(self):
         initial = complete_state()
