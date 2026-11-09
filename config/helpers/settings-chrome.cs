@@ -43,7 +43,9 @@ public sealed partial class SettingsEditor
         WindowStyle = WindowStyle.None;
         WindowChrome.SetWindowChrome(this, new WindowChrome {
             CaptionHeight = 36, ResizeBorderThickness = new Thickness(6),
-            GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0),
+            // A nonzero DWM frame avoids WindowChrome's rectangular HRGN,
+            // which would prevent Windows from applying its standard corners.
+            GlassFrameThickness = new Thickness(1), CornerRadius = new CornerRadius(0),
             UseAeroCaptionButtons = false
         });
         rootPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });

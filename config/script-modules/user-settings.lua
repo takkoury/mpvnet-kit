@@ -14,7 +14,7 @@ M.fields = {
     {id='ontop',page='window',label='默认置顶',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='playlist.open-on-startup',page='window',label='启动时打开播放列表',kind='boolean',default=false,timing='startup',script='playlist_controls',search_terms='播放列表 侧窗 启动 自动 打开 playlist'},
     {id='playlist.include-images',page='window',label='将图片纳入播放列表',kind='boolean',default=false,timing='next-task',script='playlist_controls',search_terms='图片 照片 动图 播放列表 目录 image playlist'},
-    {id='updates.auto-check',page='window',label='自动检查套件更新',kind='boolean',default=true,timing='startup',script='update_check',section='更新',search_terms='自动 更新 检查 配置包 下次启动 update'},
+    {id='updates.auto-check',page='window',label='自动检查更新',kind='boolean',default=true,timing='startup',script='update_check',section='更新',search_terms='自动 更新 检查 配置包 下次启动 update'},
     {id='modernz.scalewindowed',page='controlbar',label='窗口控制栏缩放',kind='number',display='percent',search_terms='控制栏大小 比例 OSC',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.scalefullscreen',page='controlbar',label='全屏控制栏缩放',kind='number',display='percent',default=1,min=0.25,max=4,slider_min=0.5,slider_max=2,step=0.05,timing='preview',section='外观',script='modernz'},
     {id='modernz.hidetimeout',page='controlbar',label='自动隐藏时间',kind='number',display='seconds',default=1.5,min=0,max=60,slider_min=0,slider_max=10,step=0.1,timing='preview',section='显示',script='modernz'},

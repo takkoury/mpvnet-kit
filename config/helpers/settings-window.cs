@@ -259,7 +259,11 @@ public sealed partial class SettingsEditor : Window
         Closed += delegate { Finish(); if (!validation && Application.Current != null) Application.Current.Shutdown(); };
         SourceInitialized += delegate {
             if (!startHidden) AttachPlayerOwner();
-            try { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); } catch { }
+            try {
+                IntPtr handle = new WindowInteropHelper(this).Handle;
+                int dark = 1; DwmSetWindowAttribute(handle, 20, ref dark, 4);
+                int round = 2; DwmSetWindowAttribute(handle, 33, ref round, 4); // Standard Windows corners, as in Playlist.
+            } catch { }
         };
         KeyDown += delegate(object sender, KeyEventArgs e) {
             if (overlayOpen) return;

@@ -130,7 +130,7 @@ $result | ConvertTo-Json -Depth 5 -Compress
                 self.assertEqual(data['resize'], 'CanResize')
                 self.assertEqual(data['caption_height'], 36)
                 self.assertEqual(data['resize_border'], 6)
-                self.assertEqual(data['glass'], 0)
+                self.assertEqual(data['glass'], 1)
                 self.assertFalse(data['aero_buttons'])
                 self.assertEqual(data['row_count'], 2)
                 self.assertEqual(data['body_row'], 1)

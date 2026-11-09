@@ -519,7 +519,7 @@ class SettingsWindow(unittest.TestCase):
             has_override=False, effective=False, status='effective', apply_error='',
             timing='next-task', section='', default_source='套件默认关闭'))
         initial['fields'].append(dict(id='updates.auto-check', page='window',
-            label='自动检查套件更新', kind='boolean', default=True, saved=True,
+            label='自动检查更新', kind='boolean', default=True, saved=True,
             has_override=False, effective=True, status='effective', apply_error='',
             timing='startup', section='', default_source='套件默认开启'))
         for field in initial['fields']:
