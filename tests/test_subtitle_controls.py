@@ -66,6 +66,12 @@ class SubtitleControls(unittest.TestCase):
     def test_subtitle_cycle_remains_independent_and_preserves_danmaku(self):
         self.run_case('subtitle_cycle_remains_independent_and_preserves_danmaku')
 
+    def test_subtitle_cycle_skips_secondary_ordinary_track(self):
+        self.run_case('subtitle_cycle_skips_secondary_ordinary_track')
+
+    def test_subtitle_delay_reports_failed_write(self):
+        self.run_case('subtitle_delay_reports_failed_write')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,6 +1,7 @@
 -- Execute the full source; these doubles supply the mpv/input host only.
 local bindings, binding_keys, forced, events, observers = {}, {}, {}, {}, {}
 local messages, commands, writes = {}, {}, {}
+local rejected_write
 local properties = {
     ['track-list'] = {{type='sub', id=1, title='Primary'},
         {type='sub', id=2, title='Bilibili Danmaku'}},
@@ -13,7 +14,12 @@ local function get(name, default)
     return default
 end
 local function set(name, value)
-    writes[#writes+1]={name,value};properties[name]=value;return true
+    writes[#writes+1]={name,value}
+    if name == rejected_write then return nil, 'error accessing property' end
+    -- mpv reports success for this write but keeps the previous sid.
+    if name == 'sid' and value == tostring(properties['secondary-sid']) then return true end
+    properties[name]=value
+    return true
 end
 local mp = {
     get_property=get, get_property_native=get, get_property_number=get, get_property_bool=get,
@@ -196,4 +202,41 @@ function subtitle_cycle_remains_independent_and_preserves_danmaku()
     eq(properties['secondary-sid'],2)
     properties['track-list']={{type='sub',id=2,title='Bilibili Danmaku'}}
     clear_output();bindings['cycle-next']();eq(#writes,0)
+end
+function subtitle_cycle_skips_secondary_ordinary_track()
+    properties['track-list']={{type='sub',id=1}, {type='sub',id=2}, {type='sub',id=3}}
+    properties['secondary-sid']='2'
+    clear_output()
+    bindings['cycle-next']();eq(properties.sid,'3')
+    bindings['cycle-prev']();eq(properties.sid,'1')
+    bindings['cycle-prev']();eq(properties.sid,'no')
+    bindings['cycle-prev']();eq(properties.sid,'3')
+    eq(#writes,4)
+    for _, write in ipairs(writes) do
+        eq(write[1],'sid');assert(write[2]~='2','attempted to select the occupied track')
+    end
+    eq(properties['secondary-sid'],'2');eq(properties['sub-visibility'],true)
+
+    properties['track-list']={{type='sub',id=2}}
+    properties.sid='no'
+    clear_output()
+    bindings['cycle-next']();bindings['cycle-prev']()
+    eq(#writes,0);eq(properties.sid,'no')
+end
+function subtitle_delay_reports_failed_write()
+    rejected_write='sub-delay'
+    for _, name in ipairs({'delay-up','delay-down','delay-reset'}) do
+        clear_output();bindings[name]()
+        eq(properties['sub-delay'],0.7)
+        eq(#messages,1);eq(messages[1][1],'字幕延迟调整失败');eq(messages[1][2],4)
+        eq(#writes,1);eq(writes[1][1],'sub-delay')
+    end
+
+    rejected_write=nil
+    clear_output();bindings['delay-up']()
+    eq(string.format('%.1f',properties['sub-delay']),'0.8')
+    eq(#messages,1);eq(messages[1][1],'字幕延迟 +0.8 秒');eq(messages[1][2],1.5)
+    clear_output();bindings['delay-reset']()
+    eq(properties['sub-delay'],0)
+    eq(#messages,1);eq(messages[1][1],'字幕延迟 +0.0 秒');eq(messages[1][2],1.5)
 end

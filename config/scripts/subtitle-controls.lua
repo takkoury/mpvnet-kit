@@ -16,10 +16,10 @@ local function status(text)
     if text then feedback_client.show(text, 'action') end
 end
 
-local function ordinary_tracks()
+local function ordinary_tracks(excluded_id)
     local tracks = {}
     for _, track in ipairs(mp.get_property_native("track-list", {})) do
-        if track.type == "sub" and track.title ~= "Bilibili Danmaku" then
+        if track.type == "sub" and track.title ~= "Bilibili Danmaku" and tostring(track.id) ~= excluded_id then
             tracks[#tracks + 1] = track
         end
     end
@@ -42,11 +42,13 @@ local function select_subtitle()
 end
 
 local function cycle_subtitle(direction)
-    local tracks = ordinary_tracks()
+    -- mpv cannot select the same track in both subtitle slots.
+    local tracks = ordinary_tracks(tostring(mp.get_property_native("secondary-sid")))
     if #tracks == 0 then return end
     local current = 0
+    local sid = tostring(mp.get_property_native("sid"))
     for i, track in ipairs(tracks) do
-        if tostring(track.id) == tostring(mp.get_property_native("sid")) then current = i; break end
+        if tostring(track.id) == sid then current = i; break end
     end
     local next_index = (current + direction) % (#tracks + 1)
     mp.set_property("sid", next_index == 0 and "no" or tostring(tracks[next_index].id))
@@ -145,7 +147,12 @@ end
 local function delay(amount)
     local value = amount and mp.get_property_number("sub-delay", 0) + amount or 0
     if math.abs(value) < 0.00001 then value = 0 end
-    mp.set_property_number("sub-delay", value)
+    local ok, err = mp.set_property_number("sub-delay", value)
+    if not ok then
+        feedback_client.show("字幕延迟调整失败", 'error')
+        mp.msg.warn("Subtitle delay write failed: " .. tostring(err))
+        return
+    end
     feedback_client.show(string.format("字幕延迟 %+.1f 秒", value), 'action')
 end
 
