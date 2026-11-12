@@ -40,6 +40,7 @@ PROFILES = {
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',
         'test_control_tooltips.ControlTooltips', 'test_enhancement_controls.EnhancementControls',
         'test_enhancement_controls.ModernzEnhancementFooter',
+        'test_motion_controls.MotionControls',
         'test_feedback_client.FeedbackClient', 'test_feedback_osd.FeedbackOSD',
         'test_failure_feedback.PlaybackEndFeedback', 'test_failure_feedback.FailureFeedback',
         'test_failure_feedback.VideoRestore',

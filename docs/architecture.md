@@ -259,6 +259,12 @@ Playlist普通侧窗通过`DWMWA_WINDOW_CORNER_PREFERENCE=DWMWCP_ROUND`请求Win
 
 DLL 是可重建的受管运行资产，源码和源码摘要随变更一并校验；普通包构建不执行 SDK。更新它沿用安装器的播放器运行检查、摘要、备份和还原，不写个人设置。真实跨 DPI、边缘翻转与键鼠焦点须单独验收；读取显示器 DPI 并不等于通过这些验收。
 
+## 原生运动模式
+
+`motion-controls.lua`持有`motion.default-mode`的启动快照和实例内临时选择，通过`set-mode OFF|DISPLAY|BLEND`接收意图，发布`user-data/mpvnet/motion`。仅管理每媒体的`video-sync`与`interpolation`，在`on_preloaded`记录基础值，应用时回读完整组合，失败尝试恢复；不修改硬解、刷新率、tscale或其他画质属性。OFF恢复该媒体基准；输出不适用时回到基准并保留意图，后续适用媒体重新应用。
+
+保存只定义新实例的初始选择，首次读取失败后修复不改变本实例，已经成功的手动选择优先于迟到的首次快照。外部修改受控选项时撤销不再成立的applied状态并保留外部值，不自动夺回；下一媒体仍使用实例意图。`display_sync_active`直接回读核心并与applied分开，不能把选择模式等同于每帧实际混合。设置窗口仅增加元数据字段，沿用已编译的通用控件。
+
 ## 验证层次
 
 Python 回归使用标准库，Lua 回归执行实际脚本并提供 mpv 替身；Windows helper 检查覆盖真实存储、控件或合成安装目录。字体替身、控件事件、真实播放器运行和用户体验分别提供不同证据，不能互相替代。测试组、环境条件及允许跳过的项目统一见[测试说明](../tests/README.md)。

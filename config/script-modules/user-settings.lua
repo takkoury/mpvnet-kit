@@ -28,6 +28,10 @@ M.fields = {
             {value='OFF',label='原始画面'},{value='QUALITY',label='高质量缩放'},{value='SMOOTH',label='去色带'},
             {value='ANIME_LIGHT',label='Anime4K-L'},{value='ANIME_STRONG',label='Anime4K-S'},
         }},
+    {id='motion.default-mode',page='picture',label='启动运动模式',kind='choice',default='OFF',timing='startup',section='运动',
+        script='motion_controls',search_terms='默认 运动 同步 流畅 帧混合 插值',choices={
+            {value='OFF',label='沿用原始设置'},{value='DISPLAY',label='显示同步'},{value='BLEND',label='显示同步与帧混合'},
+        }},
     {id='hwdec',page='decoding',label='视频解码方式',kind='choice',default='auto-safe',choices={{value='auto-safe',label='自动使用硬件加速'},{value='no',label='仅使用软件解码'}},timing='next-media',script='settings_options',search_terms='硬件解码 硬解 软件 解码 hwdec'},
 }
 M.path_fields = {'capture_root','ffmpeg_path','python_path','mpv_path'}

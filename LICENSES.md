@@ -94,6 +94,7 @@
 - `config/script-opts/thumbfast.conf`
 - `config/scripts/capture-controls.lua`
 - `config/scripts/enhancement-controls.lua`
+- `config/scripts/motion-controls.lua`
 - `config/scripts/feedback-osd.lua`
 - `config/script-modules/feedback.lua`
 - `config/scripts/playback-feedback.lua`

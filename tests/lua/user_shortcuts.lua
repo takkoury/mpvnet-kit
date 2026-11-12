@@ -316,6 +316,7 @@ function project_catalog_coverage()
     for command,id in pairs(expected) do eq(assert(catalog.by_command[command],command).id,id) end
     for _,value in ipairs({'0.5','0.75','1','1.25','1.5','2'}) do assert(catalog.by_command['script-message-to playback_feedback set-speed '..value]) end
     for _,value in ipairs({'OFF','QUALITY','SMOOTH','ANIME_LIGHT','ANIME_STRONG'}) do assert(catalog.by_command['script-message-to enhancement_controls set-preset '..value]) end
+    for _,value in ipairs({'OFF','DISPLAY','BLEND'}) do assert(catalog.by_command['script-message-to motion_controls set-mode '..value]) end
     for _,value in ipairs({'webp','gif','mp4'}) do assert(catalog.by_command['script-message-to capture_controls set-default-format '..value]) end
     for _,entry in ipairs(catalog.actions) do
         if entry.command:match('^script%-binding select/') or entry.id=='subtitle.select' or entry.id=='tools.native-input-editor'
