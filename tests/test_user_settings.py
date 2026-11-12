@@ -64,6 +64,7 @@ class UserSettings(unittest.TestCase):
             ('CONTROLLER SOURCE', 'config/scripts/user-settings.lua'),
             ('SUBTITLE SOURCE', 'config/scripts/subtitle-controls.lua'),
             ('OPTIONS SOURCE', 'config/scripts/settings-options.lua'),
+            ('ENHANCEMENT SOURCE', 'config/scripts/enhancement-controls.lua'),
         ):
             cls.source = cls.source.replace('-- ' + marker, (ROOT / path).read_text(encoding='utf-8'))
         modernz = (ROOT / 'config/scripts/modernz.lua').read_text(encoding='utf-8')
@@ -82,6 +83,12 @@ class UserSettings(unittest.TestCase):
 
     def test_raw_patch_preserves_unknown_fields_shortcuts_and_other_pages(self):
         self.run_case('raw_patch_preserves_other_pages_and_unknowns')
+
+    def test_saved_picture_preset_changes_only_new_instances(self):
+        self.run_case('saved_picture_preset_changes_only_new_instances')
+
+    def test_unreadable_picture_startup_does_not_adopt_later_repair(self):
+        self.run_case('unreadable_picture_startup_does_not_adopt_later_repair')
 
     def test_editor_refresh_reads_external_without_writing_or_changing_session(self):
         self.run_case('editor_refresh_reads_external_without_writing_or_changing_session')

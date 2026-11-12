@@ -18,6 +18,8 @@ class EnhancementControls(unittest.TestCase):
         cls.lua = load_lua51()
         prelude, cases = (ROOT / 'tests/lua/enhancement_controls.lua').read_text(encoding='utf-8').split(
             '-- COMPLETE SOURCE IS INSERTED HERE\n', 1)
+        prelude = prelude.replace('-- SETTINGS MODEL IS INSERTED HERE',
+                                  (ROOT / 'config/script-modules/user-settings.lua').read_text(encoding='utf-8'))
         cls.source = '\n'.join([
             'local feedback_module = ' + feedback_module(), prelude,
             SCRIPT.read_text(encoding='utf-8'), cases,
@@ -25,6 +27,12 @@ class EnhancementControls(unittest.TestCase):
 
     def run_case(self, case):
         self.lua.execute(self.source + '\n' + case + '()', name='enhancement/' + case)
+
+    def test_late_startup_preset_rechecks_media_availability(self):
+        self.run_case('late_startup_preset_rechecks_media_availability')
+
+    def test_manual_preset_wins_over_late_startup_preset(self):
+        self.run_case('manual_preset_wins_over_late_startup_preset')
 
     def test_initialization_and_no_video_reasons(self):
         self.run_case('initialization_and_no_video_reasons')

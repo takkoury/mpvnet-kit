@@ -23,11 +23,16 @@ M.fields = {
     {id='modernz.timecurrent',page='controlbar',label='显示当前时间',kind='boolean',default=true,timing='preview',section='时间',script='modernz'},
     {id='modernz.timems',page='controlbar',label='显示毫秒',kind='boolean',default=false,timing='preview',section='时间',script='modernz'},
     {id='modernz.persistent_progress',page='controlbar',label='进度条常驻',kind='boolean',default=false,timing='preview',section='显示',script='modernz',search_terms='常驻进度线 进度条'},
+    {id='enhancement.default-preset',page='picture',label='启动画质预设',kind='choice',default='OFF',timing='startup',section='画质',
+        script='enhancement_controls',search_terms='默认 画质 增强 缩放 去色带 Anime4K',choices={
+            {value='OFF',label='原始画面'},{value='QUALITY',label='高质量缩放'},{value='SMOOTH',label='去色带'},
+            {value='ANIME_LIGHT',label='Anime4K-L'},{value='ANIME_STRONG',label='Anime4K-S'},
+        }},
     {id='hwdec',page='decoding',label='视频解码方式',kind='choice',default='auto-safe',choices={{value='auto-safe',label='自动使用硬件加速'},{value='no',label='仅使用软件解码'}},timing='next-media',script='settings_options',search_terms='硬件解码 硬解 软件 解码 hwdec'},
 }
 M.path_fields = {'capture_root','ffmpeg_path','python_path','mpv_path'}
 M.pages = {{id='subtitles',label='字幕'},{id='audio',label='声音与音轨'},{id='window',label='窗口'},
-    {id='controlbar',label='控制栏'},{id='decoding',label='解码'},{id='paths',label='本机路径'},
+    {id='controlbar',label='控制栏'},{id='picture',label='画面'},{id='decoding',label='解码'},{id='paths',label='本机路径'},
     {id='shortcuts',label='快捷键',action_only=true},{id='advanced',label='高级',action_only=true}}
 M.actions = {{id='shortcuts.open',page='shortcuts',label='编辑用户快捷键',search_terms='录键 冲突 恢复 键位'},
     {id='edit.mpv.conf',page='advanced',label='编辑 mpv.conf',search_terms='高级 播放器配置'},

@@ -39,8 +39,8 @@ public sealed class SettingsDraft
     public readonly Dictionary<string, Field> Fields = new Dictionary<string, Field>();
     public readonly Dictionary<string, string> Revisions = new Dictionary<string, string>();
     readonly Dictionary<string, string> observedRevisions = new Dictionary<string, string>();
-    public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "decoding", "paths", "shortcuts", "advanced" };
-    public static readonly string[] PageNames = { "字幕", "声音与音轨", "窗口", "控制栏", "解码", "输出与组件", "快捷键", "高级" };
+    public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "picture", "decoding", "paths", "shortcuts", "advanced" };
+    public static readonly string[] PageNames = { "字幕", "声音与音轨", "窗口", "控制栏", "画面", "解码", "输出与组件", "快捷键", "高级" };
     public static string PageName(string page) { int i = Array.IndexOf(Pages, page); return i < 0 ? page : PageNames[i]; }
     public static string Text(object value) { return value == null ? "" : value is bool ? ((bool)value ? "true" : "false") : Convert.ToString(value, CultureInfo.InvariantCulture); }
     public static string Str(Dictionary<string, object> data, string key) { object v; return data.TryGetValue(key, out v) ? Text(v) : ""; }

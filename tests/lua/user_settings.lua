@@ -57,7 +57,12 @@ local function instance(pid,order,startup_options)
     for id,value in pairs(startup_options or {}) do host.properties[id]=value end
     local script
     local timeouts={}
-    local function get(name,fallback) local value=host.properties[name];if value~=nil then return value end;return fallback end
+    local function get(name,fallback)
+        local value=host.properties[name]
+        if value==nil then value=host.properties[name:match('^options/(.+)$')] end
+        if value~=nil then return value end
+        return fallback
+    end
     local function set(name,value)
         host.writes[#host.writes+1]={name,value}
         local option=name:match('^file%-local%-options/(.+)$')
@@ -106,6 +111,8 @@ local function instance(pid,order,startup_options)
             timeouts[#timeouts+1]=timer
             return timer
         end,
+        enable_messages=function() end,
+        del_property=function(name) host.properties[name]=nil end,
         osd_message=function(text,duration) host.osd[#host.osd+1]=text;host.osd_durations[#host.osd_durations+1]=duration end,msg={warn=function() end},
     }
     host.set=set
@@ -117,7 +124,9 @@ local function instance(pid,order,startup_options)
         end
     end
     function host.hook(name) for _,callback in ipairs(host.hooks[name] or {}) do callback() end end
-    function host.media() host.event('end-file');host.event('start-file');host.hook('on_load');host.event('file-loaded') end
+    function host.media()
+        host.event('end-file');host.event('start-file');host.hook('on_load');host.hook('on_preloaded');host.event('file-loaded')
+    end
     function host.poll() for _,callback in ipairs(host.timers) do callback() end end
     function host.prepare()
         local pending=timeouts;timeouts={}
@@ -132,6 +141,7 @@ local function instance(pid,order,startup_options)
         script=name
         package.loaded['mp'],package.loaded['mp.utils']=mp,utils
         package.loaded['mp.input']={select=function() end}
+        package.loaded['mp.msg']={error=function() end}
         package.loaded['mp.options']={read_options=function(values)
             for line in ((files[local_path] or '')..'\n'):gmatch('(.-)\n') do
                 local name,value=line:gsub('\r$',''):match('^([^=#]+)=(.*)$')
@@ -160,6 +170,13 @@ local function instance(pid,order,startup_options)
         elseif name=='settings_options' then
             (function()
 -- OPTIONS SOURCE
+            end)()
+        elseif name=='enhancement_controls' then
+            local defaults={scale='bilinear',dscale=0,cscale=0,['scale-antiring']=0,deband=false,
+                ['deband-iterations']=2,['deband-threshold']=48,['deband-range']=12,['deband-grain']=3,['glsl-shaders']={}}
+            for key,value in pairs(defaults) do if get(key)==nil then host.properties[key]=value end end
+            (function()
+-- ENHANCEMENT SOURCE
             end)()
         elseif name=='modernz' then
             local user_opts={scalewindowed=1.1,scalefullscreen=1,hidetimeout=1500,keeponpause='no',chapter_fmt='Chapter %s',timecurrent=true,timems=false,persistent_progress=false,showonpause=true}
@@ -666,7 +683,7 @@ function typed_values_and_raw_page_patch()
 end
 function all_fields_publish_their_type_timing_and_page()
     local host=instance(71)
-    eq(#host.state().fields,#model.fields+#model.path_fields);eq(#host.state().pages,8);eq(#host.state().actions,5)
+    eq(#host.state().fields,#model.fields+#model.path_fields);eq(#host.state().pages,9);eq(#host.state().actions,5)
     for _,field in ipairs(host.state().fields) do
         assert(field.kind=='number' or field.kind=='string' or field.kind=='boolean' or field.kind=='choice')
         assert(field.timing and field.default~=nil and field.saved~=nil and field.status)
@@ -674,8 +691,63 @@ function all_fields_publish_their_type_timing_and_page()
     end
     local startup=host.field('playlist.open-on-startup')
     eq(startup.page,'window');eq(startup.kind,'boolean');eq(startup.default,false);eq(startup.timing,'startup')
+    local picture=host.field('enhancement.default-preset')
+    eq(picture.page,'picture');eq(picture.section,'画质');eq(picture.kind,'choice');eq(picture.default,'OFF');eq(picture.timing,'startup')
+    local presets={};for _,choice in ipairs(picture.choices) do presets[#presets+1]=choice.value end
+    eq(table.concat(presets,','),'OFF,QUALITY,SMOOTH,ANIME_LIGHT,ANIME_STRONG')
+    assert(not model.proposed('picture','{"enhancement.default-preset":"RAVU"}',decode,parser))
     eq(host.field('mute').default,true);eq(host.field('modernz.timems').default,false)
     eq(host.field('modernz.timems').saved,false);eq(host.field('sub-pos').display,'position')
+end
+
+function saved_picture_preset_changes_only_new_instances()
+    local id='enhancement.default-preset'
+    local state='user-data/mpvnet/enhancement'
+    local video={['current-vo']='gpu-next',['video-params']={gamma='bt.1886'}}
+    local future='"future":{"exact":9007199254740993}'
+    files[user_path]='{"schema":1,"settings":{'..future..',"hwdec":"auto-safe"},"extra":1e99}'
+    local current=instance(180,{'user_settings','enhancement_controls'},video)
+    local other=instance(181,{'enhancement_controls','user_settings'},video)
+    current.media();current.open()
+    eq(current.properties[state].applied,'OFF');eq(other.properties[state].applied,'OFF')
+    current.messages.enhancement_controls['set-preset']('SMOOTH')
+    save(current,'picture','{"enhancement.default-preset":"QUALITY"}');writer('writer-ok')
+    other.poll();current.media();other.media()
+    for _,host in ipairs({current,other}) do
+        eq(host.field(id).saved,'QUALITY');eq(host.field(id).effective,'OFF');eq(host.field(id).status,'pending-startup')
+    end
+    eq(current.properties[state].applied,'SMOOTH');eq(other.properties[state].applied,'OFF')
+    assert(files[user_path]:find(future,1,true));assert(files[user_path]:find('"extra":1e99',1,true))
+    eq(model.document(files[user_path],decode,parser).values.hwdec,'auto-safe')
+    local next_host=instance(182,{'user_settings','enhancement_controls'},video)
+    eq(next_host.properties[state].desired,'QUALITY');eq(next_host.properties.scale,'bilinear')
+    next_host.media();eq(next_host.properties[state].applied,'QUALITY');eq(next_host.properties.scale,'ewa_lanczos')
+    eq(next_host.field(id).effective,'QUALITY');eq(next_host.field(id).status,'effective')
+    local saved=files[user_path]
+    next_host.messages.enhancement_controls['set-preset']('OFF')
+    next_host.media();eq(next_host.properties[state].applied,'OFF');eq(next_host.properties.scale,'bilinear')
+    eq(next_host.field(id).effective,'QUALITY');eq(files[user_path],saved)
+    next_host.open();save(next_host,'picture','{"enhancement.default-preset":"OFF"}');writer('writer-ok')
+    eq(model.document(files[user_path],decode,parser).values[id],'OFF')
+end
+
+function unreadable_picture_startup_does_not_adopt_later_repair()
+    local id='enhancement.default-preset'
+    local state='user-data/mpvnet/enhancement'
+    local video={['current-vo']='gpu-next',['video-params']={gamma='bt.1886'}}
+    files[user_path]='{"schema":1,"settings":{"enhancement.default-preset":"SMOOTH"}}'
+    read_failure=true
+    local host=instance(183,{'user_settings'},video)
+    read_failure=false;host.poll()
+    host.load('enhancement_controls')
+    host.media()
+    eq(host.field(id).saved,'SMOOTH');eq(host.field(id).effective,'OFF');eq(host.field(id).status,'pending-startup')
+    eq(host.properties[state].desired,'OFF');eq(host.properties[state].applied,'OFF')
+    local next_host=instance(184,{'enhancement_controls'},video)
+    next_host.defer=true;next_host.load('user_settings')
+    eq(next_host.properties[state].desired,'OFF')
+    next_host.media();eq(next_host.properties[state].applied,'SMOOTH')
+    next_host.flush();eq(next_host.properties[state].applied,'SMOOTH')
 end
 function multiple_preview_fields_restore_independently()
     local host=instance(72);local token=host.open()

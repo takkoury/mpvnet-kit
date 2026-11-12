@@ -53,12 +53,17 @@ def complete_state():
     add('modernz.keeponpause', 'controlbar', '暂停时显示', 'choice', 'bottombar', 'preview', choices=[dict(value='no', label='不保持'), dict(value='bottombar', label='显示控制栏'), dict(value='both', label='显示全部')])
     for key, label in [('chapter_fmt', '显示章节标题'), ('timecurrent', '显示当前时间'), ('timems', '时间显示毫秒'), ('persistent_progress', '常驻进度线')]:
         add('modernz.' + key, 'controlbar', label, 'boolean', False, 'preview')
+    add('enhancement.default-preset', 'picture', '启动画质预设', 'choice', 'OFF', 'startup', section='画质',
+        choices=[dict(value='OFF', label='原始画面'), dict(value='QUALITY', label='高质量缩放'),
+                 dict(value='SMOOTH', label='去色带'), dict(value='ANIME_LIGHT', label='Anime4K-L'),
+                 dict(value='ANIME_STRONG', label='Anime4K-S')])
     add('hwdec', 'decoding', '硬件解码', 'choice', 'auto-copy', 'next-media', choices=[dict(value='auto-safe', label='自动安全硬解'), dict(value='no', label='关闭硬解')])
     for f in result['fields']:
         if f['page'] == 'paths': f.update(kind='string', timing='next-task' if f['id'] == 'capture_root' else 'restart', section='输出目录' if f['id'] == 'capture_root' else '外部程序')
     order = ['slang', 'sub-visibility', 'sub-font', 'sub-pos', 'sub-scale', 'alang', 'volume', 'mute', 'fullscreen', 'ontop',
              'modernz.scalewindowed', 'modernz.scalefullscreen', 'modernz.hidetimeout', 'modernz.keeponpause', 'modernz.chapter_fmt',
-             'modernz.persistent_progress', 'modernz.timecurrent', 'modernz.timems', 'hwdec', 'capture_root', 'ffmpeg_path', 'python_path', 'mpv_path']
+             'modernz.persistent_progress', 'modernz.timecurrent', 'modernz.timems', 'enhancement.default-preset',
+             'hwdec', 'capture_root', 'ffmpeg_path', 'python_path', 'mpv_path']
     result['fields'].sort(key=lambda field: order.index(field['id']))
     return result
 
@@ -497,6 +502,7 @@ class SettingsWindow(unittest.TestCase):
             'audio': {'alang': 'Button', 'volume': 'SettingsSlider', 'mute': 'CheckBox'},
             'window': {'fullscreen': 'CheckBox', 'ontop': 'CheckBox'},
             'controlbar': {'modernz.hidetimeout': 'SettingsSlider', 'modernz.keeponpause': 'ComboBox', 'modernz.timems': 'CheckBox'},
+            'picture': {'enhancement.default-preset': 'ComboBox'},
             'decoding': {'hwdec': 'ComboBox'}, 'paths': {'capture_root': 'TextBox'}, 'shortcuts': {}, 'advanced': {}
         }
         for page, controls in expected.items():
@@ -509,6 +515,19 @@ class SettingsWindow(unittest.TestCase):
                 self.assertTrue(data['layout_valid'])
                 if page == 'subtitles':
                     self.assertTrue(data['label_content_fits']['sub-visibility'])
+
+    def test_picture_preset_uses_page_save_without_preview(self):
+        field = 'enhancement.default-preset'
+        data = self.run_window([dict(op='page', page='picture'), dict(op='choose', id=field, index=2),
+                                dict(op='save')], complete_state(), width=760, height=600)
+        self.assertEqual(data['page'], 'picture')
+        self.assertEqual(data['section_headers'], ['画质'])
+        self.assertEqual(data['editor_types'], {field: 'ComboBox'})
+        self.assertTrue(data['label_content_fits'][field])
+        self.assertTrue(data['layout_valid'])
+        self.assertEqual([command[2] for command in data['sent']], ['save'])
+        self.assertEqual(data['sent'][0][-2], 'picture')
+        self.assertEqual(json.loads(data['sent'][0][-1]), {field: 'QUALITY'})
 
     def test_window_checkboxes_use_existing_page_save_flow(self):
         initial = complete_state()

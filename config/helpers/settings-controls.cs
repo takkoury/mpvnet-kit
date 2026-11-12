@@ -167,7 +167,7 @@ public sealed partial class SettingsEditor
     }
     object NavigationContent(string id, bool dirty)
     {
-        string[] glyphs = { "\uE8D2", "\uE767", "\uE737", "\uE713", "\uE7F4", "\uE8B7", "\uE765", "\uE713" };
+        string[] glyphs = { "\uE8D2", "\uE767", "\uE737", "\uE713", "\uE714", "\uE7F4", "\uE8B7", "\uE765", "\uE713" };
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(new TextBlock { Text = glyphs[Array.IndexOf(SettingsDraft.Pages,id)], FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 14, Width = 24, VerticalAlignment = VerticalAlignment.Center });
         panel.Children.Add(new TextBlock { Text = SettingsDraft.PageName(id) + (dirty ? " •" : ""), VerticalAlignment = VerticalAlignment.Center }); return panel;

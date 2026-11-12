@@ -27,7 +27,10 @@ local host = {
     end,
     command_native = function(args) assert(args[1] == 'expand-path'); return args[2] end,
     osd_message = function(text, duration) messages[#messages + 1] = {text, duration} end,
-    register_event = function(name, callback) events[name] = callback end,
+    register_event = function(name, callback)
+        local previous = events[name]
+        events[name] = function(...) if previous then previous(...) end; callback(...) end
+    end,
     add_hook = function(name, _, callback) hooks[name] = callback end,
     observe_property = function(name, _, callback) observers[name] = callback end,
     register_script_message = function(name, callback) script_messages[name] = callback end,
@@ -40,9 +43,13 @@ package.preload['mp.utils'] = function() return {file_info = function(path)
 end} end
 package.preload['mp.options'] = function() return {read_options = function(value) value.anime_verified = verified end} end
 package.preload['mp.msg'] = function() return {error = function() end} end
+local settings_model = (function()
+-- SETTINGS MODEL IS INSERTED HERE
+end)()
 local function dofile(path)
-    assert(path == '~~/script-modules/feedback.lua', 'unexpected dofile '..path)
-    return feedback_module
+    if path == '~~/script-modules/feedback.lua' then return feedback_module end
+    if path == '~~/script-modules/user-settings.lua' then return settings_model end
+    error('unexpected dofile '..path)
 end
 
 -- COMPLETE SOURCE IS INSERTED HERE
@@ -62,6 +69,32 @@ local function change(name, value) properties[name] = value; observers[name](nam
 local function reason(name) return current().unavailable_reasons[name] end
 local function check_message(text, duration)
     eq(messages[#messages][1], text); eq(messages[#messages][2], duration or 4, 'feedback duration')
+end
+
+function late_startup_preset_rechecks_media_availability()
+    load_file({gamma = 'pq'})
+    local id = 'enhancement.default-preset'
+    local startup = {available = true, values = {[id] = 'ANIME_LIGHT'}}
+    change('user-data/mpvnet/settings-values', {schema = 1, startup = startup, values = {[id] = 'QUALITY'}})
+    eq(current().desired, 'ANIME_LIGHT'); eq(current().applied, 'OFF')
+    eq(current().error_reason, 'hdr_source'); eq(#writes, 0); eq(#messages, 0)
+    load_file({gamma = 'bt.1886'})
+    eq(current().desired, 'ANIME_LIGHT'); eq(current().applied, 'ANIME_LIGHT')
+    eq(#properties['options/glsl-shaders'], 6); eq(#messages, 0)
+    local count = #writes
+    change('user-data/mpvnet/settings-values', {schema = 1, startup = startup, values = {[id] = 'SMOOTH'}})
+    eq(current().applied, 'ANIME_LIGHT'); eq(#writes, count)
+end
+
+function manual_preset_wins_over_late_startup_preset()
+    load_file()
+    select('OFF')
+    local count = #writes
+    local values = {['enhancement.default-preset'] = 'SMOOTH'}
+    change('user-data/mpvnet/settings-values', {schema = 1, startup = {available = true, values = values}, values = values})
+    eq(current().desired, 'OFF'); eq(current().applied, 'OFF'); eq(#writes, count)
+    load_file()
+    eq(current().desired, 'OFF'); eq(current().applied, 'OFF'); eq(#writes, count)
 end
 
 function initialization_and_no_video_reasons()

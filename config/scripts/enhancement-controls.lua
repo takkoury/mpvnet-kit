@@ -2,6 +2,7 @@
 local mp = require('mp')
 local utils = require('mp.utils')
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
+local settings = dofile(mp.command_native({'expand-path', '~~/script-modules/user-settings.lua'}))
 
 local options = require('mp.options')
 local msg = require('mp.msg')
@@ -18,9 +19,11 @@ local chains = {
         'Anime4K_Upscale_CNN_x2_VL.glsl', 'Anime4K_AutoDownscalePre_x2.glsl',
         'Anime4K_AutoDownscalePre_x4.glsl', 'Anime4K_Upscale_CNN_x2_M.glsl'},
 }
-local labels = {OFF = '原始画面', QUALITY = '高质量缩放', SMOOTH = '去色带', ANIME_LIGHT = 'Anime4K-L',
-    ANIME_STRONG = 'Anime4K-S'}
-local desired, applied, baseline = 'OFF', 'OFF', nil
+local preset_field = settings.field('enhancement.default-preset')
+local labels = {}
+for _, choice in ipairs(preset_field.choices) do labels[choice.value] = choice.label end
+local startup_preset, manually_selected = preset_field.default, false
+local desired, applied, baseline = startup_preset, 'OFF', nil
 local ready, last_error, shutting_down = false, nil, false
 local error_reason, error_preset = nil, nil
 local reason_text = {
@@ -168,7 +171,7 @@ local function apply(name, quiet, remember)
     end
     applied, last_error = name, nil
     error_reason, error_preset = nil, nil
-    if remember then desired = name end
+    if remember then desired, manually_selected = name, true end
     publish()
     if not quiet then feedback(name == 'OFF' and '画面设置已还原' or ('已选择' .. labels[name]), 'success') end
     return true
@@ -239,3 +242,18 @@ mp.register_event('shutdown', function()
     mp.del_property('user-data/mpvnet/enhancement')
 end)
 publish()
+
+settings.owner(mp, {
+    id=preset_field.id, initialize_on_ready=true, default_source='套件默认原始画面',
+    -- Effective here is this instance's startup choice, independent of media
+    -- availability and temporary choices in the enhancement menu.
+    read=function() return startup_preset end,
+    write=function(value)
+        startup_preset = value
+        if not manually_selected then
+            desired = value
+            if ready and desired ~= 'OFF' then apply(desired, true, false) else publish() end
+        end
+        return true
+    end,
+})

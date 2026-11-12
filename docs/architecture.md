@@ -135,7 +135,7 @@ LRC沿原生按整数秒定位，清理HTML/ASS文本格式及绘图，按时间
 
 ### 常用设置基础
 
-[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供八类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。高级配置编辑器和原生快捷键编辑器仍由宿主承载。
+[user-settings 模型](../config/script-modules/user-settings.lua)、[控制层](../config/scripts/user-settings.lua)和 [WPF 窗口](../config/helpers/settings-window.cs)提供九类常用设置及工具入口，完整清单和生效规则见[配置说明](configuration.md#常用设置)。`user_settings/open` 对应“工具与设置 > 常用设置…”及稳定动作 `tools.settings-editor`，不新增默认按键。高级配置编辑器和原生快捷键编辑器仍由宿主承载。
 
 `mpvnet-user.json` 继续使用 schema 1 和平面 `settings` 对象。字段类型、数值范围、选项、搜索词、分组和时机由 Lua 模型定义；窗口按元数据构造控件并持各页草稿和载入 revision。模型复用原文 JSON 解析器，只替换本页字段，其他域和未知值保留原文。false、0、空字符串是显式值，保存请求中的 null 表示删除覆盖；新字段即使等于当前默认也保留显式选择，只有原有两项缩放继续沿用等默认省略的兼容行为。恢复默认先改草稿，保存后删除覆盖，不写受管配置。
 
@@ -189,7 +189,9 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 本机路径整页请求先按原文解析值计算实际变更，只校验新写入的非空值；未改的UNC／空值行和未知行保留原字节。此规则不放宽配置目标或新路径的安全检查。窗口的IPC命令采集只在ValidateOnly模式分配，正常模式直接发送，避免预览续期累积测试数据。
 
-播放实例的临时状态与这些长期配置分开。增强选择和导出格式可跨媒体保留，但不跨重启；字幕调整和标记遵从媒体生命周期。观看记录、未知文件和第三方组件数据也不因配置包更新而自动纳管。
+播放实例的临时状态与这些长期配置分开。增强临时选择和导出格式可跨媒体保留，但不自动跨重启；字幕调整和标记遵从媒体生命周期。观看记录、未知文件和第三方组件数据也不因配置包更新而自动纳管。
+
+画面页的`enhancement.default-preset`复用schema 1用户设置，只有现有五档稳定ID。增强模块通过`initialize_on_ready`消费设置控制层不可变的首次读取快照，持有本实例启动选择；保存、修复首次失败的配置和其他实例同步均只影响后续实例。启动快照晚于首媒体时可应用一次，但不覆盖已经成功的手动选择。设置的有效值表示本实例启动选择，播放中的实际效果仍由`user-data/mpvnet/enhancement`的desired、applied与available表示；HDR禁用、媒体基准和错误恢复沿既有实现。
 
 安装计划绑定目标目录、包内容、受管文件和恢复记录。统一维护入口的 `Apply`、`Restore`、`Recover` 都要求本次预览的校验值，持锁后再次核对。写入前保存真实备份与日志；恢复只接受日志中记录的操作前后字节，额外修改会阻止恢复。哈希用于一致性检查，不提供对恶意重写整套本地记录的认证。
 
