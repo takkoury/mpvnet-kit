@@ -289,3 +289,24 @@ function external_option_change_clears_applied_without_writing()
     load_video()
     eq(current().applied, 'BLEND'); check_options('display-resample', true)
 end
+
+function external_option_change_survives_output_observer_arriving_first()
+    load_video(); select('BLEND')
+    local write_count = #writes
+    properties['options/interpolation'] = false -- Option notification still queued.
+    change('current-vo', 'direct3d')
+    observers['options/interpolation']('options/interpolation', false)
+    change('current-vo', 'gpu')
+    eq(current().error_reason, 'options_changed'); eq(current().applied, nil)
+    eq(current().desired, 'BLEND'); eq(#writes, write_count)
+    check_options('display-resample', false)
+end
+
+function output_loss_does_not_restore_without_reading_current_options()
+    load_video(); select('BLEND')
+    local write_count = #writes
+    read_failure = 'options/interpolation'
+    change('current-vo', 'direct3d')
+    eq(current().error_reason, 'read_failed'); eq(current().applied, nil)
+    eq(current().desired, 'BLEND'); eq(#writes, write_count)
+end

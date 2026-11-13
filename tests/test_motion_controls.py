@@ -57,3 +57,9 @@ class MotionControls(unittest.TestCase):
 
     def test_external_option_change_clears_applied_without_writing(self):
         self.run_case('external_option_change_clears_applied_without_writing')
+
+    def test_external_option_change_survives_output_observer_arriving_first(self):
+        self.run_case('external_option_change_survives_output_observer_arriving_first')
+
+    def test_output_loss_does_not_restore_without_reading_current_options(self):
+        self.run_case('output_loss_does_not_restore_without_reading_current_options')

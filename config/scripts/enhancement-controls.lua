@@ -140,7 +140,7 @@ local function write_group(values)
     return true
 end
 
-local function apply(name, quiet, remember)
+local function apply(name, quiet)
     local available, reasons = availability()
     if not available[name] then
         last_error = 'Preset unavailable: ' .. tostring(name)
@@ -171,7 +171,7 @@ local function apply(name, quiet, remember)
     end
     applied, last_error = name, nil
     error_reason, error_preset = nil, nil
-    if remember then desired, manually_selected = name, true end
+    if not quiet then desired, manually_selected = name, true end
     publish()
     if not quiet then feedback(name == 'OFF' and '画面设置已还原' or ('已选择' .. labels[name]), 'success') end
     return true
@@ -180,7 +180,7 @@ end
 mp.register_script_message('set-preset', function(name)
     name = tostring(name or ''):upper()
     if not labels[name] then feedback(reason_text.unavailable, 'error'); return end
-    apply(name, false, true)
+    apply(name, false)
 end)
 
 mp.register_event('start-file', function()
@@ -198,7 +198,7 @@ mp.register_event('file-loaded', function()
     applied = ready and 'OFF' or nil
     -- Fresh files get a fresh baseline after mpv's previous file-local reset.
     -- Preserve the desired instance preset even when this file lacks a GPU VO.
-    if ready and desired ~= 'OFF' then apply(desired, true, false) else publish() end
+    if ready and desired ~= 'OFF' then apply(desired, true) else publish() end
 end)
 local function refresh_availability()
     local available, reasons = availability()
@@ -209,8 +209,8 @@ local function refresh_availability()
         error_reason, error_preset = restored and reasons[previous] or 'rollback_failed', previous
         last_error = restored and reason_text[error_reason] or tostring(err)
         publish()
-    elseif ready and desired ~= 'OFF' and applied == 'OFF' and availability()[desired] then
-        apply(desired, true, false)
+    elseif ready and desired ~= 'OFF' and applied == 'OFF' and available[desired] then
+        apply(desired, true)
     else publish() end
 end
 mp.observe_property('current-vo', 'string', refresh_availability)
@@ -252,7 +252,7 @@ settings.owner(mp, {
         startup_preset = value
         if not manually_selected then
             desired = value
-            if ready and desired ~= 'OFF' then apply(desired, true, false) else publish() end
+            if ready and desired ~= 'OFF' then apply(desired, true) else publish() end
         end
         return true
     end,

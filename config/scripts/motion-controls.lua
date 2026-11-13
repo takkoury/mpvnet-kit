@@ -24,7 +24,7 @@ local reason_text = {
 
 local startup_mode, manually_selected = field.default, false
 local desired, applied, baseline = startup_mode, nil, nil
-local ready, last_error, error_reason, error_mode = false, nil, nil, nil
+local ready, failure = false, nil
 local motion_was_available = false
 
 local function snapshot()
@@ -42,7 +42,7 @@ local function availability()
     local no_video = type(track) ~= 'table' or track.image == true or track.albumart == true
     local base_reason, motion_reason
     if not ready then
-        base_reason = error_reason == 'read_failed' and 'read_failed' or 'initializing'
+        base_reason = failure and failure.reason == 'read_failed' and 'read_failed' or 'initializing'
         motion_reason = base_reason
     elseif no_video then
         motion_reason = 'no_video'
@@ -58,7 +58,8 @@ local function publish()
     local available, reasons = availability()
     mp.set_property_native(property, {
         desired = desired, applied = applied, ready = ready, available = available,
-        unavailable_reasons = reasons, error = last_error, error_reason = error_reason, error_mode = error_mode,
+        unavailable_reasons = reasons, error = failure and failure.message,
+        error_reason = failure and failure.reason, error_mode = failure and failure.mode,
         display_sync_active = mp.get_property_native('display-sync-active'),
     })
 end
@@ -86,11 +87,24 @@ local function write_group(values, current, restoring)
 end
 
 local function fail(name, reason, detail, quiet)
-    last_error, error_reason, error_mode = detail or reason_text[reason], reason, name
+    failure = {mode = name, reason = reason, message = detail or reason_text[reason]}
     if detail then msg.error(detail) end
     publish()
     if not quiet then feedback.show(reason_text[reason], 'error') end
     return false
+end
+
+local function still_matches(expected, actual)
+    for _, key in ipairs(keys) do
+        if actual[key] ~= expected[key] then return false end
+    end
+    return true
+end
+
+local function withdraw_applied()
+    local previous = applied
+    applied = nil
+    return fail(previous, 'options_changed', nil, true)
 end
 
 local function apply(name, quiet)
@@ -106,7 +120,7 @@ local function apply(name, quiet)
         applied = nil
         return fail(name, 'rollback_failed', err .. '; rollback: ' .. restore_error, quiet)
     end
-    applied, last_error, error_reason, error_mode = name, nil, nil, nil
+    applied, failure = name, nil
     if not quiet then desired, manually_selected = name, true end
     publish()
     if not quiet then feedback.show(name == 'OFF' and '运动设置已还原' or ('已选择' .. labels[name]), 'success') end
@@ -117,16 +131,25 @@ local function refresh_availability(reconcile)
     local available, reasons = availability()
     local became_available = available.DISPLAY and not motion_was_available
     motion_was_available = available.DISPLAY
-    if ready and desired ~= 'OFF' and not available[desired] then
-        if applied and applied ~= 'OFF' then
+    if not ready or desired == 'OFF' then return publish() end
+    if not available[desired] then
+        local expected = modes[applied]
+        if expected then
+            -- Output and option observers can arrive in either order.
+            local actual, read_error = snapshot()
+            if not actual then
+                applied = nil
+                return fail(desired, 'read_failed', read_error, true)
+            end
+            if not still_matches(expected, actual) then return withdraw_applied() end
             -- The active mode lost its video output. Try to restore the
             -- baseline without reinstalling an unsupported mode on failure.
-            local restored, err = write_group(baseline, snapshot(), true)
+            local restored, err = write_group(baseline, actual, true)
             applied = restored and 'OFF' or nil
             if not restored then return fail(desired, 'rollback_failed', err, true) end
         end
         if applied == 'OFF' then return fail(desired, reasons[desired], nil, true) end
-    elseif ready and desired ~= 'OFF' and applied == 'OFF' and (reconcile or became_available) then
+    elseif applied == 'OFF' and (reconcile or became_available) then
         return apply(desired, true)
     end
     publish()
@@ -142,15 +165,7 @@ local function on_option_change()
     -- Observer callbacks run after the current Lua transaction. Read both
     -- current values instead of using a possibly older notification value.
     local actual = snapshot()
-    if not actual then return end
-    for _, key in ipairs(keys) do
-        if actual[key] ~= expected[key] then
-            local previous = applied
-            applied = nil
-            fail(previous, 'options_changed', nil, true)
-            return
-        end
-    end
+    if actual and not still_matches(expected, actual) then withdraw_applied() end
 end
 
 mp.register_script_message('set-mode', function(name)
@@ -159,15 +174,19 @@ mp.register_script_message('set-mode', function(name)
     apply(name, false)
 end)
 
-mp.register_event('start-file', function()
+local function reset_media()
     baseline, applied, ready = nil, nil, false
     motion_was_available = false
-    last_error, error_reason, error_mode = nil, nil, nil
     publish()
+end
+mp.register_event('start-file', function()
+    failure = nil
+    reset_media()
 end)
 mp.add_hook('on_preloaded', 100, function()
-    baseline, last_error = snapshot()
-    if not baseline then return fail(desired, 'read_failed', last_error, true) end
+    local err
+    baseline, err = snapshot()
+    if not baseline then return fail(desired, 'read_failed', err, true) end
     publish()
 end)
 mp.register_event('file-loaded', function()
@@ -179,11 +198,8 @@ mp.observe_property('current-tracks/video', 'native', on_output_change)
 mp.observe_property('current-vo', 'string', on_output_change)
 mp.observe_property('display-sync-active', 'bool', publish)
 for _, key in ipairs(keys) do mp.observe_property('options/' .. key, 'native', on_option_change) end
-mp.register_event('end-file', function()
-    -- mpv resets file-local options itself, including on stop or load error.
-    baseline, applied, ready = nil, nil, false
-    publish()
-end)
+-- mpv resets file-local options itself, including on stop or load error.
+mp.register_event('end-file', reset_media)
 mp.register_event('shutdown', function() mp.del_property(property) end)
 publish()
 
