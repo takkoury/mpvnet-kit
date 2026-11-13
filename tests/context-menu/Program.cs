@@ -36,6 +36,10 @@ internal static class Program
             var speed = new MenuItem { Header = "Speed" };
             var reset = new MenuItem { Header = "Reset" };
             var half = new MenuItem { Header = "Half" };
+            var motion = new MenuItem { Header = "Motion" };
+            var originalMotion = new MenuItem { Header = "Original" };
+            var displayMotion = new MenuItem { Header = "Display" };
+            var blendMotion = new MenuItem { Header = "Blend" };
             var device = new MenuItem { Header = "Device" };
             var tracks = new MenuItem { Header = "Tracks" };
             var chapter = new MenuItem { Header = "Chapter" };
@@ -50,10 +54,13 @@ internal static class Program
             otherItem.Items.Add(otherSeparator);
 
             menu.Items.Add(category);
-            foreach (var item in new object[] { pause, unknown, separator, ignore, speed, device, tracks, chapter })
+            foreach (var item in new object[] { pause, unknown, separator, ignore, speed, motion, device, tracks, chapter })
                 category.Items.Add(item);
             speed.Items.Add(reset);
             speed.Items.Add(half);
+            var motionItems = new[] { originalMotion, displayMotion, blendMotion };
+            foreach (var item in motionItems)
+                motion.Items.Add(item);
             tracks.Items.Add(originalTrack);
 
             var items = new (string[] Path, string Command)[]
@@ -62,7 +69,10 @@ internal static class Program
                 (new[] { "Category", "Unknown" }, "user command"),
                 (new[] { "Category", "Recent" }, "ignore"),
                 (new[] { "Category", "Speed", "Reset" }, "script-binding playback_feedback/speed-reset"),
-                (new[] { "Category", "Speed", "Half" }, "script-message-to playback_feedback set-speed 0.5")
+                (new[] { "Category", "Speed", "Half" }, "script-message-to playback_feedback set-speed 0.5"),
+                (new[] { "Category", "Motion", "Original" }, "script-message-to motion_controls set-mode OFF"),
+                (new[] { "Category", "Motion", "Display" }, "script-message-to motion_controls set-mode DISPLAY"),
+                (new[] { "Category", "Motion", "Blend" }, "script-message-to motion_controls set-mode BLEND")
             };
 
             var evidence = new Dictionary<string, bool>
@@ -104,9 +114,11 @@ internal static class Program
                 lineBrush.Color == Color.FromRgb(0x35, 0x35, 0x35);
             var refresh = type.GetMethod("Refresh", Instance)!;
             var applied = "{\"schema\":1,\"error\":\"invalid draft\",\"actions\":[{\"command\":\"script-binding playback_feedback/space\",\"keys\":[\"F3\",\"Ctrl+k\"]}]}";
+            var appliedMotion = "";
             Func<string, string> read = property => property switch
             {
                 "user-data/mpvnet/shortcuts" => applied,
+                "user-data/mpvnet/motion/applied" => appliedMotion,
                 "pause" => "yes",
                 "speed" => "0.500000",
                 _ => ""
@@ -128,7 +140,7 @@ internal static class Program
             chapter.Items.Add(dynamicChapter);
 
             foreach (var item in new[] { category, pause, unknown, ignore, reset, half, device, tracks, chapter,
-                     rebuilt, uncheckedTrack, audioDevice, dynamicChapter })
+                     rebuilt, uncheckedTrack, audioDevice, dynamicChapter }.Concat(motionItems))
                 item.ApplyTemplate();
 
             static Visibility VisibilityOf(MenuItem item, string name) =>
@@ -147,6 +159,19 @@ internal static class Program
             evidence["groupAlignment"] = VisibilityOf(unknown, "CheckSpace") == Visibility.Visible;
             evidence["staticRadioMarker"] = VisibilityOf(half, "RadioMark") == Visibility.Visible
                 && VisibilityOf(reset, "RadioMark") == Visibility.Collapsed;
+            foreach (var (value, expected) in new[] { ("OFF", originalMotion), ("DISPLAY", displayMotion),
+                         ("BLEND", blendMotion) })
+            {
+                appliedMotion = value;
+                refresh.Invoke(presentation, new object[] { read, 400d });
+                evidence[$"motionRadioMarker{value}"] = motionItems
+                    .Where(item => VisibilityOf(item, "RadioMark") == Visibility.Visible)
+                    .SequenceEqual(new[] { expected });
+            }
+            appliedMotion = "";
+            refresh.Invoke(presentation, new object[] { read, 400d });
+            evidence["missingAppliedMotionClearsRadioMarkers"] =
+                motionItems.All(item => VisibilityOf(item, "RadioMark") == Visibility.Collapsed);
             evidence["rebuiltRadioMarker"] = VisibilityOf(rebuilt, "RadioMark") == Visibility.Visible
                 && VisibilityOf(rebuilt, "CheckMark") == Visibility.Collapsed && rebuilt.IsChecked && !rebuilt.IsCheckable;
             evidence["uncheckedReservedRadioColumn"] = VisibilityOf(uncheckedTrack, "CheckSpace") == Visibility.Visible
