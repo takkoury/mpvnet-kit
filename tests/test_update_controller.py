@@ -62,6 +62,11 @@ each(events['start-file']);each(events['end-file']);ready();expire();assert(#cal
         self.run_case("""ready(false);assert(#timers==0);ready(true);expire();assert(#calls==0)
 bindings.open();assert(#calls==1 and payload.automatic==false)""")
 
+    def test_invalid_first_settings_read_leaves_only_manual_check(self):
+        self.run_case("""sync({schema=1,startup={available=false,values={}},values={}})
+ready();expire();assert(#timers==0 and #calls==0)
+bindings.open();assert(#calls==1 and payload.automatic==false)""")
+
     def test_existing_ready_snapshot_schedules_and_obeys_override(self):
         self.run_case('assert(#timers==1);expire();assert(#calls==1)',
                       "{schema=1,startup={available=true,values={}},values={}}")

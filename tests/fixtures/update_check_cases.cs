@@ -71,27 +71,58 @@ public static class UpdateCases
             Receipt(directory, "0.5.0"); var checker = new UpdateChecker(directory, transport, () => now);
             Require(checker.CurrentVersion == "0.5.0", "receipt without backup chain");
             Receipt(directory, "0.5.0-m3.5-preview");
-            Require(checker.Check(false, () => false, CancellationToken.None).Status == "development" && transport.Calls == 0, "development automatic request");
-            Require(checker.Check(true, () => true, CancellationToken.None).Status == "development" && transport.Calls == 0, "development manual request");
+            Require(checker.Check(() => false, CancellationToken.None).Status == "development" && transport.Calls == 0, "development automatic request");
+            Require(checker.Check(() => true, CancellationToken.None).Status == "development" && transport.Calls == 0, "development manual request");
             string path = Path.Combine(directory, ".mpvnet-kit-install.json");
             File.WriteAllText(path, File.ReadAllText(path).Replace("mpvnet-kit", "another-owner"));
             Require(checker.ReadInstalledVersion() == "", "receipt owner");
             Receipt(directory, "0.5.0"); var data = UpdateData.Read(path, 1048576); data["target"] = Path.GetTempPath();
             File.WriteAllText(path, UpdateData.Json().Serialize(data)); Require(checker.ReadInstalledVersion() == "", "receipt target");
             File.Delete(path); File.WriteAllText(Path.Combine(directory, "manifest.json"), "{\"version\":\"9.9.9\"}");
-            Require(checker.Check(true, () => true, CancellationToken.None).Status == "uninstalled" && transport.Calls == 0, "manifest fallback");
+            Require(checker.Check(() => true, CancellationToken.None).Status == "uninstalled" && transport.Calls == 0, "manifest fallback");
         } else if (name == "throttle") {
             Receipt(directory, "0.5.0"); transport.Fail = true; var checker = new UpdateChecker(directory, transport, () => now);
-            Require(checker.Check(false, () => false, CancellationToken.None).Status == "failed", "network failure");
+            Require(checker.Check(() => false, CancellationToken.None).Status == "failed", "network failure");
             transport.Fail = false; now = now.AddHours(23);
-            Require(checker.Check(false, () => false, CancellationToken.None).Status == "failed" && transport.Calls == 1, "failure cache daily throttle");
+            Require(checker.Check(() => false, CancellationToken.None).Status == "failed" && transport.Calls == 1, "failure cache daily throttle");
             now = now.AddHours(1);
-            Require(checker.Check(false, () => false, CancellationToken.None).Available && transport.Calls == 2, "24 hour expiry");
-            Require(checker.Check(true, () => true, CancellationToken.None).Available && transport.Calls == 3, "manual daily bypass");
+            Require(checker.Check(() => false, CancellationToken.None).Available && transport.Calls == 2, "24 hour expiry");
+            Require(checker.Check(() => true, CancellationToken.None).Available && transport.Calls == 3, "manual daily bypass");
             transport.Fail = true;
-            Require(checker.Check(true, () => true, CancellationToken.None).Status == "failed", "failed retry clears old success");
-            Require(checker.Check(false, () => false, CancellationToken.None).Status == "failed" && transport.Calls == 4, "failed cache must not claim current");
+            Require(checker.Check(() => true, CancellationToken.None).Status == "failed", "failed retry clears old success");
+            Require(checker.Check(() => false, CancellationToken.None).Status == "failed" && transport.Calls == 4, "failed cache must not claim current");
+            now = now.AddMinutes(-1);
+            transport.Fail = false;
+            Require(checker.Check(() => false, CancellationToken.None).Available && transport.Calls == 5, "clock correction must not extend throttle");
             Require(Directory.GetFiles(directory, "*.tmp").Length == 0, "atomic save cleanup");
+        } else if (name == "join-without-fetch") {
+            Receipt(directory, "0.5.0"); var checker = new UpdateChecker(directory, transport, () => now);
+            Require(checker.Check(() => false, CancellationToken.None).Available, "seed automatic cache");
+            string statePath = Path.Combine(directory, ".mpvnet-kit-update.json");
+            foreach (bool interrupted in new [] { false, true }) {
+                if (interrupted) {
+                    var state = UpdateData.Read(statePath, 65536);
+                    state["outcome"] = "pending"; state["latest_version"] = "";
+                    File.WriteAllText(statePath, UpdateData.Json().Serialize(state));
+                }
+                UpdateResult result = null;
+                Exception failure = null;
+                var worker = new Thread(() => {
+                    try { result = checker.Check(() => true, CancellationToken.None); }
+                    catch (Exception error) { failure = error; }
+                }) { IsBackground = true };
+                using (var gate = new Mutex(false, checker.MutexName + "-check")) {
+                    gate.WaitOne();
+                    try {
+                        worker.Start();
+                        Require(SpinWait.SpinUntil(() => (worker.ThreadState & System.Threading.ThreadState.WaitSleepJoin) != 0, 5000),
+                            "manual check did not wait for gate");
+                    } finally { gate.ReleaseMutex(); }
+                }
+                Require(worker.Join(5000), "manual check timed out");
+                if (failure != null) throw failure;
+                Require(result.Available && transport.Calls == (interrupted ? 3 : 2), "manual check reused old or pending state");
+            }
         } else if (name == "preferences") {
             Receipt(directory, "0.5.0"); var checker = new UpdateChecker(directory, transport, () => now);
             Require(checker.AutoEnabled(), "missing preference default");
@@ -99,16 +130,16 @@ public static class UpdateCases
             foreach (string document in new [] { "{", "{}", "[]", "{\"schema\":1,\"settings\":null}",
                 "{\"schema\":1,\"settings\":{\"updates.auto-check\":false}}", "{\"schema\":1,\"settings\":{\"updates.auto-check\":\"true\"}}" }) {
                 File.WriteAllText(path, document); Require(!checker.AutoEnabled(), "invalid/disabled preference");
-                Require(checker.Check(false, () => false, CancellationToken.None).Status == "disabled" && transport.Calls == 0, "disabled automatic network");
+                Require(checker.Check(() => false, CancellationToken.None).Status == "disabled" && transport.Calls == 0, "disabled automatic network");
             }
             File.WriteAllText(path, "{\"schema\":1,\"settings\":{\"updates.auto-check\":true}}");
-            Require(checker.AutoEnabled() && checker.Check(false, () => false, CancellationToken.None).Available, "enabled preference");
+            Require(checker.AutoEnabled() && checker.Check(() => false, CancellationToken.None).Available, "enabled preference");
             File.WriteAllText(path, "{\"schema\":1,\"settings\":{\"updates.auto-check\":false}}");
             int shows = 0; Require(!checker.TryNotify("0.6.0", () => { shows++; return true; }, CancellationToken.None) && shows == 0, "preference rechecked before show");
-            Require(checker.Check(true, () => true, CancellationToken.None).Available, "manual ignores automatic preference");
+            Require(checker.Check(() => true, CancellationToken.None).Available, "manual ignores automatic preference");
         } else if (name == "notification") {
             Receipt(directory, "0.5.0"); var checker = new UpdateChecker(directory, transport, () => now);
-            checker.Check(false, () => false, CancellationToken.None); int shows = 0;
+            checker.Check(() => false, CancellationToken.None); int shows = 0;
             Require(!checker.TryNotify("0.6.0", () => { shows++; return false; }, CancellationToken.None), "failed show");
             Require(checker.TryNotify("0.6.0", () => { shows++; return true; }, CancellationToken.None), "successful show");
             Require(!checker.TryNotify("0.6.0", () => { shows++; return true; }, CancellationToken.None) && shows == 2, "duplicate notification");
@@ -117,7 +148,7 @@ public static class UpdateCases
         } else if (name == "hold-check" || name == "join-check" || name == "auto-check") {
             transport.Directory = directory; transport.Hold = name == "hold-check";
             var checker = new UpdateChecker(directory, transport, () => now);
-            UpdateResult value = checker.Check(name == "join-check", () => name == "join-check", CancellationToken.None);
+            UpdateResult value = checker.Check(() => name == "join-check", CancellationToken.None);
             output["status"] = value.Status; output["calls"] = transport.Calls;
         } else if (name == "notify") {
             var checker = new UpdateChecker(directory, transport, () => now);
@@ -148,8 +179,8 @@ public static class UpdateCases
         } else if (name == "corrupt-state") {
             Receipt(directory, "0.5.0"); File.WriteAllText(Path.Combine(directory, ".mpvnet-kit-update.json"), "{invalid");
             var checker = new UpdateChecker(directory, transport, () => now);
-            Require(checker.Check(false, () => false, CancellationToken.None).Status == "failed" && transport.Calls == 0, "corrupt state automatic fail closed");
-            Require(checker.Check(true, () => true, CancellationToken.None).Available && transport.Calls == 1, "explicit recovery");
+            Require(checker.Check(() => false, CancellationToken.None).Status == "failed" && transport.Calls == 0, "corrupt state automatic fail closed");
+            Require(checker.Check(() => true, CancellationToken.None).Available && transport.Calls == 1, "explicit recovery");
         } else throw new ArgumentException("unknown fixture case");
         output["ok"] = true; return output;
     }

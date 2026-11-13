@@ -18,19 +18,25 @@ local function cleanup(session)
     os.remove(session.path)
     os.remove(session.activation)
 end
-local function stop_automatic()
-    if timer then timer:kill(); timer = nil end
-    if active and active.automatic then
-        local session = active
-        active = nil
-        if session.request then mp.abort_async_command(session.request) end
-        cleanup(session)
-    end
+local function cancel_timer()
+    if not timer then return end
+    timer:kill()
+    timer = nil
+end
+local function cancel_session()
+    local session = active
+    if not session then return end
+    active = nil
+    if session.request then mp.abort_async_command(session.request) end
+    cleanup(session)
 end
 local open
 open = function(automatic)
     if closing then return end
-    if not automatic then startup_consumed = true; if timer then timer:kill(); timer = nil end end
+    if not automatic then
+        startup_consumed = true
+        cancel_timer()
+    end
     if active then
         if automatic then return end
         local serial = active.serial + 1
@@ -83,14 +89,18 @@ local function settings_ready(_, snapshot)
     if closing or type(snapshot) ~= 'table' or snapshot.schema ~= 1 then return end
     -- Disabling takes effect for outstanding automatic work immediately. Enabling
     -- never creates a second startup opportunity in an already running player.
-    if type(snapshot.values) == 'table' and snapshot.values['updates.auto-check'] == false then stop_automatic() end
+    local enabled = type(snapshot.values) == 'table' and snapshot.values['updates.auto-check'] ~= false
+    if not enabled then
+        cancel_timer()
+        if active and active.automatic then cancel_session() end
+    end
     if ready then return end
     local seed = snapshot.startup
     if type(seed) ~= 'table' or type(seed.values) ~= 'table' then return end
     ready = true
     local initial = seed.values['updates.auto-check']
     automatic_enabled = not (seed.available == true and initial == false)
-    if not automatic_enabled or startup_consumed or type(snapshot.values) == 'table' and snapshot.values['updates.auto-check'] == false then return end
+    if seed.available ~= true or not automatic_enabled or not enabled or startup_consumed then return end
     timer = mp.add_timeout(5, function()
         timer = nil
         if not closing and not startup_consumed then startup_consumed = true; open(true) end
@@ -102,11 +112,6 @@ mp.add_key_binding(nil, 'open', function() open(false) end)
 mp.register_script_message('open', function() open(false) end)
 mp.register_event('shutdown', function()
     closing = true
-    if timer then timer:kill(); timer = nil end
-    if active then
-        local session = active
-        active = nil
-        if session.request then mp.abort_async_command(session.request) end
-        cleanup(session)
-    end
+    cancel_timer()
+    cancel_session()
 end)

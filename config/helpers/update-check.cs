@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -106,8 +105,7 @@ public sealed class UpdateRequest
 public sealed class KitVersion : IComparable<KitVersion>
 {
     readonly string[] parts;
-    public string Value { get; private set; }
-    KitVersion(string value) { Value = value; parts = value.Split('.'); }
+    KitVersion(string value) { parts = value.Split('.'); }
     public static KitVersion Stable(string text)
     {
         return text != null && text.Length <= 96 && Regex.IsMatch(text, @"\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z")
@@ -133,6 +131,7 @@ public sealed class KitVersion : IComparable<KitVersion>
 public sealed class UpdateResult
 {
     public string Status, CurrentVersion = "", LatestVersion = "", Error = "";
+    internal bool AutomaticOnly { get; set; }
     public bool Available { get { return Status == "available"; } }
     public static UpdateResult Failure(string current, string message)
     { return new UpdateResult { Status = "failed", CurrentVersion = current, Error = message }; }
@@ -187,6 +186,7 @@ sealed class UpdateState
     public long AttemptedUtc;
     public string LatestVersion = "", Outcome = "";
     public readonly HashSet<string> Notified = new HashSet<string>(StringComparer.Ordinal);
+    public bool Completed { get { return Outcome == "success" || Outcome == "failed"; } }
 }
 
 public sealed class UpdateChecker
@@ -298,42 +298,61 @@ public sealed class UpdateChecker
     }
     static bool Take(Mutex mutex, int milliseconds)
     { try { return mutex.WaitOne(milliseconds); } catch (AbandonedMutexException) { return true; } }
-    UpdateResult Result(UpdateState state)
+
+    UpdateState TryReadState()
+    {
+        try { return ReadState(); }
+        catch (Exception error) when (error is IOException || error is UnauthorizedAccessException ||
+            error is ArgumentException || error is InvalidDataException) { return null; }
+    }
+
+    UpdateResult Result(UpdateState state, KitVersion installed)
     {
         if (state.Outcome != "success") return UpdateResult.Failure(CurrentVersion, "暂时无法完成检查，请重试。");
+        int order = KitVersion.Stable(state.LatestVersion).CompareTo(installed);
         return new UpdateResult { CurrentVersion = CurrentVersion, LatestVersion = state.LatestVersion,
-            Status = KitVersion.Stable(state.LatestVersion).CompareTo(KitVersion.Stable(CurrentVersion)) > 0 ? "available" :
-                KitVersion.Stable(state.LatestVersion).CompareTo(KitVersion.Stable(CurrentVersion)) == 0 ? "current" : "ahead" };
+            Status = order > 0 ? "available" : order == 0 ? "current" : "ahead" };
     }
-    public UpdateResult Check(bool manual, Func<bool> manualRequested, CancellationToken cancellation)
+
+    static UpdateResult AutomaticOnly(UpdateResult result)
+    {
+        result.AutomaticOnly = true;
+        return result;
+    }
+
+    public UpdateResult Check(Func<bool> manualRequested, CancellationToken cancellation)
     {
         CurrentVersion = ReadInstalledVersion();
         if (CurrentVersion.Length == 0) return new UpdateResult { Status = "uninstalled" };
-        if (KitVersion.Development(CurrentVersion)) return new UpdateResult { Status = "development", CurrentVersion = CurrentVersion };
-        if (!manual && !manualRequested() && !AutoEnabled()) return new UpdateResult { Status = "disabled", CurrentVersion = CurrentVersion };
-        // A distinct check gate distinguishes a joined network operation from a
-        // brief notification claim. A manual check must not reuse old cache only
-        // because another instance happened to be presenting that cache.
+        var installed = KitVersion.Stable(CurrentVersion);
+        if (installed == null) return new UpdateResult { Status = "development", CurrentVersion = CurrentVersion };
+        if (!manualRequested() && !AutoEnabled())
+            return AutomaticOnly(new UpdateResult { Status = "disabled", CurrentVersion = CurrentVersion });
+
         using (var checkGate = new Mutex(false, mutexName + "-check"))
         using (var mutex = new Mutex(false, mutexName)) {
-            bool gateOwned = Take(checkGate, 0), joined = !gateOwned, owned = false;
+            bool gateOwned = Take(checkGate, 0), owned = false;
             try {
-                // Keep mutex ownership on this worker thread. The transport may
-                // use async I/O internally but never resumes this lock elsewhere.
+                // The state is replaced atomically. Compare with the state seen
+                // before waiting: holding the gate alone does not imply a fetch.
+                var waitingState = gateOwned ? null : TryReadState();
                 while (!gateOwned) { cancellation.ThrowIfCancellationRequested(); gateOwned = Take(checkGate, 100); }
                 while (!owned) { cancellation.ThrowIfCancellationRequested(); owned = Take(mutex, 100); }
                 cancellation.ThrowIfCancellationRequested();
-                UpdateState state;
-                try { state = ReadState(); }
-                catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is ArgumentException || error is InvalidDataException) {
-                    if (!manual && !manualRequested()) return UpdateResult.Failure(CurrentVersion, "更新状态无法读取。");
+                if (!manualRequested() && !AutoEnabled())
+                    return AutomaticOnly(new UpdateResult { Status = "disabled", CurrentVersion = CurrentVersion });
+                var state = TryReadState();
+                if (state == null) {
+                    if (!manualRequested()) return AutomaticOnly(UpdateResult.Failure(CurrentVersion, "更新状态无法读取。"));
                     state = new UpdateState();
                 }
+                if (waitingState != null && state.Completed &&
+                    (!waitingState.Completed || waitingState.AttemptedUtc != state.AttemptedUtc)) return Result(state, installed);
+
                 long now = utcNow().ToUniversalTime().Ticks;
-                bool recent = state.AttemptedUtc > 0 && now - state.AttemptedUtc < TimeSpan.TicksPerDay;
-                // Explicit checks bypass the daily throttle. A caller that joins
-                // an in-flight request consumes that request's completed result.
-                if ((joined && state.AttemptedUtc > 0) || (!manual && !manualRequested() && recent)) return Result(state);
+                long elapsed = now - state.AttemptedUtc;
+                bool recent = state.AttemptedUtc > 0 && elapsed >= 0 && elapsed < TimeSpan.TicksPerDay;
+                if (!manualRequested() && recent) return AutomaticOnly(Result(state, installed));
                 state.AttemptedUtc = now; state.Outcome = "pending"; state.LatestVersion = ""; SaveState(state);
                 try {
                     state.LatestVersion = ParseRelease(transport.Fetch(cancellation)); state.Outcome = "success";
@@ -341,13 +360,14 @@ public sealed class UpdateChecker
                 catch (Exception error) when (error is IOException || error is WebException || error is ArgumentException || error is InvalidOperationException || error is InvalidDataException) {
                     state.LatestVersion = ""; state.Outcome = "failed";
                 }
-                cancellation.ThrowIfCancellationRequested(); SaveState(state); return Result(state);
+                cancellation.ThrowIfCancellationRequested(); SaveState(state); return Result(state, installed);
             } finally { if (owned) mutex.ReleaseMutex(); if (gateOwned) checkGate.ReleaseMutex(); }
         }
     }
     public bool TryNotify(string version, Func<bool> show, CancellationToken cancellation)
     {
-        if (KitVersion.Stable(version) == null || show == null || cancellation.IsCancellationRequested) return false;
+        var latest = KitVersion.Stable(version);
+        if (latest == null || show == null || cancellation.IsCancellationRequested) return false;
         using (var mutex = new Mutex(false, mutexName)) {
             // The UI must remain responsive if another instance is checking.
             if (!Take(mutex, 0)) return false;
@@ -356,7 +376,7 @@ public sealed class UpdateChecker
                 if (!AutoEnabled()) return false;
                 var state = ReadState();
                 string installed = ReadInstalledVersion(); var current = KitVersion.Stable(installed);
-                if (current == null || KitVersion.Stable(version).CompareTo(current) <= 0 || state.Outcome != "success" ||
+                if (current == null || latest.CompareTo(current) <= 0 || state.Outcome != "success" ||
                     state.LatestVersion != version || state.Notified.Contains(version)) return false;
                 if (!show()) return false;
                 state.Notified.Add(version); SaveState(state); return true;
