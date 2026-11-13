@@ -115,7 +115,8 @@ class AboutWindowTests(unittest.TestCase):
         self.assertEqual(data['package_version'], '0.5.0-m3.5-preview')
 
     def test_invalid_receipt_identity_or_version_preserves_host_information(self):
-        for receipt in ({'owner':'other'}, {'schema':True}, {'target':'C:/unrelated'}, {'packageVersion':'bad\nversion'}, {'padding':'x'*1048576}):
+        for receipt in ({'owner': 'other'}, {'owner': ['mpvnet-kit']}, {'kind': ['receipt']}, {'schema': True},
+                        {'target': 'C:/unrelated'}, {'packageVersion': '0.6.0\n'}, {'padding': 'x' * 1048576}):
             with self.subTest(receipt=receipt):
                 code, data = self.launch(receipt=receipt)
                 self.assertEqual(code, 0, data)

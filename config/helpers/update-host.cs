@@ -16,6 +16,7 @@ public sealed class UpdateHost : IDisposable
     readonly UpdateChecker checker;
     readonly Application app;
     readonly CancellationTokenSource cancellation = new CancellationTokenSource();
+    readonly CancellationToken cancellationToken;
     readonly DispatcherTimer timer;
     UpdateWindow window;
     volatile bool manual;
@@ -27,6 +28,7 @@ public sealed class UpdateHost : IDisposable
     {
         if (request == null || parent == null || checker == null) throw new ArgumentNullException("request");
         this.request = request; this.parent = parent; this.checker = checker;
+        cancellationToken = cancellation.Token;
         app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         manual = !request.Automatic;
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -46,6 +48,11 @@ public sealed class UpdateHost : IDisposable
         LastSeenSerial = serial; manual = true;
         EnsureWindow();
         if (window == null) return;
+        if (Result != null && Result.AutomaticOnly) {
+            StartCheck();
+            if (activate) window.Recall();
+            return;
+        }
         if (Result != null) window.Present(Result, false); else window.Checking(checker.CurrentVersion);
         if (activate) window.Recall();
     }
@@ -61,12 +68,12 @@ public sealed class UpdateHost : IDisposable
         checking = true; Result = null;
         if (manual) { EnsureWindow(); if (window != null) { window.Checking(checker.CurrentVersion); window.ShowResult(); } }
         try {
-            UpdateResult value = await Task.Run(() => checker.Check(manual, () => manual, cancellation.Token));
+            UpdateResult value = await Task.Run(() => checker.Check(() => manual, cancellationToken));
             if (stopped || !ParentAlive()) { Stop(); return; }
             // A click arriving at completion still promotes this same process.
             ObserveSerial(true);
-            if (manual && value.Status == "disabled")
-                value = await Task.Run(() => checker.Check(true, () => true, cancellation.Token));
+            if (manual && value.AutomaticOnly)
+                value = await Task.Run(() => checker.Check(() => true, cancellationToken));
             if (stopped || !ParentAlive()) { Stop(); return; }
             Result = value;
             if (manual) {
@@ -75,7 +82,7 @@ public sealed class UpdateHost : IDisposable
                 EnsureWindow();
                 if (window != null) {
                     window.Present(value, true);
-                    bool shown = checker.TryNotify(value.LatestVersion, () => ParentAlive() && !stopped && window.ShowResult(), cancellation.Token);
+                    bool shown = checker.TryNotify(value.LatestVersion, () => ParentAlive() && !stopped && window.ShowResult(), cancellationToken);
                     if (!shown) Stop();
                 } else Stop();
             } else Stop();

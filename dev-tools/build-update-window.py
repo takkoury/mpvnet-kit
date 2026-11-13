@@ -12,7 +12,6 @@ import managed_build
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSEMBLY = 'KitUpdate.exe'
-ASSET_PATH = 'config/helpers/' + ASSEMBLY
 SOURCE_METADATA_KEY = 'KitUpdate.SourceSha256'
 MANIFEST = 'src/update-window/app.manifest'
 SOURCE_FILES = tuple('config/helpers/' + name for name in (
@@ -30,55 +29,34 @@ def _source_snapshot(source):
     return managed_build.source_snapshot(source, SOURCE_FILES, 'update')
 
 
-def _source_digest(contents):
-    return managed_build.source_digest(contents)
-
-
 def source_digest(source):
     """Hash the exact allowlisted source files relative to a checkout root."""
-    return _source_digest(_source_snapshot(source))
+    return managed_build.source_digest(_source_snapshot(source))
 
 
 def matches_source_digest(data, digest):
     return managed_build.matches_source_digest(data, digest, SOURCE_METADATA_KEY)
 
 
-def validate_output(output, source=ROOT):
-    return managed_build.validate_output(output, source)
-
-
-def _compiler():
-    return managed_build.compiler()
-
-
-def _reference_snapshot():
-    return managed_build.reference_snapshot(FRAMEWORK_VERSION, REFERENCE_FILES)
-
-
-def _compile(output, dotnet, compiler, contents, references, digest):
-    return managed_build.compile_winexe(output, dotnet, compiler, contents, references, digest,
-        assembly=ASSEMBLY, manifest=MANIFEST, framework_version=FRAMEWORK_VERSION,
-        metadata_key=SOURCE_METADATA_KEY, label='update')
-
-
 def build_update_window(output, *, apply=False):
-    output = validate_output(output, ROOT)
+    output = managed_build.validate_output(output, ROOT)
     contents = _source_snapshot(ROOT)
-    digest = _source_digest(contents)
+    digest = managed_build.source_digest(contents)
     evidence = {
         'sourceSha256': digest,
         'sourceFiles': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()},
     }
     if apply:
-        dotnet, compiler, sdk_version = _compiler()
-        references = _reference_snapshot()
-        compiler_digest = hashlib.sha256(compiler.read_bytes()).hexdigest()
-        assembly = _compile(output, dotnet, compiler, contents, references, digest)
+        dotnet, compiler, sdk_version = managed_build.compiler()
+        references = managed_build.reference_snapshot(FRAMEWORK_VERSION, REFERENCE_FILES)
+        assembly = managed_build.compile_winexe(output, dotnet, compiler, contents, references, digest,
+            assembly=ASSEMBLY, manifest=MANIFEST, framework_version=FRAMEWORK_VERSION,
+            metadata_key=SOURCE_METADATA_KEY, label='update')
         if not matches_source_digest(assembly, digest):
             raise ValueError('compiled update asset is missing its source digest')
         evidence.update({
             'sdkVersion': sdk_version,
-            'compilerSha256': compiler_digest,
+            'compilerSha256': hashlib.sha256(compiler.read_bytes()).hexdigest(),
             'targetFramework': '.NETFramework,Version=' + FRAMEWORK_VERSION,
             'referenceFiles': {name: hashlib.sha256(data).hexdigest() for name, data in references.items()},
             'assemblySha256': hashlib.sha256(assembly).hexdigest(),

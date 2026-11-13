@@ -26,7 +26,7 @@ function Resolve-CleanTarget([string]$Player) {
 function Test-CleanStateEntry([string]$Relative, [bool]$Directory) {
     $parts = $Relative.Split('/')
     if ($parts[0] -iin @('cache', 'watch_later')) { return ($Directory -or $parts.Count -gt 1) }
-    return (-not $Directory -and $Relative -iin @('settings.xml', 'desktop.ini', 'mpvnet-user.json'))
+    return (-not $Directory -and $Relative -iin @('settings.xml', 'desktop.ini', 'mpvnet-user.json', '.mpvnet-kit-update.json'))
 }
 function Get-CleanTargetState([string]$Target, $RuntimePaths, $RuntimeDirectories, $OwnedFiles = @{}, $OwnedDirectories = $null, $BaselineEntries = @{}) {
     Assert-CleanNoReparse $Target

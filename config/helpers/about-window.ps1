@@ -6,6 +6,9 @@ $writer.AutoFlush=$true
 $window=$null;$parentProcess=$null
 Add-Type -AssemblyName System.Web.Extensions
 $json=New-Object Web.Script.Serialization.JavaScriptSerializer
+function Test-AbsoluteConfigPath($Path) {
+    return $Path -is [string] -and $Path -match '\A(?:[A-Za-z]:[\\/]|\\\\[^?.\\/][^\\/]*[\\/][^\\/]+)'
+}
 try {
     if(-not [IO.Path]::IsPathRooted($RequestPath)){throw '关于窗口请求路径无效。'}
     $file=Get-Item -LiteralPath $RequestPath
@@ -19,7 +22,7 @@ try {
     # Display identity only: no backup-chain or installed-file verification. The
     # bounded read tolerates missing/invalid receipts without hiding host data.
     $data['package_version']=''
-    if($data.config_directory -is [string] -and [IO.Path]::IsPathRooted($data.config_directory)){
+    if(Test-AbsoluteConfigPath $data.config_directory){
         $receiptStream=$null
         try {
             $configDirectory=[IO.Path]::GetFullPath($data.config_directory).TrimEnd('\','/')
@@ -31,10 +34,11 @@ try {
                 while($count -lt $bytes.Length){$read=$receiptStream.Read($bytes,$count,$bytes.Length-$count);if($read -eq 0){break};$count+=$read}
                 if($count -eq $bytes.Length){
                     $receipt=$json.DeserializeObject($utf8.GetString($bytes).TrimStart([char]0xFEFF))
-                    if($receipt -is [Collections.IDictionary] -and $receipt.schema -is [int] -and $receipt.schema -eq 1 -and $receipt.owner -ceq 'mpvnet-kit' -and $receipt.kind -ceq 'receipt' -and
-                       $receipt.target -is [string] -and [IO.Path]::IsPathRooted($receipt.target) -and
+                    if($receipt -is [Collections.IDictionary] -and $receipt.schema -is [int] -and $receipt.schema -eq 1 -and
+                       $receipt.owner -is [string] -and $receipt.owner -ceq 'mpvnet-kit' -and $receipt.kind -is [string] -and $receipt.kind -ceq 'receipt' -and
+                       (Test-AbsoluteConfigPath $receipt.target) -and
                        [string]::Equals([IO.Path]::GetFullPath($receipt.target).TrimEnd('\','/'),$configDirectory,[StringComparison]::OrdinalIgnoreCase) -and
-                       $receipt.packageVersion -is [string] -and $receipt.packageVersion -cmatch '^[0-9A-Za-z][0-9A-Za-z._+\-]{0,127}$'){
+                       $receipt.packageVersion -is [string] -and $receipt.packageVersion -cmatch '\A[0-9A-Za-z][0-9A-Za-z._+\-]{0,127}\z'){
                         $data['package_version']=$receipt.packageVersion
                     }
                 }

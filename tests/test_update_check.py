@@ -54,6 +54,9 @@ class UpdateCheckTests(unittest.TestCase):
     def test_daily_throttle_failure_cache_and_manual_retry(self):
         self.run_case('throttle')
 
+    def test_waiting_manual_check_does_not_reuse_cache_without_completed_fetch(self):
+        self.run_case('join-without-fetch')
+
     def test_auto_preferences_rechecked_before_notification(self):
         self.run_case('preferences')
 

@@ -137,12 +137,17 @@ exit $LASTEXITCODE
         receipt = read(self.target / '.mpvnet-kit-install.json')
         self.assertEqual(receipt['schema'], 1)
         self.assertEqual(receipt['kind'], 'receipt')
+        cache = self.target / '.mpvnet-kit-update.json'
+        cached = b'{"schema":1,"fixture":"keep local update state"}\n'
+        cache.write_bytes(cached)
         current = self.invoke()
         self.assertEqual(current['action'], 'current')
         self.assertTrue(current['canRestore'])
         self.assertEqual(current['restoreKind'], 'remove-install')
         self.invoke('Restore', current['restorePlanToken'])
-        self.assertEqual(files(self.target), before)
+        self.assertEqual(files(self.target), {**before, cache.name: sha(cached)})
+        self.install()
+        self.assertEqual(cache.read_bytes(), cached)
 
     def test_managed_update_and_restore_chain(self):
         self.user_state(); initial = files(self.target)
