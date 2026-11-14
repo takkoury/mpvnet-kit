@@ -39,8 +39,8 @@ public sealed class SettingsDraft
     public readonly Dictionary<string, Field> Fields = new Dictionary<string, Field>();
     public readonly Dictionary<string, string> Revisions = new Dictionary<string, string>();
     readonly Dictionary<string, string> observedRevisions = new Dictionary<string, string>();
-    public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "picture", "decoding", "paths", "shortcuts", "advanced" };
-    public static readonly string[] PageNames = { "字幕", "声音与音轨", "窗口", "控制栏", "画面", "解码", "输出与组件", "快捷键", "高级" };
+    public static readonly string[] Pages = { "subtitles", "audio", "window", "controlbar", "picture", "decoding", "shortcuts", "paths", "advanced" };
+    public static readonly string[] PageNames = { "字幕", "声音", "窗口", "控制栏", "画面", "解码", "快捷键", "组件", "高级" };
     public static string PageName(string page) { int i = Array.IndexOf(Pages, page); return i < 0 ? page : PageNames[i]; }
     public static string Text(object value) { return value == null ? "" : value is bool ? ((bool)value ? "true" : "false") : Convert.ToString(value, CultureInfo.InvariantCulture); }
     public static string Str(Dictionary<string, object> data, string key) { object v; return data.TryGetValue(key, out v) ? Text(v) : ""; }
@@ -190,6 +190,7 @@ public sealed class SettingsSlider : Slider
 
 public sealed partial class SettingsEditor : Window
 {
+    const string StartupAudioMode = "audio.default-mode";
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int n);
     readonly SettingsDraft model = new SettingsDraft();
     readonly JavaScriptSerializer json = UserPreferencesStorage.Json();
@@ -384,8 +385,7 @@ public sealed partial class SettingsEditor : Window
             else if (f.Kind == "choice") {
                 var choice = new ComboBox { MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
                 choice.Items.Add(new ComboBoxItem { Content = DefaultChoiceLabel(field), Tag = null });
-                if (f.Kind == "boolean") { choice.Items.Add(new ComboBoxItem { Content = "开启", Tag = "true" }); choice.Items.Add(new ComboBoxItem { Content = "关闭", Tag = "false" }); }
-                else foreach (var c in f.Choices) { var option = UserPreferencesStorage.Object(c); choice.Items.Add(new ComboBoxItem { Content = SettingsDraft.Str(option, "label"), Tag = SettingsDraft.Text(SettingsDraft.Value(option, "value")) }); }
+                foreach (var raw in f.Choices) choice.Items.Add(ChoiceItem(choice, UserPreferencesStorage.Object(raw), f.Id == StartupAudioMode));
                 // A currently inherited advanced value remains untouched until an explicit selection.
                 SelectChoice(choice, field);
                 choice.SelectionChanged += delegate { if (!syncing && choice.SelectedItem is ComboBoxItem) { var selected = (ComboBoxItem)choice.SelectedItem; if (selected.Tag == null) Inherit(field); else EditField(field, (string)selected.Tag, true); } };
@@ -414,7 +414,7 @@ public sealed partial class SettingsEditor : Window
             if (f.Id == "slang" || f.Id == "alang") { title.VerticalAlignment = VerticalAlignment.Top; title.Margin = new Thickness(0,8,12,0); }
             if (page != "paths") row.ColumnDefinitions[1].MaxWidth = 430;
             control.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(control, 1); row.Children.Add(control); content.Children.Add(row); settingRows[field.Id] = row;
-            title.Target = input; input.ToolTip = FieldDetails(field);
+            title.Target = input; UpdateFieldDetails(input, field);
             var menu = new ContextMenu(); var inherit = new MenuItem { Header = "使用默认设置" }; inherit.Click += delegate { Inherit(field); }; menu.Items.Add(inherit); if (f.Id != "sub-visibility") input.ContextMenu = menu;
             System.Windows.Automation.AutomationProperties.SetName(input, f.Label); System.Windows.Automation.AutomationProperties.SetAutomationId(input, "Setting_" + f.Id); editors.Add(f.Id, input);
         }
@@ -433,10 +433,11 @@ public sealed partial class SettingsEditor : Window
     {
         switch (timing) { case "preview": return "当前媒体预览"; case "next-media": return "下一媒体生效"; case "startup": return "新实例启动时生效"; case "first-media": return "新实例首次播放前生效"; case "restart": return "重启播放器生效"; case "next-task": return "新任务生效"; default: return timing; }
     }
-    static string FieldDetails(SettingsDraft.Field f)
+    static void UpdateFieldDetails(Control input, SettingsDraft.Field f)
     {
+        if (f.Id == StartupAudioMode) return;
         string guidance = f.Id == "mpv_path" ? "用于生成鼠标悬停进度条时的视频小预览图。通常自动使用当前播放器；需要手动指定时，选择 mpv.exe 或 mpvnet.exe。\n" : "";
-        return guidance + TimingLabel(f.Timing) + "\n默认来源：" + f.Source + "\n已保存：" + DetailValue(f, f.Saved) + "\n当前有效：" + DetailValue(f, f.Effective) + "\n默认：" + DetailValue(f, f.Default) + (f.Id == "sub-visibility" ? "" : "\n右键可恢复此项默认");
+        input.ToolTip = guidance + TimingLabel(f.Timing) + "\n默认来源：" + f.Source + "\n已保存：" + DetailValue(f, f.Saved) + "\n当前有效：" + DetailValue(f, f.Effective) + "\n默认：" + DetailValue(f, f.Default) + (f.Id == "sub-visibility" ? "" : "\n右键可恢复此项默认");
     }
     static string DetailValue(SettingsDraft.Field f, object value)
     {
@@ -589,7 +590,7 @@ public sealed partial class SettingsEditor : Window
             else if (item.Value is CheckBox) ((CheckBox)item.Value).IsChecked = model.Fields[item.Key].Text == "true";
             else if (item.Key == "sub-font") ((Button)item.Value).Content = FontLabel(model.Fields[item.Key].Text);
             else if (languageLists.ContainsKey(item.Key)) RefreshLanguages(model.Fields[item.Key]);
-            item.Value.ToolTip = FieldDetails(model.Fields[item.Key]);
+            UpdateFieldDetails(item.Value, model.Fields[item.Key]);
         }
         syncing = false; UpdateSubtitleExample();
     }
@@ -961,6 +962,8 @@ public sealed partial class SettingsEditor : Window
         if (renderPath.Length > 0) RenderValidation(renderPath);
         return new { ok = true, shown = IsVisible, has_handle = new WindowInteropHelper(this).Handle != IntPtr.Zero,
             prepared = prepared, show_requested = showRequested, ready_to_show = ReadyToShow, page = page, pages = SettingsDraft.Pages,
+            navigation_labels = VisualChildren<Button>(bodyPanel).Where(categories.ContainsValue)
+                .Select(button => ((StackPanel)button.Content).Children.OfType<TextBlock>().Last().Text).ToArray(),
             navigation_pending = navigationPending, navigation_serial = navigationSerial,
             navigation_reused = categories.Where(item => ReferenceEquals(initialNavigation[item.Key], item.Value.Content)).Select(item => item.Key).ToArray(),
             show_in_taskbar = ShowInTaskbar, window_style = WindowStyle.ToString(), caption_height = System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight,
@@ -989,7 +992,17 @@ public sealed partial class SettingsEditor : Window
             preview_visible = subtitleExample != null || previewPane.Visibility == Visibility.Visible, display_requested = displayRequested,
             full_preview = fullPreview, scale_labels = scaleValues.ToDictionary(x => x.Key, x => x.Value.Text),
             editor_types = editors.ToDictionary(x => x.Key, x => x.Value.GetType().Name),
-            field_details = editors.ToDictionary(x => x.Key, x => (string)x.Value.ToolTip),
+            field_details = editors.ToDictionary(x => x.Key, x => {
+                var tip = x.Value.ToolTip as ToolTip;
+                return tip == null ? x.Value.ToolTip as string : ((TextBlock)tip.Content).Text;
+            }),
+            choice_options = editors.Where(pair => pair.Value is ComboBox).ToDictionary(pair => pair.Key,
+                pair => ((ComboBox)pair.Value).Items.OfType<ComboBoxItem>().Select(option => {
+                    var tooltip = option.ToolTip as ToolTip;
+                    var details = tooltip == null ? null : tooltip.Content as TextBlock;
+                    return new { label = (string)option.Content, tooltip = details == null ? null : details.Text,
+                        wraps = details != null && details.TextWrapping == TextWrapping.Wrap && !Double.IsInfinity(details.MaxWidth) };
+                }).ToArray()),
             valid_fields = model.Fields.ToDictionary(x => x.Key, x => { object value; return model.TryValue(x.Value, out value); }),
             slider_hits = hits,
             layout_valid = saveBounds.Bottom <= layoutRoot.ActualHeight && saveBounds.Right <= layoutRoot.ActualWidth &&

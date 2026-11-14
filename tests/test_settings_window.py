@@ -8,6 +8,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = 'settings-fixture'
+NIGHT_AUDIO_TOOLTIP = ('温和压低较响的声音，适合低音量观看。仅用于双声道音轨。\n'
+                       '在新窗口中生效。若想立即生效：右键菜单→音频→声音处理。')
 
 
 def state(**changes):
@@ -36,16 +38,18 @@ def complete_state():
     def add(key, page, label, kind, default, timing, **metadata):
         f = dict(id=key, page=page, label=label, kind=kind, default=default, saved=default,
                  has_override=False, effective=default, status='effective', apply_error='',
-                 timing=timing, section={'audio': '启动时', 'window': '启动时', 'decoding': '下一媒体'}.get(page, '显示方式'), default_source='启动配置')
+                 timing=timing, section={'audio': '启动', 'window': '启动时', 'decoding': '下一媒体'}.get(page, '显示方式'), default_source='启动配置')
         f.update(metadata)
         result['fields'].append(f)
     add('slang', 'subtitles', '字幕语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
     add('sub-visibility', 'subtitles', '打开视频时显示字幕', 'boolean', True, 'next-media', section='下一媒体')
     add('sub-font', 'subtitles', '字幕字体', 'string', 'sans-serif', 'preview', section='字幕外观')
     add('sub-pos', 'subtitles', '字幕位置', 'number', 100, 'preview', display='position', min=0, max=100, slider_min=0, slider_max=100, step=1, section='字幕外观')
-    add('alang', 'audio', '音轨语言顺序', 'string', 'zh,en', 'next-media', section='下一媒体')
+    add('alang', 'audio', '音轨语言顺序', 'string', 'zh,en', 'next-media', section='音轨')
     add('volume', 'audio', '启动音量', 'number', 80, 'startup', display='number', min=0, max=1000, slider_min=0, slider_max=100, step=1)
     add('mute', 'audio', '启动静音', 'boolean', False, 'startup')
+    add('audio.default-mode', 'audio', '启动声音模式', 'choice', 'OFF', 'startup', section='声音处理',
+        choices=[dict(value='OFF', label='原始'), dict(value='NIGHT', label='夜间观看', tooltip=NIGHT_AUDIO_TOOLTIP)])
     add('fullscreen', 'window', '默认全屏', 'boolean', False, 'startup')
     add('ontop', 'window', '默认置顶', 'boolean', False, 'startup')
     add('modernz.scalefullscreen', 'controlbar', '全屏控制栏缩放', 'number', 1, 'preview', display='percent', min=.25, max=4, slider_min=.5, slider_max=2, step=.05)
@@ -63,7 +67,8 @@ def complete_state():
     add('hwdec', 'decoding', '硬件解码', 'choice', 'auto-copy', 'next-media', choices=[dict(value='auto-safe', label='自动安全硬解'), dict(value='no', label='关闭硬解')])
     for f in result['fields']:
         if f['page'] == 'paths': f.update(kind='string', timing='next-task' if f['id'] == 'capture_root' else 'restart', section='输出目录' if f['id'] == 'capture_root' else '外部程序')
-    order = ['slang', 'sub-visibility', 'sub-font', 'sub-pos', 'sub-scale', 'alang', 'volume', 'mute', 'fullscreen', 'ontop',
+    order = ['slang', 'sub-visibility', 'sub-font', 'sub-pos', 'sub-scale', 'alang', 'volume', 'mute', 'audio.default-mode',
+             'fullscreen', 'ontop',
              'modernz.scalewindowed', 'modernz.scalefullscreen', 'modernz.hidetimeout', 'modernz.keeponpause', 'modernz.chapter_fmt',
              'modernz.persistent_progress', 'modernz.timecurrent', 'modernz.timems', 'enhancement.default-preset', 'motion.default-mode',
              'hwdec', 'capture_root', 'ffmpeg_path', 'python_path', 'mpv_path']
@@ -294,7 +299,7 @@ class SettingsWindow(unittest.TestCase):
                                dict(op='search', text='FFmpeg'), dict(op='page', page='paths')])
         self.assertEqual(data['dirty_pages'], ['subtitles'])
         self.assertEqual(data['drafts']['sub-scale']['text'], '1.2')
-        self.assertEqual(data['search_results'], ['FFmpeg 路径 · 输出与组件'])
+        self.assertEqual(data['search_results'], ['FFmpeg 路径 · 组件'])
         self.assertEqual([c[2] for c in data['sent']], ['preview'])
 
     def test_save_only_current_page_and_keep_other_draft(self):
@@ -502,22 +507,49 @@ class SettingsWindow(unittest.TestCase):
     def test_complete_catalog_renders_every_page_with_correct_controls(self):
         expected = {
             'subtitles': {'slang': 'Button', 'sub-visibility': 'CheckBox', 'sub-font': 'Button', 'sub-pos': 'SettingsSlider'},
-            'audio': {'alang': 'Button', 'volume': 'SettingsSlider', 'mute': 'CheckBox'},
+            'audio': {'alang': 'Button', 'volume': 'SettingsSlider', 'mute': 'CheckBox', 'audio.default-mode': 'ComboBox'},
             'window': {'fullscreen': 'CheckBox', 'ontop': 'CheckBox'},
             'controlbar': {'modernz.hidetimeout': 'SettingsSlider', 'modernz.keeponpause': 'ComboBox', 'modernz.timems': 'CheckBox'},
             'picture': {'enhancement.default-preset': 'ComboBox', 'motion.default-mode': 'ComboBox'},
-            'decoding': {'hwdec': 'ComboBox'}, 'paths': {'capture_root': 'TextBox'}, 'shortcuts': {}, 'advanced': {}
+            'decoding': {'hwdec': 'ComboBox'}, 'shortcuts': {}, 'paths': {'capture_root': 'TextBox'}, 'advanced': {}
         }
         for page, controls in expected.items():
             with self.subTest(page=page):
                 data = self.run_window([dict(op='page', page=page)], complete_state(), width=760, height=640)
                 self.assertEqual(data['pages'], list(expected))
+                self.assertEqual(data['navigation_labels'], ['字幕', '声音', '窗口', '控制栏', '画面', '解码', '快捷键', '组件', '高级'])
                 for key, kind in controls.items(): self.assertEqual(data['editor_types'][key], kind)
                 self.assertEqual(data['preview_visible'], page in ('subtitles', 'controlbar'))
                 self.assertTrue(data['row_alignment'])
                 self.assertTrue(data['layout_valid'])
                 if page == 'subtitles':
                     self.assertTrue(data['label_content_fits']['sub-visibility'])
+
+    def test_startup_audio_mode_has_option_guidance_and_saves_without_preview(self):
+        field = 'audio.default-mode'
+        data = self.run_window([dict(op='choose', id=field, index=2), dict(op='save')], complete_state(), width=760, height=600)
+        self.assertEqual(data['section_headers'], ['音轨', '启动', '声音处理'])
+        self.assertTrue(data['label_content_fits'][field])
+        self.assertEqual(data['field_details'][field], NIGHT_AUDIO_TOOLTIP)
+        self.assertIn('当前有效', data['field_details']['volume'])
+        self.assertEqual(data['choice_options'][field], [
+            dict(label='默认（原始）', tooltip=None, wraps=False),
+            dict(label='原始', tooltip=None, wraps=False),
+            dict(label='夜间观看', tooltip=NIGHT_AUDIO_TOOLTIP, wraps=True),
+        ])
+        command, = data['sent']
+        self.assertEqual(command[2:6], ['save', TOKEN, 'r1', 'audio'])
+        self.assertEqual(json.loads(command[6]), {'alang': None, 'volume': None, 'mute': None, field: 'NIGHT'})
+
+        initial = complete_state()
+        next(row for row in initial['fields'] if row['id'] == field).update(saved='NIGHT', has_override=True)
+        saved = self.run_window([dict(op='page', page='audio')], initial)
+        self.assertEqual(saved['field_details'][field], NIGHT_AUDIO_TOOLTIP)
+        for index in (0, 1):
+            with self.subTest(index=index):
+                no_guidance = self.run_window([dict(op='choose', id=field, index=index)], initial)
+                self.assertIsNone(no_guidance['field_details'][field])
+                self.assertEqual(no_guidance['sent'], [])
 
     def test_picture_preset_uses_page_save_without_preview(self):
         field = 'enhancement.default-preset'

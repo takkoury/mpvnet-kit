@@ -3,6 +3,12 @@
   "version": "0.6.0",
   "files": [
     {
+      "source": "config/scripts/audio-controls.lua",
+      "destination": "config/scripts/audio-controls.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/scripts/motion-controls.lua",
       "destination": "config/scripts/motion-controls.lua",
       "component": "author",

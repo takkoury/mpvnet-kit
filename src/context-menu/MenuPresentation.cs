@@ -23,7 +23,10 @@ internal sealed class MenuPresentation : IDisposable
     private ResourceDictionary? _styles;
 
     private sealed record Indicator(string Property, Func<string, bool> IsMarked, bool Radio = false);
-    private sealed record StaticItem(MenuItem Item, string Command, string HostGesture, Indicator? Indicator);
+    private sealed record Availability(object Enabled, BindingBase? EnabledBinding,
+        object Tooltip, BindingBase? TooltipBinding);
+    private sealed record StaticItem(MenuItem Item, string Command, string HostGesture,
+        Indicator? Indicator, Availability? Availability);
 
     internal MenuPresentation(ContextMenu root, IEnumerable<(string[] Path, string Command)> bindings,
         IEnumerable<MenuItem> radioGroups)
@@ -40,7 +43,11 @@ internal sealed class MenuPresentation : IDisposable
             .GroupBy(entry => entry.Item!)
             .Where(group => group.Count() == 1)
             .Select(group => new StaticItem(group.Key, group.Single().Command, group.Key.InputGestureText,
-                IndicatorFor(group.Single().Command)))
+                IndicatorFor(group.Single().Command), group.Single().Command == "script-message-to audio_controls set-mode NIGHT"
+                    ? new Availability(group.Key.ReadLocalValue(UIElement.IsEnabledProperty),
+                        BindingOperations.GetBindingBase(group.Key, UIElement.IsEnabledProperty),
+                        group.Key.ReadLocalValue(FrameworkElement.ToolTipProperty),
+                        BindingOperations.GetBindingBase(group.Key, FrameworkElement.ToolTipProperty)) : null))
             .ToArray();
         _markColumns = _items.Where(entry => entry.Indicator is not null)
             .Select(entry => ItemsControl.ItemsControlFromItemContainer(entry.Item))
@@ -144,6 +151,21 @@ internal sealed class MenuPresentation : IDisposable
                 gesture = current;
             SetGesture(entry.Item, gesture);
 
+            if (entry.Availability is { } availability)
+            {
+                string active = readProperty("user-data/mpvnet/audio/available/NIGHT");
+                bool enabled = active is "yes" or "true";
+                entry.Item.SetCurrentValue(UIElement.IsEnabledProperty, enabled);
+                if (enabled)
+                    RestoreValue(entry.Item, FrameworkElement.ToolTipProperty, availability.Tooltip, availability.TooltipBinding);
+                else
+                {
+                    string reason = readProperty("user-data/mpvnet/audio/unavailable_text");
+                    entry.Item.SetCurrentValue(FrameworkElement.ToolTipProperty,
+                        string.IsNullOrWhiteSpace(reason) ? "声音处理尚未就绪" : reason);
+                }
+            }
+
             if (entry.Indicator is not { } indicator)
                 continue;
             if (!values.TryGetValue(indicator.Property, out string? value))
@@ -236,6 +258,8 @@ internal sealed class MenuPresentation : IDisposable
         "script-message-to motion_controls set-mode OFF" => Choice("user-data/mpvnet/motion/applied", "OFF"),
         "script-message-to motion_controls set-mode DISPLAY" => Choice("user-data/mpvnet/motion/applied", "DISPLAY"),
         "script-message-to motion_controls set-mode BLEND" => Choice("user-data/mpvnet/motion/applied", "BLEND"),
+        "script-message-to audio_controls set-mode OFF" => Choice("user-data/mpvnet/audio/applied", "OFF"),
+        "script-message-to audio_controls set-mode NIGHT" => Choice("user-data/mpvnet/audio/applied", "NIGHT"),
         "script-message-to capture_controls set-default-format webp" => Choice("user-data/mpvnet/capture/clipboard_format", "webp"),
         "script-message-to capture_controls set-default-format gif" => Choice("user-data/mpvnet/capture/clipboard_format", "gif"),
         "script-message-to capture_controls set-default-format mp4" => Choice("user-data/mpvnet/capture/clipboard_format", "mp4"),
@@ -266,7 +290,14 @@ internal sealed class MenuPresentation : IDisposable
         foreach (var group in _radioGroups)
             ((INotifyCollectionChanged)group).CollectionChanged -= OnRadioItemsChanged;
         foreach (var entry in _items)
+        {
             SetGesture(entry.Item, entry.HostGesture);
+            if (entry.Availability is { } availability)
+            {
+                RestoreValue(entry.Item, UIElement.IsEnabledProperty, availability.Enabled, availability.EnabledBinding);
+                RestoreValue(entry.Item, FrameworkElement.ToolTipProperty, availability.Tooltip, availability.TooltipBinding);
+            }
+        }
         _root.Resources.MergedDictionaries.Remove(styles);
         if (_hostStyleBinding is not null)
             BindingOperations.SetBinding(_root, FrameworkElement.StyleProperty, _hostStyleBinding);
@@ -275,6 +306,13 @@ internal sealed class MenuPresentation : IDisposable
         else
             _root.Style = (Style?)_hostLocalStyle;
         _styles = null;
+    }
+
+    private static void RestoreValue(DependencyObject target, DependencyProperty property, object value, BindingBase? binding)
+    {
+        if (binding is not null) BindingOperations.SetBinding(target, property, binding);
+        else if (value == DependencyProperty.UnsetValue) target.ClearValue(property);
+        else target.SetValue(property, value);
     }
 }
 

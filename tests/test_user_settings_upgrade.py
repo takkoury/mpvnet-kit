@@ -24,6 +24,7 @@ USER_BYTES = (b'{\r\n  "schema" : 1, "shortcuts" : { "playback.pause" : ["Ctrl+p
               b' "updates.auto-check" : false,'
               b' "enhancement.default-preset" : "QUALITY",'
               b' "motion.default-mode" : "BLEND",'
+              b' "audio.default-mode" : "NIGHT",'
               b' "future" : { "disabled" : false, "zero" : 0, "empty" : "" } },\r\n'
               b'  "unknown" : { "future" : [null, 7] },'
               b' "rawformat" : "\\u4fdd\\u7559"\r\n}\r\n')

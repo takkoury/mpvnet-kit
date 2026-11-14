@@ -10,6 +10,11 @@ M.fields = {
     {id='alang',page='audio',label='音轨语言顺序',kind='string',default='',timing='next-media',section='音轨',script='settings_options',search_terms='语言 优先 顺序 音频 alang'},
     {id='volume',page='audio',label='启动音量',kind='number',display='number',default=100,min=0,max=1000,slider_min=0,slider_max=100,step=1,timing='startup',first_media=true,section='启动',script='settings_options'},
     {id='mute',page='audio',label='启动静音',kind='boolean',default=false,timing='startup',first_media=true,section='启动',script='settings_options'},
+    {id='audio.default-mode',page='audio',label='启动声音模式',kind='choice',default='OFF',timing='startup',section='声音处理',
+        script='audio_controls',search_terms='声音 原始 夜间 压缩 低音量',choices={
+            {value='OFF',label='原始'},
+            {value='NIGHT',label='夜间观看',tooltip='温和压低较响的声音，适合低音量观看。仅用于双声道音轨。\n在新窗口中生效。若想立即生效：右键菜单→音频→声音处理。'},
+        }},
     {id='fullscreen',page='window',label='默认全屏',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='ontop',page='window',label='默认置顶',kind='boolean',default=false,timing='startup',script='settings_options'},
     {id='playlist.open-on-startup',page='window',label='启动时打开播放列表',kind='boolean',default=false,timing='startup',script='playlist_controls',search_terms='播放列表 侧窗 启动 自动 打开 playlist'},
@@ -35,9 +40,9 @@ M.fields = {
     {id='hwdec',page='decoding',label='视频解码方式',kind='choice',default='auto-safe',choices={{value='auto-safe',label='自动使用硬件加速'},{value='no',label='仅使用软件解码'}},timing='next-media',script='settings_options',search_terms='硬件解码 硬解 软件 解码 hwdec'},
 }
 M.path_fields = {'capture_root','ffmpeg_path','python_path','mpv_path'}
-M.pages = {{id='subtitles',label='字幕'},{id='audio',label='声音与音轨'},{id='window',label='窗口'},
-    {id='controlbar',label='控制栏'},{id='picture',label='画面'},{id='decoding',label='解码'},{id='paths',label='本机路径'},
-    {id='shortcuts',label='快捷键',action_only=true},{id='advanced',label='高级',action_only=true}}
+M.pages = {{id='subtitles',label='字幕'},{id='audio',label='声音'},{id='window',label='窗口'},
+    {id='controlbar',label='控制栏'},{id='picture',label='画面'},{id='decoding',label='解码'},
+    {id='shortcuts',label='快捷键',action_only=true},{id='paths',label='组件'},{id='advanced',label='高级',action_only=true}}
 M.actions = {{id='shortcuts.open',page='shortcuts',label='编辑用户快捷键',search_terms='录键 冲突 恢复 键位'},
     {id='edit.mpv.conf',page='advanced',label='编辑 mpv.conf',search_terms='高级 播放器配置'},
     {id='edit.input.conf',page='advanced',label='编辑 input.conf',search_terms='高级 按键 菜单'},

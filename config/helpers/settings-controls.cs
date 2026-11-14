@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Interop;
@@ -167,10 +168,45 @@ public sealed partial class SettingsEditor
     }
     object NavigationContent(string id, bool dirty)
     {
-        string[] glyphs = { "\uE8D2", "\uE767", "\uE737", "\uE713", "\uE714", "\uE7F4", "\uE8B7", "\uE765", "\uE713" };
+        string[] glyphs = { "\uE8D2", "\uE767", "\uE737", "\uE713", "\uE714", "\uE7F4", "\uE765", "\uE8B7", "\uE713" };
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(new TextBlock { Text = glyphs[Array.IndexOf(SettingsDraft.Pages,id)], FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 14, Width = 24, VerticalAlignment = VerticalAlignment.Center });
         panel.Children.Add(new TextBlock { Text = SettingsDraft.PageName(id) + (dirty ? " •" : ""), VerticalAlignment = VerticalAlignment.Center }); return panel;
+    }
+    ToolTip ChoiceToolTip(FrameworkElement target, string text)
+    {
+        ToolTipService.SetInitialShowDelay(target, 550);
+        return new ToolTip { Style = (Style)FindResource(typeof(ToolTip)),
+            PlacementTarget = target, Placement = PlacementMode.Bottom, VerticalOffset = 4,
+            Content = new TextBlock { Text = text, MaxWidth = 400, TextWrapping = TextWrapping.Wrap } };
+    }
+    ComboBoxItem ChoiceItem(ComboBox choice, Dictionary<string, object> option, bool showTooltipWhenSelected)
+    {
+        var item = new ComboBoxItem { Content = SettingsDraft.Str(option, "label"),
+            Tag = SettingsDraft.Text(SettingsDraft.Value(option, "value")) };
+        string text = SettingsDraft.Str(option, "tooltip");
+        if (text.Length == 0) return item;
+
+        var tip = ChoiceToolTip(item, text);
+        item.ToolTip = tip;
+        System.Windows.Automation.AutomationProperties.SetHelpText(item, text);
+        // WPF on .NET Framework 4.7.2 only opens tooltips automatically for the mouse.
+        item.GotKeyboardFocus += delegate {
+            if (choice.IsDropDownOpen && InputManager.Current.MostRecentInputDevice is KeyboardDevice) tip.IsOpen = true;
+        };
+        item.LostKeyboardFocus += delegate { tip.IsOpen = false; };
+        item.Unloaded += delegate { tip.IsOpen = false; };
+        choice.DropDownClosed += delegate { tip.IsOpen = false; };
+        if (showTooltipWhenSelected) {
+            var selectedTip = ChoiceToolTip(choice, text);
+            item.Selected += delegate { choice.ToolTip = selectedTip; };
+            item.Unselected += delegate {
+                selectedTip.IsOpen = false;
+                if (ReferenceEquals(choice.ToolTip, selectedTip)) choice.ToolTip = null;
+            };
+            choice.DropDownOpened += delegate { selectedTip.IsOpen = false; };
+        }
+        return item;
     }
     Button SearchResult(string name, string category, Action action)
     {

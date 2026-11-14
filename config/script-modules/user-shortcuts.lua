@@ -110,6 +110,8 @@ local additions = {
     {'audio.previous', '音频', '上一条音轨', 'cycle audio down'},
     {'audio.device', '音频', '选择音频设备…', 'script-binding track_selection/select-device', true},
     {'audio.load', '音频', '加载外挂音频…', 'script-message-to mpvnet load-audio', true},
+    {'audio.processing-original', '音频', '声音处理：原始', 'script-message-to audio_controls set-mode OFF'},
+    {'audio.processing-night', '音频', '声音处理：夜间观看', 'script-message-to audio_controls set-mode NIGHT'},
     {'audio.mute', '音频', '静音／取消静音', 'cycle mute'},
     {'audio.volume-up', '音频', '增加音量 2', 'add volume 2'},
     {'audio.volume-down', '音频', '减少音量 2', 'add volume -2'},
