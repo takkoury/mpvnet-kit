@@ -209,7 +209,7 @@ mp.register_script_message('set-mode', function(name)
     desired, manually_selected, blocked, failure, external_override = name, true, false, nil, false
     reported_unavailable = nil
     publish()
-    feedback.show(name == 'NIGHT' and '已启用夜间观看' or '已撤销套件声音处理', 'success')
+    feedback.show(name == 'NIGHT' and '已启用夜间观看' or '已启用原始声音模式', 'success')
 end)
 mp.add_hook('on_before_start_file', 50, function()
     local chain = read_chain()

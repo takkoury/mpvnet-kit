@@ -160,7 +160,7 @@ internal sealed class MenuPresentation : IDisposable
                     RestoreValue(entry.Item, FrameworkElement.ToolTipProperty, availability.Tooltip, availability.TooltipBinding);
                 else
                 {
-                    string reason = readProperty("user-data/mpvnet/audio/unavailable_text");
+                    string reason = ReadStateValue(readProperty, "user-data/mpvnet/audio/unavailable_text");
                     entry.Item.SetCurrentValue(FrameworkElement.ToolTipProperty,
                         string.IsNullOrWhiteSpace(reason) ? "声音处理尚未就绪" : reason);
                 }
@@ -169,9 +169,20 @@ internal sealed class MenuPresentation : IDisposable
             if (entry.Indicator is not { } indicator)
                 continue;
             if (!values.TryGetValue(indicator.Property, out string? value))
-                values[indicator.Property] = value = readProperty(indicator.Property);
+                values[indicator.Property] = value = ReadStateValue(readProperty, indicator.Property);
             MenuMarks.SetIsMarked(entry.Item, indicator.IsMarked(value));
         }
+    }
+
+    private static string ReadStateValue(Func<string, string> readProperty, string property)
+    {
+        string value = readProperty(property);
+        // mpv serializes user-data string nodes as JSON through its string API.
+        // Native options (pause, speed, etc.) already use their display strings.
+        if (!property.StartsWith("user-data/", StringComparison.Ordinal) || !value.StartsWith('"'))
+            return value;
+        try { return JsonSerializer.Deserialize<string>(value) ?? ""; }
+        catch (JsonException) { return ""; }
     }
 
     private static void SetGesture(MenuItem item, string text)

@@ -126,10 +126,10 @@ internal static class Program
             Func<string, string> read = property => property switch
             {
                 "user-data/mpvnet/shortcuts" => applied,
-                "user-data/mpvnet/motion/applied" => appliedMotion,
-                "user-data/mpvnet/audio/applied" => appliedSound,
+                "user-data/mpvnet/motion/applied" => JsonSerializer.Serialize(appliedMotion),
+                "user-data/mpvnet/audio/applied" => JsonSerializer.Serialize(appliedSound),
                 "user-data/mpvnet/audio/available/NIGHT" => nightAvailable,
-                "user-data/mpvnet/audio/unavailable_text" => "夜间观看仅支持双声道音轨",
+                "user-data/mpvnet/audio/unavailable_text" => JsonSerializer.Serialize("夜间观看仅支持双声道音轨"),
                 "pause" => "yes",
                 "speed" => "0.500000",
                 _ => ""
