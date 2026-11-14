@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>夜间观看 · mpvnet-kit 交互原型</title>
+<style>
+:root{color-scheme:dark;--bg:#111;--surface:#151515;--control:#242424;--line:#3b3b3b;--text:#f2f2f2;--muted:#ababab;--accent:#1287bb}
+*{box-sizing:border-box}body{margin:0;background:#0c0c0c;color:var(--text);font:14px/1.6 "Microsoft YaHei UI","Microsoft YaHei",sans-serif}main{max-width:1104px;margin:28px auto;padding:0 24px 40px}h1{font-size:25px;font-weight:600;margin:0 0 8px}p{margin:0;color:var(--muted)}.intro{max-width:880px}.eyebrow{font-size:12px;color:#83c5e3;margin-bottom:7px;letter-spacing:1px}button,select,input{font:inherit;color:inherit}button,select{cursor:pointer}button{border:1px solid #555;background:var(--control);border-radius:3px;min-height:34px;padding:5px 14px}button:hover:not(:disabled){background:#353535}button:disabled{opacity:.46;cursor:default}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.primary{background:var(--accent);border-color:var(--accent)}.primary:hover:not(:disabled){background:#1799cf}select,input{border:1px solid #555;border-radius:3px;background:var(--control);height:35px;padding:0 10px}select{min-width:200px}input[readonly]{cursor:default}.summary{margin:22px 0 20px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;padding:13px 0}.summary dt{font-size:12px;color:var(--muted)}.summary dd{margin:3px 0 0;font-size:14px}.view-tabs{display:flex;gap:24px;margin:0 0 12px}.view-tabs button,.scenario-tabs button{border:0;border-radius:0;background:transparent;padding:7px 0;min-height:34px;border-bottom:2px solid transparent;color:var(--muted)}.view-tabs button[aria-selected=true],.scenario-tabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--text)}.window{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);height:550px;box-shadow:0 14px 40px #0005}.titlebar{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 18px;border-bottom:1px solid #222}.titlebar button{background:none;border:0;min-height:30px;width:32px;padding:0;font-size:18px}.window-body{height:calc(100% - 36px);display:grid;grid-template-columns:196px minmax(0,1fr)}nav{background:#111;border-right:1px solid #282828;padding:18px 12px}.search{height:34px;border:1px solid #555;border-radius:3px;color:#888;background:#242424;display:flex;align-items:center;gap:9px;padding:0 9px;margin:0 0 18px}.search svg{width:14px;height:14px;flex:none}.category{height:38px;display:flex;align-items:center;padding:0 12px;border-left:2px solid transparent;margin:4px 0;color:#aaa}.category.active{background:#242424;border-left-color:var(--accent);color:white}.settings{padding:24px 30px 0;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}.settings h2{font-size:21px;font-weight:600;margin:0 0 18px}.fields{flex:1;min-height:0;overflow:auto;padding-bottom:12px}.group{font-size:14px;color:var(--muted);font-weight:600;margin:20px 0 8px}.group:first-child{margin-top:0}.row{display:grid;grid-template-columns:136px minmax(0,430px);gap:0;align-items:center;min-height:48px;margin-bottom:4px}.row label{padding-right:12px}.row input,.row select{width:100%;min-width:0}.context{color:#aaa}.lang{min-height:35px;display:flex;align-items:center;color:#aaa}.volume{display:flex;align-items:center;gap:16px}.track{height:4px;background:#1287bb;border-radius:3px;position:relative;flex:1;margin:0 7px}.track:after{content:"";position:absolute;width:15px;height:15px;border:1px solid #fff;border-radius:50%;background:var(--accent);right:0;top:-6px}.volume span{width:62px;text-align:center;color:#aaa}.switch{width:42px;height:22px;border:1px solid #777;background:#454545;border-radius:11px;position:relative}.switch:after{content:"";position:absolute;left:4px;top:3px;width:14px;height:14px;border-radius:50%;background:#ddd}.details{margin-left:136px;font-size:12px;color:var(--muted)}.details summary{cursor:pointer;width:max-content;color:#bcbcbc}.details p{padding:9px 0 0;max-width:430px}.footer{flex-shrink:0;padding:14px 0 18px;border-top:1px solid #282828;display:flex;align-items:center;justify-content:space-between;gap:12px}.footer-actions{display:flex;gap:8px}.notice{min-height:20px;color:#d5d5d5;font-size:12px;margin-top:8px}.closed{height:550px;border:1px solid var(--line);border-radius:8px;display:grid;place-content:center;text-align:center;gap:12px}.player{height:550px;border:1px solid var(--line);border-radius:8px;background:#090909;position:relative;overflow:hidden}.player-top{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#aaa;border-bottom:1px solid #222}.player-label{position:absolute;bottom:30px;left:30px;color:#666;font-size:13px}.osd{position:absolute;left:24px;top:52px;color:#e5e5e5;font-size:16px;max-width:calc(100% - 48px);white-space:pre-line}.menu-stack{display:flex;align-items:flex-start;position:absolute;left:30px;top:130px;gap:4px;max-width:calc(100% - 60px)}.menu{background:#151515;border:1px solid #3b3b3b;border-radius:6px;padding:4px;box-shadow:0 5px 15px #0008;font-size:13px;flex-shrink:0}.root-menu{width:152px}.audio-menu{width:211px;margin-top:96px}.sound-menu{width:218px;margin-top:233px}.menu-row{height:32px;padding:0 10px;display:flex;gap:10px;align-items:center;justify-content:space-between;border-radius:3px;color:#ddd}.menu-row.context{color:#8c8c8c}.menu-row.active{background:#303030;color:#fff}.menu button{min-height:32px;height:32px;width:100%;border:0;background:transparent;padding:0 10px;border-radius:3px;text-align:left;font-size:13px;display:flex;align-items:center;gap:9px}.menu button:hover:not(:disabled){background:#303030}.menu button:disabled{opacity:1;color:#777}.dot{width:5px;height:5px;border-radius:50%;display:inline-block;background:transparent;margin:0 4px;flex:none}.menu button[aria-checked=true] .dot{background:var(--accent)}.sep{height:1px;background:#383838;margin:4px 8px}.menu-note{font-size:12px;color:#aaa;line-height:1.65;max-width:208px;padding:7px 11px 8px;white-space:pre-line}.harness{margin-top:23px}.harness-title{font-size:12px;color:#999;margin:0 0 10px}.free-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.free-actions label{color:#aaa;font-size:13px}.free-actions select{min-width:160px}.event{color:#c4c4c4;font-size:13px;min-height:23px;margin-top:13px}.walkthrough{border-top:1px solid var(--line);padding-top:16px;margin-top:20px}.scenario-tabs{display:flex;gap:22px;flex-wrap:wrap}.scenario-copy{font-size:13px;margin:10px 0}.steps{display:flex;gap:8px;flex-wrap:wrap}.steps button{font-size:13px}.step-note{font-size:12px;color:#969696;margin-top:9px}dialog{background:#1b1b1b;color:var(--text);border:1px solid #555;border-radius:6px;max-width:420px;padding:24px}dialog::backdrop{background:#0008}dialog h3{font-size:17px;margin:0 0 10px}dialog p{font-size:13px}dialog .actions{display:flex;gap:10px;margin-top:22px}dialog button{flex:1;min-width:90px}[hidden]{display:none!important}@media(max-width:760px){main{padding:0 14px 28px;margin-top:18px}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.window-body{grid-template-columns:150px minmax(0,1fr)}nav{padding:16px 8px}.settings{padding:20px 18px 0}.row{grid-template-columns:1fr;gap:6px;margin-bottom:12px}.details{margin-left:0}.footer{align-items:flex-start;flex-direction:column}.menu-stack{left:12px;max-width:calc(100% - 24px)}.root-menu{display:none}.audio-menu{width:178px;margin-top:0}.sound-menu{width:190px;margin-top:137px}.player{height:550px}.category{font-size:12px;padding-left:8px}.settings h2{font-size:18px}.free-actions select{min-width:140px}}
+</style>
+<main>
+ <div class="eyebrow">MPVNET-KIT · 最小交互原型</div>
+ <h1>夜间观看</h1>
+ <p class="intro">确认“当前切换”和“保存启动默认”是否容易区分，以及不适用时的反馈是否清楚。只模拟界面和状态，不播放声音，也不写入播放器配置。</p>
+ <dl class="summary" aria-label="原型状态，非正式界面">
+  <div><dt>当前模拟实例</dt><dd id="instance-state"></dd></div>
+  <div><dt>当前实例选择</dt><dd id="desired-state"></dd></div>
+  <div><dt>当前实际应用</dt><dd id="applied-state"></dd></div>
+  <div><dt>已保存启动默认</dt><dd id="saved-state"></dd></div>
+  <div><dt>设置草稿</dt><dd id="draft-state"></dd></div>
+ </dl>
+ <div class="view-tabs" role="tablist" aria-label="查看入口">
+  <button id="view-settings" role="tab" aria-selected="true" aria-controls="settings-view">常用设置</button>
+  <button id="view-menu" role="tab" aria-selected="false" aria-controls="menu-view">播放中菜单</button>
+ </div>
+ <section id="settings-view" role="tabpanel" aria-labelledby="view-settings">
+  <div class="window" id="settings-window">
+   <div class="titlebar"><span>设置</span><button id="close-settings" aria-label="关闭设置">×</button></div>
+   <div class="window-body">
+    <nav aria-label="现有设置分类，原型只展示声音页">
+     <div class="search" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 5 5"/></svg>搜索设置</div>
+     <div class="category">字幕</div><div class="category active" aria-current="page">声音与音轨</div><div class="category">窗口</div><div class="category">控制栏</div><div class="category">画面</div><div class="category">解码</div><div class="category">输出与组件</div><div class="category">快捷键</div><div class="category">高级</div>
+    </nav>
+    <section class="settings" aria-label="声音与音轨">
+     <h2>声音与音轨</h2>
+     <div class="fields">
+      <div class="group">音轨</div>
+      <div class="row context"><span>音轨语言顺序</span><div class="lang" title="已有设置，仅作布局参考">跟随文件</div></div>
+      <div class="group">启动</div>
+      <div class="row context"><span>启动音量</span><div class="volume" title="已有设置，仅作布局参考"><div class="track"></div><span>100</span></div></div>
+      <div class="row context"><span>启动静音</span><div class="switch" title="已有设置，仅作布局参考"></div></div>
+      <div class="group">声音处理</div>
+      <div class="row"><label for="startup-mode">启动声音模式</label><select id="startup-mode" title="新实例启动时生效。保存不会改变当前实例；播放中可在音频菜单临时切换。"><option value="inherit">默认（原始）</option><option value="OFF">原始</option><option value="NIGHT">夜间观看</option></select></div>
+      <details class="details"><summary>用途与生效说明</summary><p>夜间观看会温和压低较响的声音，适合低音量观看。它会改变声音的强弱关系；仅用于双声道音轨，不处理音频直通。</p><p>保存后，新开的播放器使用此默认；当前实例保持原选择。播放中请在“音频 → 声音处理”切换，选择“原始”可撤销套件的声音处理。</p></details>
+      <div id="settings-notice" class="notice" role="status" aria-live="polite"></div>
+     </div>
+     <div class="footer"><button id="restore-default">恢复默认</button><div class="footer-actions"><button id="undo-draft">撤销修改</button><button id="save-draft" class="primary">保存</button></div></div>
+    </section>
+   </div>
+  </div>
+  <div class="closed" id="settings-closed" hidden><p>设置已关闭，当前播放状态保持。</p><button id="open-settings">打开设置</button></div>
+ </section>
+ <section id="menu-view" role="tabpanel" aria-labelledby="view-menu" hidden>
+  <div class="player">
+   <div class="player-top"><span>mpv.net · 播放中</span><span id="media-label"></span></div>
+   <div id="osd" class="osd" role="status" aria-live="polite"></div>
+   <div class="menu-stack" aria-label="音频菜单布局原型">
+    <div class="menu root-menu"><div class="menu-row context">文件 <span>›</span></div><div class="menu-row context">播放 <span>›</span></div><div class="menu-row context">字幕与弹幕 <span>›</span></div><div class="menu-row active">音频 <span>›</span></div><div class="menu-row context">画面 <span>›</span></div><div class="menu-row context">截图与片段 <span>›</span></div><div class="menu-row context">窗口与界面 <span>›</span></div><div class="menu-row context">工具与设置 <span>›</span></div></div>
+    <div class="menu audio-menu"><div class="menu-row context">选择音轨…</div><div class="menu-row context">下一条音轨</div><div class="menu-row context">音频设备 <span>›</span></div><div class="menu-row context">加载外挂音频…</div><div class="sep"></div><button id="sound-submenu" aria-expanded="true" aria-controls="sound-menu">声音处理 <span style="margin-left:auto">›</span></button><div class="sep"></div><div class="menu-row context">静音／取消静音</div><div class="menu-row context">音量 <span>›</span></div><div class="menu-row context">时间同步 <span>›</span></div><div class="menu-row context">仅音频／恢复视频</div></div>
+    <div class="menu sound-menu" id="sound-menu" role="menu" aria-label="声音处理">
+     <button id="mode-original" role="menuitemradio" aria-checked="true"><span class="dot"></span>原始</button>
+     <button id="mode-night" role="menuitemradio" aria-checked="false"><span class="dot"></span>夜间观看</button>
+     <div class="sep"></div><div id="menu-note" class="menu-note">仅影响当前实例，切换媒体后保留选择。</div>
+    </div>
+   </div>
+  </div>
+ </section>
+ <section class="harness" aria-label="原型演示控制，不属于播放器界面">
+  <p class="harness-title">原型演示区 · 以下控件仅用于评审状态</p>
+  <div class="free-actions"><label for="media-kind">当前音轨</label><select id="media-kind"><option value="stereo">双声道音轨</option><option value="multi">多声道音轨</option><option value="passthrough">音频直通</option><option value="none">没有音频</option></select><button id="new-instance">新开模拟播放器</button><button id="reset-demo">还原演示</button></div>
+  <div id="last-event" class="event" role="status" aria-live="polite"></div>
+  <p id="previous-instance" class="step-note" hidden></p>
+ </section>
+ <section class="walkthrough" aria-label="引导场景">
+  <div class="scenario-tabs" id="scenario-tabs" role="tablist" aria-label="选择引导场景"></div>
+  <p id="scenario-copy" class="scenario-copy"></p><div id="scenario-steps" class="steps"></div>
+  <p class="step-note" id="step-note">点选一个场景后按顺序操作，也可以直接使用上方控件。刷新页面会清空演示状态。</p>
+ </section>
+</main>
+<dialog id="close-dialog"><h3>保存设置修改？</h3><p>保存只影响新开的实例，当前播放模式不会改变。</p><div class="actions"><button id="close-save" class="primary">保存</button><button id="close-discard">不保存</button><button id="close-cancel">取消</button></div></dialog>
+<script id="state-model">
+// Throwaway state model for review. No storage, IPC, media playback, or production hooks.
+const AudioPrototype = (() => {
+ const names = {OFF:'原始',NIGHT:'夜间观看',NONE:'无音频',inherit:'默认（原始）'};
+ const mediaNames = {stereo:'双声道音轨',multi:'多声道音轨',passthrough:'音频直通',none:'没有音频'};
+ const initial = () => ({saved:'inherit',draft:'inherit',desired:'OFF',media:'stereo',instance:1,previous:null,settingsOpen:true,event:'',notice:''});
+ const applied = s => s.media==='none'?'NONE':s.desired==='NIGHT'&&s.media==='stereo'?'NIGHT':'OFF';
+ const unavailable = s => ({multi:'当前为多声道音轨，夜间观看仅支持双声道音轨。',passthrough:'当前使用音频直通，无法应用夜间观看。',none:'当前没有音频，无法应用夜间观看。'}[s.media]||'');
+ function reduce(previous,action) {
+  let s={...previous,notice:''};
+  switch(action.type) {
+   case 'DRAFT': s.draft=action.value;s.event='已修改设置草稿，尚未保存；当前播放保持。';break;
+   case 'SAVE': s.saved=s.draft;s.notice='已保存，新开的播放器生效。';s.event='启动默认已保存为'+names[s.saved]+'；当前实例仍为'+names[applied(s)]+'。';break;
+   case 'UNDO': s.draft=s.saved;s.event='已撤销未保存修改，当前播放保持。';break;
+   case 'DEFAULT': s.draft='inherit';s.event='草稿已恢复默认（原始）；保存后影响新开的播放器。';break;
+   case 'MODE':
+    if(action.value==='NIGHT'&&unavailable(s)){s.event=unavailable(s);break;}
+    s.desired=action.value;s.event=action.value==='NIGHT'?'已启用夜间观看，仅影响当前实例。':'已撤销套件声音处理，其他声音设置保持。';break;
+   case 'MEDIA':
+    s.media=action.value;s.event=s.desired==='NIGHT'&&unavailable(s)?unavailable(s)+(s.media==='none'?'':' 暂用原始声音。')+' 当前实例保留夜间选择。':s.desired==='NIGHT'?'当前音轨可处理，已恢复夜间观看。':'已切换音轨，当前声音选择保持。';break;
+   case 'NEW': {
+    const previousInstance=s.instance,previousApplied=names[applied(s)];
+    const previous={instance:s.instance,desired:s.desired,applied:applied(s),draft:s.draft};
+    s={...s,previous,instance:s.instance+1,desired:s.saved==='NIGHT'?'NIGHT':'OFF',media:'stereo',draft:s.saved,settingsOpen:true};
+    s.event='实例 '+s.instance+' 已按启动默认打开；实例 '+previousInstance+' 保持'+previousApplied+'。';break;
+   }
+   case 'OPEN':s.settingsOpen=true;s.draft=s.saved;s.event='已打开设置。';break;
+   case 'CLOSE':s.settingsOpen=false;s.event='设置已关闭，当前播放保持。';break;
+   case 'DISCARD_CLOSE':s.draft=s.saved;s.settingsOpen=false;s.event='已放弃草稿并关闭设置，当前播放保持。';break;
+   case 'SAVE_CLOSE':s.saved=s.draft;s.settingsOpen=false;s.event='已保存启动默认并关闭设置，当前播放保持。';break;
+   case 'RESET':s=initial();s.event='演示已还原。';break;
+  }
+  return s;
+ }
+ return {initial,reduce,applied,unavailable,names,mediaNames};
+})();
+</script>
+<script>
+const $=id=>document.getElementById(id);let state=AudioPrototype.initial(),view='settings',submenu=true,guide=null,step=0;
+const scenarios=[
+ {name:'临时切换',copy:'打开夜间观看，再恢复原始。观察已保存启动默认始终不变。',setup:()=>AudioPrototype.initial(),steps:[['开启夜间观看',{type:'MODE',value:'NIGHT'},'menu'],['恢复原始',{type:'MODE',value:'OFF'},'menu']]},
+ {name:'保存启动默认',copy:'保存夜间观看后，当前实例仍是原始。新开模拟播放器才使用保存的模式。',setup:()=>AudioPrototype.initial(),steps:[['草稿选夜间观看',{type:'DRAFT',value:'NIGHT'},'settings'],['保存默认',{type:'SAVE'},'settings'],['新开模拟播放器',{type:'NEW'},'menu']]},
+ {name:'不适用的音轨',copy:'当前实例选择夜间观看；换到多声道时暂用原始，换回双声道后恢复原选择。',setup:()=>AudioPrototype.initial(),steps:[['开启夜间观看',{type:'MODE',value:'NIGHT'},'menu'],['切到多声道',{type:'MEDIA',value:'multi'},'menu'],['换回双声道',{type:'MEDIA',value:'stereo'},'menu']]},
+ {name:'恢复默认与当前',copy:'已保存并开启夜间观看。恢复设置默认并保存，不会立即关闭当前实例的处理；菜单的“原始”负责当前恢复。',setup:()=>({...AudioPrototype.initial(),saved:'NIGHT',draft:'NIGHT',desired:'NIGHT'}),steps:[['恢复设置默认',{type:'DEFAULT'},'settings'],['保存默认',{type:'SAVE'},'settings'],['当前切回原始',{type:'MODE',value:'OFF'},'menu']]}
+];
+function act(action,guided=false){state=AudioPrototype.reduce(state,action);if(!guided)guide=null;render();}
+function setView(next){view=next;render();}
+function render(){
+ const a=AudioPrototype.applied(state),dirty=state.draft!==state.saved,reason=AudioPrototype.unavailable(state);
+ $('instance-state').textContent='实例 '+state.instance+' · '+AudioPrototype.mediaNames[state.media];
+ $('desired-state').textContent=AudioPrototype.names[state.desired];$('applied-state').textContent=AudioPrototype.names[a];
+ $('saved-state').textContent=AudioPrototype.names[state.saved];$('draft-state').textContent=AudioPrototype.names[state.draft]+(dirty?' · 未保存':'');
+ $('startup-mode').value=state.draft;$('startup-mode').title='新实例启动时生效\n已保存：'+AudioPrototype.names[state.saved]+'\n当前实例选择：'+AudioPrototype.names[state.desired]+'\n保存不会改变当前实例。';
+ $('save-draft').disabled=!dirty;$('undo-draft').disabled=!dirty;
+ $('settings-notice').textContent=state.notice;$('last-event').textContent=state.event;
+ $('previous-instance').hidden=!state.previous;if(state.previous)$('previous-instance').textContent='上一实例的保留快照：实例 '+state.previous.instance+'，选择 '+AudioPrototype.names[state.previous.desired]+'，实际 '+AudioPrototype.names[state.previous.applied]+'，设置草稿 '+AudioPrototype.names[state.previous.draft]+'。';
+ $('settings-window').hidden=!state.settingsOpen;$('settings-closed').hidden=state.settingsOpen;
+ $('view-settings').setAttribute('aria-selected',String(view==='settings'));$('view-menu').setAttribute('aria-selected',String(view==='menu'));
+ $('settings-view').hidden=view!=='settings';$('menu-view').hidden=view!=='menu';
+ $('mode-original').setAttribute('aria-checked',String(a==='OFF'));$('mode-night').setAttribute('aria-checked',String(a==='NIGHT'));
+ $('mode-night').disabled=!!reason;$('mode-night').title=reason||'温和压低较响的声音；当前实例内生效。';
+ $('media-label').textContent=AudioPrototype.mediaNames[state.media];$('media-kind').value=state.media;
+ $('menu-note').textContent=reason?(state.media==='none'?'当前没有音频。':state.media==='passthrough'?'音频直通时无法处理。':'此音轨不适用，暂用原始。')+(state.desired==='NIGHT'?'\n换回双声道音轨后恢复夜间观看。':''): '仅影响当前实例，切换媒体后保留选择。';
+ $('sound-menu').hidden=!submenu;$('sound-submenu').setAttribute('aria-expanded',String(submenu));$('osd').textContent=state.event;
+ $('scenario-tabs').replaceChildren();$('scenario-steps').replaceChildren();
+ scenarios.forEach((scenario,i)=>{const b=document.createElement('button');b.textContent=scenario.name;b.setAttribute('role','tab');b.setAttribute('aria-selected',String(guide===i));b.addEventListener('click',()=>{guide=i;step=0;state=scenario.setup();submenu=true;view=scenario.steps[0][2];render();});$('scenario-tabs').append(b);});
+ if(guide===null){$('scenario-copy').textContent='自由操作：试试菜单切换、保存默认和新开实例，也可以选择一个引导场景。';$('step-note').textContent='刷新页面会清空所有演示状态；本页没有真实保存或音频处理。';}
+ else{const scenario=scenarios[guide];$('scenario-copy').textContent=scenario.copy;scenario.steps.forEach(([label,action,target],i)=>{const b=document.createElement('button');b.textContent=(i<step?'已完成 · ':String(i+1)+'. ')+label;b.disabled=i!==step;b.addEventListener('click',()=>{view=target;step++;act(action,true);});$('scenario-steps').append(b);});$('step-note').textContent=step===scenario.steps.length?'此场景已完成。可切换场景重新开始，或继续自由操作。':'按顺序点击按钮，上方使用同一份状态更新。';}
+ document.documentElement.dataset.ready='true';
+}
+$('view-settings').onclick=()=>setView('settings');$('view-menu').onclick=()=>setView('menu');
+$('startup-mode').onchange=e=>act({type:'DRAFT',value:e.target.value});$('save-draft').onclick=()=>act({type:'SAVE'});$('undo-draft').onclick=()=>act({type:'UNDO'});$('restore-default').onclick=()=>act({type:'DEFAULT'});
+$('mode-original').onclick=()=>act({type:'MODE',value:'OFF'});$('mode-night').onclick=()=>act({type:'MODE',value:'NIGHT'});$('media-kind').onchange=e=>act({type:'MEDIA',value:e.target.value});
+$('sound-submenu').onclick=()=>{submenu=!submenu;render();if(submenu)$('mode-original').focus();};
+$('new-instance').onclick=()=>act({type:'NEW'});
+$('reset-demo').onclick=()=>{view='settings';submenu=true;act({type:'RESET'});};$('open-settings').onclick=()=>act({type:'OPEN'});
+$('close-settings').onclick=()=>{if(state.draft!==state.saved)$('close-dialog').showModal();else act({type:'CLOSE'});};
+$('close-save').onclick=()=>{$('close-dialog').close();act({type:'SAVE_CLOSE'});};$('close-discard').onclick=()=>{$('close-dialog').close();act({type:'DISCARD_CLOSE'});};$('close-cancel').onclick=()=>$('close-dialog').close();
+$('sound-menu').addEventListener('keydown',e=>{if(e.key==='Escape'){submenu=false;render();$('sound-submenu').focus();e.preventDefault();}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){const buttons=Array.from($('sound-menu').querySelectorAll('button')).filter(b=>!b.disabled);const index=buttons.indexOf(document.activeElement);buttons[(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();e.preventDefault();}});
+const preview=new URLSearchParams(location.search);if(preview.get('view')==='menu')view='menu';if(preview.get('night')==='1')state={...state,desired:'NIGHT'};if(preview.get('media'))state=AudioPrototype.reduce(state,{type:'MEDIA',value:AudioPrototype.mediaNames[preview.get('media')]?preview.get('media'):'stereo'});
+render();
+</script>
+</html>
