@@ -1,7 +1,11 @@
 -- Own the optional runtime, helper tasks and borrowed playback state. The caller
 -- remains the only owner of desired/applied presets and startup preferences.
 local M = {}
-M.names = {CUGAN='Real-CUGAN Pro · 动画', ESRGAN='Real-ESRGAN · 动画'}
+M.model_ids = {CUGAN=true, ESRGAN=true, SPAN=true}
+M.model_error_text = {
+    model_missing='配置包中的写实模型缺失，请修复配置包。',
+    model_integrity='配置包中的写实模型已更改，请修复配置包。',
+}
 local errors = {
     helper_missing='缺少超分管理程序，请重新安装配置包。', helper_failed='准备程序未能完成，请重试。',
     gpu_unavailable='未检测到可用的 NVIDIA 显卡。', gpu_unsupported='当前显卡不支持这套超分组件。',
@@ -12,7 +16,7 @@ local errors = {
     compile_failed='本次画面准备失败，请查看详情后重试。', prepare_failed='本次画面准备失败，请重试。',
     runtime_load='超分运行组件未能加载。', host_unavailable='当前播放器未能加载超分支持扩展，请重开窗口后重试。',
     runtime_conflict='当前窗口已经使用另一套 Python 或 VapourSynth，请在独立窗口中使用超分。',
-    source_unsupported='首批超分支持 480p 及以下的 SDR 逐行动画。', source_color='无法识别这段视频的色彩信息。',
+    source_unsupported='超分支持 480p 及以下的 SDR 逐行视频。', source_color='无法识别这段视频的色彩信息。',
     filter_conflict='当前已有其他 VapourSynth 处理，请先关闭它。', filter_failed='超分滤镜未能正常输出画面。',
     restore_failed='画面还原未能完成，请关闭增强后重试。', cancelled='已取消准备。', request_failed='无法创建准备请求，请检查临时目录。',
     component_download_failed='组件下载未完成，请检查网络后重试。', component_extract_failed='组件展开失败，请重新准备。',
@@ -25,26 +29,41 @@ local stages = {probing='检查运行条件', checking='检查组件与画面', 
     compiling='编译画面处理', downloading='下载组件', extracting='展开组件', verifying='校验组件',
     installing='准备组件', committing='提交组件', loading='加载画面增强', ready='准备完成'}
 
-function M.new(mp, utils, callbacks)
+local function read_json(utils, path)
+    local f=io.open(path,'rb'); if not f then return nil end
+    local text=f:read(2*1024*1024+1);f:close()
+    if not text or #text>2*1024*1024 then return nil end
+    return utils.parse_json(text)
+end
+
+function M.read_models(mp, utils)
+    local catalog=read_json(utils,mp.command_native({'expand-path','~~/upscale/models.json'}))
+    local models={}
+    if type(catalog)~='table' or catalog.schema~=1 or type(catalog.models)~='table' then return models end
+    for name in pairs(M.model_ids) do
+        local model=catalog.models[name]
+        if type(model)=='table' and type(model.label)=='string' and type(model.description)=='string' then
+            models[name]={label=model.label,description=model.description}
+        end
+    end
+    return models
+end
+
+function M.new(mp, utils, callbacks, models)
     local root = mp.command_native({'expand-path','~~/'})
     local function expand(path) return mp.command_native({'expand-path','~~/'..path}) end
     local instance = tostring(mp.get_property_number('pid',0))..'-'..string.format('%.0f',mp.get_time()*1000000)
     local sequence, generation, host_serial = 0, 0, 0
     local job, pending, active, activation, borrowed, pause_owned, expected_pause, host_wait
-    local active_source, performance, warned
+    local active_source, performance, warned, rendered_activation
     local filter_before_file
     local closing, dialog_process, dialog_request
-    local s = {phase='idle',requested='',stage='',elapsed=0,error_text='',dialog_visible=false,dialog_token='',
+    local s = {phase='idle',requested='',requested_label='',stage='',elapsed=0,error_text='',dialog_visible=false,dialog_token='',
+        model_errors={},
         component={phase='missing',ready=false,can_install=false,stage='',elapsed=0,error_text='',download_bytes=0,expanded_bytes=0,
-            bundle_root=root:gsub('[/\\]$','')..'/components/ai-upscale',source_summary='Real-CUGAN Pro／Real-ESRGAN · TensorRT 10.16／VapourSynth R79'}}
+            bundle_root=root:gsub('[/\\]$','')..'/components/ai-upscale',source_summary='TensorRT 10.16／VapourSynth R79'}}
     local api = {}
-    local function read_json(path)
-        local f=io.open(path,'rb'); if not f then return nil end
-        local text=f:read(2*1024*1024+1);f:close()
-        if not text or #text>2*1024*1024 then return nil end
-        return utils.parse_json(text)
-    end
-    local manifest=read_json(expand('upscale/components.json')) or {}
+    local manifest=read_json(utils,expand('upscale/components.json')) or {}
     s.component.download_bytes=manifest.download_bytes or 0
     s.component.expanded_bytes=manifest.expanded_bytes or 0
     local function write_json(path, value)
@@ -59,7 +78,7 @@ function M.new(mp, utils, callbacks)
     local function reason(code)
         code=tostring(code or 'helper_failed'):gsub('-','_')
         if code:find('conflict') and (code:find('python') or code:find('vapoursynth')) then code='runtime_conflict' end
-        return errors[code] or errors.helper_failed,code
+        return M.model_error_text[code] or errors[code] or errors.helper_failed,code
     end
     local function changed() if not closing then callbacks.changed() end end
     local function dialog(show)
@@ -95,7 +114,7 @@ function M.new(mp, utils, callbacks)
             end
             borrowed=nil
         end
-        active=nil;active_source=nil;performance=nil
+        active=nil;active_source=nil;performance=nil;rendered_activation=nil
         if activation then
             os.remove(activation);os.remove(activation..'.ready');os.remove(activation..'.ready.part');activation=nil
         end
@@ -187,6 +206,13 @@ function M.new(mp, utils, callbacks)
         s.component.phase=s.component.ready and 'ready' or 'missing'
         s.component.error_text=r.ok and '' or reason(r.error_reason)
         s.component.error_reason=r.ok and '' or tostring(r.error_reason or 'helper_failed'):gsub('-','_')
+        if type(r.model_errors)=='table' then
+            local model_errors={}
+            for name,code in pairs(r.model_errors) do
+                if M.model_ids[name] and M.model_error_text[code] then model_errors[name]=code end
+            end
+            s.model_errors=model_errors
+        end
     end
     local function enable(r,params,name,device)
         if s.phase~='preparing' then return end
@@ -199,6 +225,7 @@ function M.new(mp, utils, callbacks)
             device_id=device.device_id,matrix=now.matrix,levels=now.levels,chroma=now.chroma}
         if not write_json(activation,info) then fail('request_failed',true);return end
         s.phase='loading';s.stage=stages.loading;s.loading_since=mp.get_time();s.output_width=params.width*2;s.output_height=params.height*2
+        rendered_activation=nil
         local hwdec=mp.get_property('hwdec','no')
         if hwdec~='no' and not hwdec:find('copy',1,true) then
             borrowed={original=hwdec,value='auto-copy'}
@@ -206,6 +233,10 @@ function M.new(mp, utils, callbacks)
             -- somebody else changes hwdec. We release the ordinary loan on_unload.
             if not mp.set_property('hwdec','auto-copy') then fail('filter_failed',true);return end
         end
+        -- Configure final scaling before the filter's first displayed frame.
+        -- Changing it in active() starts renderer shader compilation after the
+        -- playback pause has already been released.
+        if callbacks.configure(name)==false then fail('restore_failed',true);return end
         local descriptor='@mpvnet-upscale:vapoursynth=file=%'..#expand('upscale/runtime.vpy')..'%'..expand('upscale/runtime.vpy')
             ..':user-data=%'..#activation..'%'..activation..':buffered-frames=4:concurrent-frames=4'
         if not mp.commandv('vf','append',descriptor) then fail('filter_failed',true);return end
@@ -219,24 +250,29 @@ function M.new(mp, utils, callbacks)
         if pause_owned then expected_pause=true;mp.set_property_bool('pause',true) end
         local launched=run('prepare',{model=name,width=params.width,height=params.height},function(r,cancelled)
             if cancelled then api.cancel_complete();return end
-            if not r.ok then fail(r.error_reason,true);return end
+            if not r.ok then
+                if M.model_error_text[r.error_reason] then s.model_errors[name]=r.error_reason end
+                fail(r.error_reason,true);return
+            end
             enable(r,params,name,device)
         end)
         if not launched then fail('helper_failed',true) end
         changed()
     end
     select_model=function(name)
-        if not M.names[name] then return false end
+        if not M.model_ids[name] then return false end
         if job or host_wait then
             if job and not job.component and job.generation~=generation then pending=name;return true end
             return false
         end
         local params,code=source()
         if not params then fail(code,false);return false end
-        s.requested=name;s.phase='checking';s.error_text='';s.stage=stages.probing;changed()
+        s.requested=name;s.requested_label=models[name] and models[name].label or name
+        s.phase='checking';s.error_text='';s.stage=stages.probing;changed()
         return run('probe',{},function(r,cancelled)
             if cancelled then s.phase='idle';dialog(false);changed();return end
             component_result(r)
+            if s.model_errors[name] then fail(s.model_errors[name],false);return end
             if not r.ok then fail(r.error_reason,false);return end
             if not s.component.ready then s.phase='missing';dialog(true);changed();return end
             host_serial=host_serial+1
@@ -321,10 +357,25 @@ function M.new(mp, utils, callbacks)
         if expected_pause~=nil and paused==expected_pause then expected_pause=nil
         elseif pause_owned then pause_owned=false end
     end)
+    local function output_ready()
+        if not activation then return false end
+        local p=mp.get_property_native('video-out-params') or {}
+        local vf=own_filter()
+        local first=read_json(utils,activation..'.ready')
+        return vf and vf.enabled~=false and vf.params and vf.params.file==expand('upscale/runtime.vpy')
+            and vf.params['user-data']==activation and first and first.activation_id==activation
+            and p.w==s.output_width and p.h==s.output_height
+    end
+    mp.register_event('playback-restart',function()
+        -- The model's receipt confirms computation; this core event confirms
+        -- restart after the final output path is ready. Ignore earlier hwdec
+        -- restarts and acknowledgements belonging to a retired activation.
+        if s.phase=='loading' and output_ready() then rendered_activation=activation end
+    end)
     local timer=mp.add_periodic_timer(0.25,function()
         if closing then return end
         if job then
-            local progress=read_json(job.path..'.status.json')
+            local progress=read_json(utils,job.path..'.status.json')
             local target=job.component and s.component or s
             target.elapsed=math.floor(mp.get_time()-job.started)
             if progress and progress.request_id==job.id and not job.cancelling then
@@ -347,11 +398,7 @@ function M.new(mp, utils, callbacks)
                 host_wait=nil;fail(host.error_reason or 'runtime_load',false)
             elseif mp.get_time()-waiting.started>15 then host_wait=nil;fail('host_unavailable',false) end
         elseif s.phase=='loading' then
-            local p=mp.get_property_native('video-out-params') or {}
-            local vf=own_filter()
-            local first=activation and read_json(activation..'.ready')
-            if vf and vf.enabled~=false and first and first.activation_id==activation
-                and p.w==s.output_width and p.h==s.output_height then
+            if rendered_activation==activation and output_ready() then
                 if callbacks.active(active)==false then fail('restore_failed',true)
                 else s.phase='active';s.stage='';dialog(false);pause_release();changed() end
             elseif mp.get_time()-s.loading_since>15 then fail('filter_failed',true) end

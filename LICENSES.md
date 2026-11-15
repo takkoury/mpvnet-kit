@@ -13,13 +13,14 @@
 | 常用设置界面示意 `assets/screenshots/settings.png`、`assets/screenshots/settings-shortcuts.png` | 从本项目控件绘制，不含影视画面；采用本项目 MIT 许可 |
 | 音轨选择器示意 `assets/screenshots/selector.png` | 从本项目选择器 ASS 输出离屏渲染，使用合成轨道信息，不含影视画面；采用本项目 MIT 许可 |
 | 右键菜单示意 `assets/screenshots/context-menu.png` | 从真实宿主已打开的菜单控件离屏绘制，按实际屏幕坐标保留级联重叠；不含影视画面，采用本项目 MIT 许可 |
+| NomosUni SPAN写实模型 | Philip Hofmann；[CC BY 4.0](config/upscale/models/CC-BY-4.0.txt)，[固定来源与ONNX转换记录](config/upscale/models/README.md) |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
 外部播放器、Python、FFmpeg、网页插件由各自项目分发，本包不打包这些程序。
 
-## 按需取得的动画超分组件
+## 按需取得的超分运行组件
 
-配置包只包含本项目的管理代码、播放适配和固定来源清单，不随主包托管模型或GPU运行库。用户在组件页确认后，从固定上游取得独立组件。来源、归档SHA256、选取文件及许可索引见[组件清单](config/upscale/components.json)，取得的许可告知保存在组件目录的`licenses/`及原包位置。
+配置包包含管理代码、播放适配、固定来源清单，以及约1.58MiB的NomosUni SPAN转换模型和许可材料。该模型按CC BY 4.0提供，原作者归因、源权重摘要及转换修改均见上方记录。GPU运行库和两个动画模型仍按需获取。用户在组件页确认后，从固定上游取得独立组件。来源、归档SHA256、选取文件及许可索引见[组件清单](config/upscale/components.json)，取得的许可告知保存在组件目录的`licenses/`及原包位置。
 
 Python采用PSF许可，VapourSynth R79采用LGPL-2.1-or-later，vs-mlrt VSTRT采用GPLv3；其定制trtexec来自TensorRT OSS及上游修改，保留Apache-2.0 LICENSE／NOTICE与构建补丁来源。NVIDIA TensorRT和CUDA的专有运行库分别遵守[NVIDIA TensorRT条款](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/reference/sla.html)与[CUDA条款](https://docs.nvidia.com/cuda/archive/13.2.0/eula/index.html)。Real-CUGAN原作者项目为MIT，Real-ESRGAN为BSD-3-Clause；清单分别记录原作者权重、vs-mlrt提供的ONNX转换来源以及本机准备，不将转换模型或专有运行库宣称为本项目MIT资产。7zr、ONNX、NumPy及其附带库等保留各自的许可材料。
 
@@ -32,6 +33,9 @@ Python采用PSF许可，VapourSynth R79采用LGPL-2.1-or-later，vs-mlrt VSTRT�
 - `.gitattributes`
 - `config/script-modules/upscale.lua`
 - `config/upscale/components.json`
+- `config/upscale/models.json`
+- `config/upscale/models/README.md`
+- `config/helpers/upscale-models.cs`
 - `config/upscale/prepare.py`
 - `config/upscale/runtime.vpy`
 - `config/extensions/KitUpscaleHost/KitUpscaleHost.dll`

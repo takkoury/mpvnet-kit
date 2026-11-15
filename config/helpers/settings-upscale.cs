@@ -41,7 +41,7 @@ public sealed partial class SettingsEditor
         actions.Children.Add(enableRequestedUpscale);
         var title = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
         row.Children.Add(title);
-        title.Children.Add(new TextBlock { Text = "动画超分组件", FontSize = 16, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        title.Children.Add(new TextBlock { Text = "超分组件", FontSize = 16, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         upscaleComponentStatus = UpscaleText("", new Thickness(0, 4, 0, 0));
         title.Children.Add(upscaleComponentStatus);
 
@@ -63,7 +63,7 @@ public sealed partial class SettingsEditor
         section.Children.Add(upscaleVcLink);
 
         var details = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-        details.Children.Add(UpscaleText("包含 Real-CUGAN Pro、Real-ESRGAN 动画模型。", new Thickness(0, 0, 0, 4)));
+        details.Children.Add(UpscaleText("动画和写实超分方案共用这套运行组件。", new Thickness(0, 0, 0, 4)));
         upscaleComponentSource = UpscaleText("", new Thickness(0, 0, 0, 6));
         details.Children.Add(upscaleComponentSource);
         AddUpscaleTerms(details);
@@ -104,7 +104,9 @@ public sealed partial class SettingsEditor
         prepareUpscaleComponents.Visibility = unavailable ? Visibility.Visible : Visibility.Collapsed;
         prepareUpscaleComponents.IsEnabled = !SessionEnded && CanPrepareUpscale(component);
         prepareUpscaleComponents.Content = phase == "failed" ? "重试准备…" : "准备组件…";
-        bool awaitingExplicitEnable = SettingsDraft.Str(upscaleState, "phase") == "missing" && (requested == "CUGAN" || requested == "ESRGAN");
+        var modelErrors = SettingsDraft.Value(upscaleState, "model_errors") as Dictionary<string, object> ?? EmptyUpscale;
+        bool awaitingExplicitEnable = SettingsDraft.Str(upscaleState, "phase") == "missing" &&
+            requested.Length > 0 && !modelErrors.ContainsKey(requested);
         enableRequestedUpscale.Visibility = ready && awaitingExplicitEnable ? Visibility.Visible : Visibility.Collapsed;
         enableRequestedUpscale.IsEnabled = !SessionEnded && SettingsDraft.Flag(component, "can_install");
         cancelUpscaleComponents.Visibility = installing ? Visibility.Visible : Visibility.Collapsed;
@@ -146,9 +148,9 @@ public sealed partial class SettingsEditor
         var component = ComponentState;
         if (SessionEnded || !CanPrepareUpscale(component)) return;
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "准备动画超分组件", FontSize = 18, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "准备超分组件", FontSize = 18, FontWeight = FontWeights.SemiBold });
         var summary = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
-        summary.Children.Add(UpscaleText("为 Real-CUGAN 和 Real-ESRGAN 准备共用的运行组件。完成后由你选择何时启用。", new Thickness(0, 0, 0, 12)));
+        summary.Children.Add(UpscaleText("动画和写实超分方案共用这套运行组件。完成后由你选择何时启用。", new Thickness(0, 0, 0, 12)));
         summary.Children.Add(UpscaleText("下载量 " + SizeLabel(component, "download_bytes"), new Thickness(0, 0, 0, 4)));
         string expanded = SizeLabel(component, "expanded_bytes");
         if (expanded.Length > 0) summary.Children.Add(UpscaleText("展开后占用 " + expanded, new Thickness(0, 0, 0, 4)));

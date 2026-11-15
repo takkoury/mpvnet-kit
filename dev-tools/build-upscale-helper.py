@@ -15,8 +15,10 @@ ASSEMBLY = 'KitUpscale.exe'
 ASSET_PATH = 'config/helpers/' + ASSEMBLY
 SOURCE_METADATA_KEY = 'KitUpscale.SourceSha256'
 MANIFEST = 'src/upscale-helper/app.manifest'
-SOURCE_FILES = ('config/helpers/upscale-host.cs', 'config/helpers/upscale-components.cs',
-                'config/helpers/upscale-process.cs', 'config/helpers/upscale-window.cs', MANIFEST)
+SOURCE_FILES = (
+    'config/helpers/upscale-host.cs', 'config/helpers/upscale-components.cs', 'config/helpers/upscale-models.cs',
+    'config/helpers/upscale-process.cs', 'config/helpers/upscale-window.cs', MANIFEST,
+)
 FRAMEWORK_VERSION = 'v4.7.2'
 REFERENCE_FILES = ('mscorlib.dll', 'System.dll', 'System.Core.dll',
                    'System.Web.Extensions.dll', 'System.IO.Compression.dll', 'WindowsBase.dll',

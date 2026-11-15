@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "models": {
+    "CUGAN": {
+      "label": "Real-CUGAN Pro · 动画",
+      "description": "改善低清动画，线条相对柔和。需要准备超分组件。",
+      "source": "bundle",
+      "path": "models/cugan.onnx",
+      "sha256": "391a30605ca4101b54ff968728512b344ef277d8dbd1f686b12f0bf6c0c2d9e8",
+      "scale": 2,
+      "pad_multiple": 4,
+      "recipe": 1
+    },
+    "ESRGAN": {
+      "label": "Real-ESRGAN · 动画",
+      "description": "改善低清动画，轮廓更锐利，可能简化纹理。需要准备超分组件。",
+      "source": "bundle",
+      "path": "models/esrgan.onnx",
+      "sha256": "6fad590f96df553a5cc348a9c5129e7874504a7dcd414e4a15fb0b281fca7e0c",
+      "scale": 2,
+      "pad_multiple": 1,
+      "recipe": 1
+    },
+    "SPAN": {
+      "label": "NomosUni SPAN · 写实",
+      "description": "温和改善低清写实片源，尽量保留原片质感。仅用于480p及以下的SDR逐行视频。",
+      "source": "config",
+      "path": "upscale/models/nomosuni-span-multijpg-ldl-2x-v1.onnx",
+      "sha256": "d82255d20b2e8e73d2ddb350820e188540b94fa3faeade494fc47c59ef49f266",
+      "scale": 2,
+      "pad_multiple": 1,
+      "recipe": 1
+    }
+  }
+}

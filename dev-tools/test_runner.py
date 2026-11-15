@@ -23,6 +23,7 @@ PROFILES = {
         'test_playlist_window_build.PlaylistWindowBuild',
         'test_test_support.TestSupport', 'test_test_runner.RunnerContract',
         'test_documentation.DocumentationLinks',
+        'test_upscale_prepare.UpscalePrepare',
     ),
     'lua': (
         'test_playlist_selector_data.PlaylistSelectorData',

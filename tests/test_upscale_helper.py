@@ -1,4 +1,4 @@
-"""CPU-only component publication and Windows process ownership checks."""
+"""CPU-only model, component publication and Windows process ownership checks."""
 import ctypes
 from ctypes import wintypes
 import hashlib
@@ -21,6 +21,7 @@ import managed_build
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_ID = 'trt-10.16-test'
+SPAN_ASSET = 'upscale/models/nomosuni-span-multijpg-ldl-2x-v1.onnx'
 VAPOURSYNTH = 'runtime/Lib/site-packages/vapoursynth/'
 MEMBERS = (
     'runtime/python.exe', 'runtime/python3.dll', 'runtime/python312.dll', 'runtime/python312.zip',
@@ -112,23 +113,96 @@ class UpscaleHelperTests(unittest.TestCase):
         return data, expected
 
     @staticmethod
-    def request(root, parent_pid=None):
+    def request(root, parent_pid=None, *, operation='install', **fields):
         request_path = root / 'request.json'
         request_path.write_text(json.dumps(dict(
-            schema=1, request_id='upscale-cpu', operation='install',
+            schema=1, request_id='upscale-cpu', operation=operation,
             parent_pid=parent_pid or os.getpid(), config_root=str(root),
-            progress_path=str(request_path) + '.status.json',
+            progress_path=str(request_path) + '.status.json', **fields,
         )), encoding='utf-8')
         return request_path
 
-    def invoke(self, root, exe, operation):
-        completed = subprocess.run([str(exe), operation, str(self.request(root))], capture_output=True, timeout=15)
+    def invoke(self, root, exe, action, **fields):
+        completed = subprocess.run([str(exe), action, str(self.request(root, **fields))], capture_output=True, timeout=15)
         self.assertEqual(completed.returncode, 0, completed.stderr.decode(errors='replace'))
         return json.loads(completed.stdout)
 
     @staticmethod
     def component_root(root):
         return root / 'components/ai-upscale'
+
+    def install_model_fixture(self, root, exe):
+        _, expected = self.write_manifest(root)
+        catalog = json.loads((ROOT / 'config/upscale/models.json').read_text(encoding='utf-8'))
+        for definition in catalog['models'].values():
+            if definition['source'] == 'bundle':
+                definition['sha256'] = sha256(expected[definition['path']])
+        (root / 'upscale/models.json').write_text(json.dumps(catalog), encoding='utf-8')
+        self.assertEqual(self.invoke(root, exe, 'install'), {'ready': True})
+        return catalog
+
+    def prepare_model(self, root, exe, model, **fields):
+        return self.invoke(root, exe, 'prepare', operation='prepare', model=model, width=641, height=479, **fields)
+
+    def test_span_asset_errors_leave_runtime_and_legacy_models_available(self):
+        root, exe = self.fixture('span-status')
+        self.install_model_fixture(root, exe)
+        receipt = self.component_root(root) / 'component.json'
+        receipt_bytes = receipt.read_bytes()
+        span = root / SPAN_ASSET
+        model_data = (ROOT / 'config' / SPAN_ASSET).read_bytes()
+        span.parent.mkdir()
+
+        for reason, data in (
+            ('model_missing', None),
+            ('model_integrity', bytes([model_data[0] ^ 1]) + model_data[1:]),
+            (None, model_data),
+        ):
+            with self.subTest(reason=reason):
+                if data is not None:
+                    span.write_bytes(data)
+                self.assertEqual(self.invoke(root, exe, 'probe', operation='probe'), {
+                    'component_ready': True, 'model_errors': {'SPAN': reason} if reason else {},
+                })
+                self.assertEqual(self.prepare_model(root, exe, 'CUGAN'), {
+                    'padded_width': 644, 'padded_height': 480,
+                })
+                self.assertEqual(self.prepare_model(root, exe, 'ESRGAN'), {
+                    'padded_width': 641, 'padded_height': 479,
+                })
+                self.assertEqual(self.prepare_model(root, exe, 'SPAN'), {
+                    'error_reason': reason,
+                } if reason else {'padded_width': 641, 'padded_height': 479})
+                self.assertEqual(receipt.read_bytes(), receipt_bytes)
+
+    def test_model_paths_are_confined_to_their_managed_directory(self):
+        root, exe = self.fixture('span-path')
+        catalog = self.install_model_fixture(root, exe)
+        alternate = root / 'alternate'
+        alternate.mkdir()
+        span = root / SPAN_ASSET
+        replacement = alternate / span.name
+        shutil.copyfile(ROOT / 'config' / SPAN_ASSET, replacement)
+        self.assertEqual(self.prepare_model(root, exe, 'SPAN', model_path=str(replacement)),
+                         {'error_reason': 'model_missing'})
+        self.assertEqual(self.prepare_model(root, exe, 'external'), {'error_reason': 'unsupported_input'})
+
+        for path in (str(replacement), 'upscale/models/../../alternate/' + span.name):
+            with self.subTest(path=path):
+                catalog['models']['SPAN']['path'] = path
+                (root / 'upscale/models.json').write_text(json.dumps(catalog), encoding='utf-8')
+                self.assertEqual(self.prepare_model(root, exe, 'SPAN'), {'error_reason': 'model_integrity'})
+
+        catalog['models']['SPAN']['path'] = SPAN_ASSET
+        (root / 'upscale/models.json').write_text(json.dumps(catalog), encoding='utf-8')
+        subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/j', str(span.parent), str(alternate)],
+                       check=True, capture_output=True, timeout=10)
+        try:
+            self.assertEqual(self.invoke(root, exe, 'probe', operation='probe'), {
+                'component_ready': True, 'model_errors': {'SPAN': 'model_integrity'},
+            })
+        finally:
+            span.parent.rmdir()
 
     def test_receipt_matches_manifest_and_rejects_modified_component(self):
         root, exe = self.fixture('receipt')

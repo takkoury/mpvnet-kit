@@ -829,6 +829,36 @@
       "destination": "config/helpers/settings-upscale.cs",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/models.json",
+      "destination": "config/upscale/models.json",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/upscale-models.cs",
+      "destination": "config/helpers/upscale-models.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/models/README.md",
+      "destination": "config/upscale/models/README.md",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/models/nomosuni-span-multijpg-ldl-2x-v1.onnx",
+      "destination": "config/upscale/models/nomosuni-span-multijpg-ldl-2x-v1.onnx",
+      "component": "nomosuni-span",
+      "origin": "Philip Hofmann; CC BY 4.0; mpvnet-kit ONNX conversion; source and changes in config/upscale/models/README.md"
+    },
+    {
+      "source": "config/upscale/models/CC-BY-4.0.txt",
+      "destination": "config/upscale/models/CC-BY-4.0.txt",
+      "component": "nomosuni-span",
+      "origin": "Creative Commons Attribution 4.0 International; canonical license; SPDX license-list-data text"
     }
   ]
 }

@@ -29,11 +29,10 @@ M.fields = {
     {id='modernz.timems',page='controlbar',label='显示毫秒',kind='boolean',default=false,timing='preview',section='时间',script='modernz'},
     {id='modernz.persistent_progress',page='controlbar',label='进度条常驻',kind='boolean',default=false,timing='preview',section='显示',script='modernz',search_terms='常驻进度线 进度条'},
     {id='enhancement.default-preset',page='picture',label='启动画质预设',kind='choice',default='OFF',timing='startup',section='画质',
-        script='enhancement_controls',search_terms='默认 画质 增强 缩放 去色带 Anime4K 超分 CUGAN ESRGAN',choices={
+        script='enhancement_controls',search_terms='默认 画质 增强 缩放 去色带 Anime4K 超分 CUGAN ESRGAN SPAN 写实',choices={
             {value='OFF',label='原始画面'},{value='QUALITY',label='高质量缩放'},{value='SMOOTH',label='去色带'},
             {value='ANIME_LIGHT',label='Anime4K-L'},{value='ANIME_STRONG',label='Anime4K-S'},
-            {value='CUGAN',label='Real-CUGAN Pro · 动画',tooltip='改善低清动画，线条相对柔和。需要准备超分组件。\n在新窗口中生效。若想立即生效：右键菜单→画面→画面增强。'},
-            {value='ESRGAN',label='Real-ESRGAN · 动画',tooltip='改善低清动画，轮廓更锐利，可能简化纹理。需要准备超分组件。\n在新窗口中生效。若想立即生效：右键菜单→画面→画面增强。'},
+            {value='CUGAN',label='CUGAN'},{value='ESRGAN',label='ESRGAN'},{value='SPAN',label='SPAN'},
         }},
     {id='motion.default-mode',page='picture',label='启动运动模式',kind='choice',default='OFF',timing='startup',section='运动',
         script='motion_controls',search_terms='默认 运动 同步 流畅 帧混合 插值',choices={
@@ -52,6 +51,15 @@ M.actions = {{id='shortcuts.open',page='shortcuts',label='编辑用户快捷键'
     {id='open.config-folder',page='advanced',label='打开配置目录',search_terms='高级 配置文件 文件夹'}}
 function M.field(id)
     for _,field in ipairs(M.fields) do if field.id==id then return field end end
+end
+function M.describe_upscale_models(models)
+    for _,choice in ipairs(M.field('enhancement.default-preset').choices) do
+        local model=models[choice.value]
+        if model then
+            choice.label=model.label
+            choice.tooltip=model.description..'\n在新窗口中生效。若想立即生效：右键菜单→画面→画面增强。'
+        end
+    end
 end
 function M.value_or(value,fallback) if value~=nil then return value end;return fallback end
 function M.valid(field,value)

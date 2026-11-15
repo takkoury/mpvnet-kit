@@ -244,7 +244,7 @@ class SettingsWindow(unittest.TestCase):
     def test_component_preparation_waits_for_confirmation_and_routes_actions(self):
         def component(phase, can_install=True):
             return dict(op='ipc', events=[dict(event='property-change', name='user-data/mpvnet/enhancement/upscale',
-                data=dict(phase='missing', requested='CUGAN', component=dict(phase=phase, ready=phase == 'ready', can_install=can_install,
+                data=dict(phase='missing', requested='SPAN', component=dict(phase=phase, ready=phase == 'ready', can_install=can_install,
                     download_bytes=2073902538, expanded_bytes=2600475213, bundle_root='D:/fixture/components')))])
 
         steps = [component('missing'), dict(op='invoke-control', name='准备组件')]

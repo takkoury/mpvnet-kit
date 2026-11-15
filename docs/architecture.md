@@ -277,9 +277,9 @@ DLL 是可重建的受管运行资产，源码和源码摘要随变更一并校�
 
 设置字段的choice可带可选tooltip，窗口在真正的ComboBoxItem上显示；声音选项使用已确认的短文案，不加常驻说明。侧栏显示“声音”“组件”，组件排在高级之前，稳定ID仍为audio／paths；关闭时原有设置与快捷键串行保存顺序不随导航排序改变。
 
-## 可选动画超分
+## 可选超分
 
-`enhancement-controls.lua`继续持有唯一的desired／applied和启动快照。`CUGAN`、`ESRGAN`加入既有互斥选择；菜单、设置及快捷键目录调用同一入口。保存不会改当前实例。首帧前的video-params可能不完整，每媒体保留一次延迟启动意图，等待资格就绪及退休helper退出；显式选择、卸载和已开始的失败会清除此意图，不形成自动失败重试。
+`enhancement-controls.lua`继续持有唯一的desired／applied和启动快照。`CUGAN`、`ESRGAN`、`SPAN`加入既有互斥选择；菜单、设置及快捷键目录调用同一入口。保存不会改当前实例。首帧前的video-params可能不完整，每媒体保留一次延迟启动意图，等待资格就绪及退休helper退出；显式选择、卸载和已开始的失败会清除此意图，不形成自动失败重试。
 
 [upscale.lua](../config/script-modules/upscale.lua)管理组件任务、模型执行、媒体代次及临时借用，通过enhancement.upscale发布阶段、请求方案、对话框token和组件状态。组件获取／只读检查可跨媒体继续，模型准备属于当前媒体；旧结果可以留下合法缓存，但不能应用到新媒体。设置页用已验证editor token转发白名单动作；独立任务窗只发送匹配dialog token的取消、重试、关闭和前往组件意图。旧窗退出不隐藏新token窗口，准备窗异常退出会取消准备。
 
@@ -287,9 +287,11 @@ DLL 是可重建的受管运行资产，源码和源码摘要随变更一并校�
 
 [KitUpscale helper](../config/helpers/upscale-host.cs)只处理受管配置根中的固定清单，独立probe／install／prepare请求绑定父PID与任务ID。显式获取从固定HTTPS源流式下载并校验归档，按允许成员解包、拒绝链接和目录穿越，提交完整版本目录及receipt后才就绪。安装冲突不覆盖未知内容。对应[组件实现](../config/helpers/upscale-components.cs)持跨窗口写锁，[进程实现](../config/helpers/upscale-process.cs)将暂停创建的子进程先分配到kill-on-close Job，再继续执行；取消标记或父退出终止整个子进程树，只清理本任务stage。组件、缓存与暂存均留在配置根components/ai-upscale下，不进入配置包受管manifest。
 
-[prepare.py](../config/upscale/prepare.py)按实际输入尺寸生成静态FP16内部／FP32 IO图，使用固定构建器、单流与CUDA graph；CUGAN按4像素边界补齐。缓存身份包含模型、尺寸、配方、组件清单、GPU与驱动；独占写锁下构建，实际加载／首帧校验和摘要完成后同卷rename发布。已有缓存按身份和引擎摘要复用，损坏项保留并报错。帧数据不上传；准备依赖与播放器现有Python路径分离。
+[models.json](../config/upscale/models.json)集中声明模型名称、说明、来源、摘要、配方和补齐倍数。两个动画模型从既有bundle解析，SPAN从配置包受管资产解析；helper的probe返回独立model_errors，缺失／损坏只阻断对应模型，不改变运行组件就绪状态。准备前在受控模型目录内核摘要，模型路径不由调用请求指定。
 
-[runtime.vpy](../config/upscale/runtime.vpy)只加载已准备引擎，使用当前媒体的矩阵、范围和色度位置，保留原色／传递／SAR／时长及mpv的opaque image属性；先边缘补齐再裁回2倍源尺寸，保留已验证的0–1裁剪配方。每次激活独立的首帧回执必须来自实际推理输出和非零时长输入，不能用前一个模型留下的2倍输出尺寸冒充新模式生效。首次回执与自有vf、输出尺寸共同确认后才发布applied；后续自有vf移除、禁用或参数变化会撤回状态。同尺寸源色彩变化会停止当前超分并要求明确重启，不继续使用旧解释。
+[prepare.py](../config/upscale/prepare.py)按实际输入尺寸生成静态FP16内部／FP32 IO图，使用固定构建器、单流与CUDA graph；CUGAN按4像素边界补齐。缓存身份包含模型、尺寸、配方、组件清单、GPU与驱动；独占写锁下构建，实际加载／首帧校验和摘要完成后同卷rename发布。现有components.json、bundle ID与两个动画模型的缓存identity字段和值保持；模型目录新增条目不使旧缓存失效。已有缓存按身份和引擎摘要复用，损坏项保留并报错。帧数据不上传；准备依赖与播放器现有Python路径分离。
+
+[runtime.vpy](../config/upscale/runtime.vpy)只加载已准备引擎，使用当前媒体的矩阵、范围和色度位置，保留原色／传递／SAR／时长及mpv的opaque image属性；先边缘补齐再裁回2倍源尺寸，保留已验证的0–1裁剪配方。每次激活独立的首帧回执必须来自实际推理输出和非零时长输入，不能用前一个模型留下的2倍输出尺寸冒充新模式生效。加载阶段先应用最终缩放设置，再接入滤镜。首次计算回执、自有vf和输出尺寸必须同时匹配，并收到该激活的核心playback-restart，才发布applied和释放自有暂停；不在发布生效后才触发渲染着色器编译。后续自有vf移除、禁用或参数变化会撤回状态。同尺寸源色彩变化会停止当前超分并要求明确重启，不继续使用旧解释。
 
 超分只管理完整匹配的`mpvnet-upscale`标签。hwdec按普通属性临时借用auto-copy，在on_unload和明确关闭时仅恢复仍等于自有写入的值，避免给核心增加会覆盖外部修改的file-local备份。移除或恢复失败保留归属供明确重试，不报还原成功。沿声音控制器的边界，在on_before_start_file记录已有标签，在on_load仅清除其后由续播新增、完整符合自有临时请求特征的滤镜，不让旧临时路径重新执行；预先存在或不同内容的标签保持。任意同值外部写入仍不可观测。
 

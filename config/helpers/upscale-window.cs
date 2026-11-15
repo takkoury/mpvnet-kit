@@ -169,7 +169,8 @@ public sealed class UpscaleTaskWindow : Window
     {
         string nextPhase = Text(state, "phase");
         string requested = Text(state, "requested");
-        string model = requested == "CUGAN" ? "Real-CUGAN Pro · 动画" : requested == "ESRGAN" ? "Real-ESRGAN · 动画" : "此方案";
+        string model = Text(state, "requested_label");
+        if (model.Length == 0) model = requested.Length > 0 ? requested : "此方案";
         bool preparing = nextPhase == "preparing" || nextPhase == "loading" || nextPhase == "checking";
         if (!preparing && nextPhase != "missing" && nextPhase != "failed") return false;
 
@@ -225,7 +226,7 @@ public sealed class UpscaleTaskWindow : Window
 
         var lines = new List<string>();
         if (requested.Length > 0)
-            lines.Add("方案  " + (requested == "CUGAN" || requested == "ESRGAN" ? model : requested));
+            lines.Add("方案  " + model);
         lines.Add("错误代码  " + reason);
         object value;
         var component = state.TryGetValue("component", out value) ? value as Dictionary<string, object> : null;

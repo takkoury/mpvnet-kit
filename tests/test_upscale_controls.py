@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import upscale_catalog_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,13 +15,19 @@ class UpscaleControls(unittest.TestCase):
         prelude, cases = (ROOT / 'tests/lua/upscale_controls.lua').read_text(encoding='utf-8').split(
             '-- MODULE HERE\n', 1)
         module = (ROOT / 'config/script-modules/upscale.lua').read_text(encoding='utf-8')
-        cls.source = prelude + '\nlocal module=(function()\n' + module + '\nend)()\n' + cases
+        cls.source = upscale_catalog_fixture() + prelude + '\nlocal module=(function()\n' + module + '\nend)()\n' + cases
 
     def check(self, case):
         self.lua.execute(self.source + '\n' + case + '()', name='upscale/' + case)
 
     def test_missing_components_install_does_not_activate(self):
         self.check('missing_components_install_does_not_activate')
+
+    def test_span_model_errors_do_not_block_animation_or_request_components(self):
+        self.check('span_model_errors_do_not_block_animation_or_request_components')
+
+    def test_span_uses_existing_first_frame_and_restore_path(self):
+        self.check('span_uses_existing_first_frame_and_restore_path')
 
     def test_cancel_waits_for_exit_and_preserves_manual_pause(self):
         self.check('cancel_waits_for_exit_and_preserves_manual_pause')
@@ -51,3 +58,5 @@ class UpscaleControls(unittest.TestCase):
 
     def test_failed_removal_keeps_ownership_for_explicit_retry(self):
         self.check('failed_removal_keeps_ownership_for_explicit_retry')
+    def test_waits_for_final_renderer_before_activation_or_resume(self):
+        self.check('waits_for_final_renderer_before_activation_or_resume')

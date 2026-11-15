@@ -10,10 +10,12 @@ local package_options={
 local files,requests,removed={},{},{}
 local config='X:/config/'
 local user_path,local_path=config..'mpvnet-user.json',config..'script-opts/mpvnet-local.conf'
+files[config..'upscale/models.json']='model-catalog'
 local read_failure,write_failure=false,false
 local function eq(a,b) assert(a==b,'expected '..tostring(b)..', got '..tostring(a)) end
 local writer_text
 local function decode(text)
+    if text=='model-catalog' then return upscale_catalog end
     if text=='writer-with-text' then return {ok=true,written_text=writer_text} end
     if text=='writer-ok' then return {ok=true} end
     if text=='writer-failed' then return {ok=false} end
@@ -697,7 +699,10 @@ function all_fields_publish_their_type_timing_and_page()
     local picture=host.field('enhancement.default-preset')
     eq(picture.page,'picture');eq(picture.section,'画质');eq(picture.kind,'choice');eq(picture.default,'OFF');eq(picture.timing,'startup')
     local presets={};for _,choice in ipairs(picture.choices) do presets[#presets+1]=choice.value end
-    eq(table.concat(presets,','),'OFF,QUALITY,SMOOTH,ANIME_LIGHT,ANIME_STRONG,CUGAN,ESRGAN')
+    eq(table.concat(presets,','),'OFF,QUALITY,SMOOTH,ANIME_LIGHT,ANIME_STRONG,CUGAN,ESRGAN,SPAN')
+    local span=picture.choices[#picture.choices]
+    eq(span.label,'NomosUni SPAN · 写实')
+    eq(span.tooltip,upscale_catalog.models.SPAN.description..'\n在新窗口中生效。若想立即生效：右键菜单→画面→画面增强。')
     assert(not model.proposed('picture','{"enhancement.default-preset":"RAVU"}',decode,parser))
     eq(host.field('mute').default,true);eq(host.field('modernz.timems').default,false)
     eq(host.field('modernz.timems').saved,false);eq(host.field('sub-pos').display,'position')
@@ -732,6 +737,25 @@ function saved_picture_preset_changes_only_new_instances()
     eq(next_host.field(id).effective,'QUALITY');eq(files[user_path],saved)
     next_host.open();save(next_host,'picture','{"enhancement.default-preset":"OFF"}');writer('writer-ok')
     eq(model.document(files[user_path],decode,parser).values[id],'OFF')
+end
+
+function saved_span_defers_until_a_new_instance()
+    local id='enhancement.default-preset'
+    local state='user-data/mpvnet/enhancement'
+    local order={'user_settings','enhancement_controls'}
+    local video={['current-vo']='gpu-next',['video-params']={w=640,h=480,gamma='bt.1886',
+        colormatrix='bt.601',colorlevels='limited',['chroma-location']='mpeg2/4/h264'}}
+    local current=instance(280,order,video)
+    current.media();current.open()
+    eq(current.properties[state].available.SPAN,true)
+    save(current,'picture','{"enhancement.default-preset":"SPAN"}');writer('writer-ok')
+    eq(current.field(id).saved,'SPAN');eq(current.field(id).effective,'OFF')
+    eq(current.properties[state].desired,'OFF');eq(current.properties[state].applied,'OFF')
+    local next_host=instance(281,order,video)
+    eq(next_host.field(id).effective,'SPAN');eq(next_host.properties[state].desired,'SPAN')
+    next_host.media()
+    eq(next_host.properties[state].applied,'OFF')
+    eq(next_host.properties[state].model_descriptions.SPAN,upscale_catalog.models.SPAN.description)
 end
 
 function unreadable_picture_startup_does_not_adopt_later_repair()

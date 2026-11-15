@@ -81,6 +81,7 @@ class ContextMenu(unittest.TestCase):
             '播放 > 播放／暂停': 'script-binding playback_feedback/toggle-pause',
             '窗口与界面 > 切换控制栏显示方式': 'script-binding playback_feedback/osc-visibility',
             '窗口与界面 > 显示／隐藏播放列表侧窗': 'script-binding playlist_controls/toggle',
+            '画面 > 画面增强 > NomosUni SPAN · 写实': 'script-message-to enhancement_controls set-preset SPAN',
             '字幕与弹幕 > 恢复字幕位置与字号': 'script-binding subtitle_controls/reset-adjustment',
             '字幕与弹幕 > 选择普通字幕…': 'script-binding subtitle_controls/select',
             '截图与片段 > 保存源画面 PNG': 'script-binding capture_controls/screenshot',

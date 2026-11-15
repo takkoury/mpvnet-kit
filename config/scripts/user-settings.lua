@@ -4,6 +4,8 @@ local utils=require('mp.utils')
 local function expand(path) return mp.command_native({'expand-path','~~/'..path}) end
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local model=dofile(expand('script-modules/user-settings.lua'))
+local upscale=dofile(expand('script-modules/upscale.lua'))
+model.describe_upscale_models(upscale.read_models(mp,utils))
 local parser=dofile(expand('script-modules/user-shortcuts.lua'))
 local paths=dofile(expand('script-modules/mpvnet-paths.lua'))
 local settings_path,local_path=expand('mpvnet-user.json'),expand('script-opts/mpvnet-local.conf')

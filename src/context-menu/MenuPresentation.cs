@@ -158,14 +158,13 @@ internal sealed class MenuPresentation : IDisposable
                 {
                     string phase = ReadStateValue(readProperty, "user-data/mpvnet/enhancement/upscale/phase");
                     bool busy = phase is "preparing" or "loading";
-                    bool ai = preset is "CUGAN" or "ESRGAN";
+                    bool ai = preset is "CUGAN" or "ESRGAN" or "SPAN";
                     if (busy || ai)
                     {
                         bool enabled = !busy && ReadStateValue(readProperty, "user-data/mpvnet/enhancement/available/" + preset) is "yes" or "true";
                         entry.Item.SetCurrentValue(UIElement.IsEnabledProperty, enabled);
                         string help = busy ? "请先取消当前准备" : enabled
-                            ? preset == "CUGAN" ? "改善低清动画，线条相对柔和。需要准备超分组件。"
-                                : "改善低清动画，轮廓更锐利，可能简化纹理。需要准备超分组件。"
+                            ? ReadStateValue(readProperty, "user-data/mpvnet/enhancement/model_descriptions/" + preset)
                             : ReadStateValue(readProperty, "user-data/mpvnet/enhancement/unavailable_text/" + preset);
                         entry.Item.SetCurrentValue(FrameworkElement.ToolTipProperty, help);
                     }
@@ -266,13 +265,15 @@ internal sealed class MenuPresentation : IDisposable
         const string prefix = "script-message-to enhancement_controls set-preset ";
         if (!command.StartsWith(prefix, StringComparison.Ordinal)) return null;
         string value = command[prefix.Length..];
-        return value is "OFF" or "QUALITY" or "SMOOTH" or "ANIME_LIGHT" or "ANIME_STRONG" or "CUGAN" or "ESRGAN" ? value : null;
+        return value is "OFF" or "QUALITY" or "SMOOTH" or "ANIME_LIGHT" or "ANIME_STRONG" or "CUGAN" or "ESRGAN" or "SPAN" ? value : null;
     }
     private static Indicator Choice(string property, string choice) => new(property, value => value == choice, true);
     private static Indicator Speed(double speed) => new("speed", value =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double current) && current == speed, true);
 
-    private static Indicator? IndicatorFor(string command) => command switch
+    private static Indicator? IndicatorFor(string command) => EnhancementChoice(command) is { } preset
+        ? Choice("user-data/mpvnet/enhancement/applied", preset)
+        : command switch
     {
         "script-binding playback_feedback/toggle-pause" or "script-binding playback_feedback/space" or
             "script-message-to mpvnet play-pause" or "cycle pause" => Flag("pause"),
@@ -293,13 +294,6 @@ internal sealed class MenuPresentation : IDisposable
         "script-message-to playback_feedback set-speed 1.25" => Speed(1.25),
         "script-message-to playback_feedback set-speed 1.5" => Speed(1.5),
         "script-message-to playback_feedback set-speed 2" => Speed(2),
-        "script-message-to enhancement_controls set-preset OFF" => Choice("user-data/mpvnet/enhancement/applied", "OFF"),
-        "script-message-to enhancement_controls set-preset QUALITY" => Choice("user-data/mpvnet/enhancement/applied", "QUALITY"),
-        "script-message-to enhancement_controls set-preset SMOOTH" => Choice("user-data/mpvnet/enhancement/applied", "SMOOTH"),
-        "script-message-to enhancement_controls set-preset ANIME_LIGHT" => Choice("user-data/mpvnet/enhancement/applied", "ANIME_LIGHT"),
-        "script-message-to enhancement_controls set-preset ANIME_STRONG" => Choice("user-data/mpvnet/enhancement/applied", "ANIME_STRONG"),
-        "script-message-to enhancement_controls set-preset CUGAN" => Choice("user-data/mpvnet/enhancement/applied", "CUGAN"),
-        "script-message-to enhancement_controls set-preset ESRGAN" => Choice("user-data/mpvnet/enhancement/applied", "ESRGAN"),
         "script-message-to motion_controls set-mode OFF" => Choice("user-data/mpvnet/motion/applied", "OFF"),
         "script-message-to motion_controls set-mode DISPLAY" => Choice("user-data/mpvnet/motion/applied", "DISPLAY"),
         "script-message-to motion_controls set-mode BLEND" => Choice("user-data/mpvnet/motion/applied", "BLEND"),

@@ -171,7 +171,7 @@ internal sealed class UpscaleRequest : IDisposable
         if (Operation == "prepare") {
             Model = UpscaleData.Text(data, "model");
             long width = UpscaleData.Number(data, "width"), height = UpscaleData.Number(data, "height");
-            if ((Model != "CUGAN" && Model != "ESRGAN") || width < 16 || width > 854 || height < 16 || height > 480)
+            if (String.IsNullOrEmpty(Model) || width < 16 || width > 854 || height < 16 || height > 480)
                 throw new UpscaleFailure("unsupported_input");
             Width = (int)width;
             Height = (int)height;
@@ -285,7 +285,8 @@ internal sealed class UpscaleDevice
 internal static class UpscaleProgram
 {
     static readonly string[] PreparationReasons = {
-        "cache_busy", "cache_invalid", "compile_failed", "prepare_failed", "cancelled"
+        "cache_busy", "cache_invalid", "compile_failed", "prepare_failed", "cancelled",
+        "model_missing", "model_integrity", "bundle_integrity"
     };
 
     [STAThread] public static int Main(string[] args)
@@ -309,6 +310,11 @@ internal static class UpscaleProgram
                 result["bundle_id"] = components.BundleId;
                 result["manifest_sha256"] = components.ManifestHash;
                 result["component_ready"] = components.IsReady(false);
+                UpscaleModel model = null;
+                if (request.Operation == "probe")
+                    result["model_errors"] = new UpscaleModels(request.ConfigRoot, components.BundleRoot).Probe();
+                else if (request.Operation == "prepare")
+                    model = new UpscaleModels(request.ConfigRoot, components.BundleRoot).Select(request.Model);
                 var device = UpscaleDevice.Detect();
                 result["device_id"] = device.Id;
                 result["gpu_uuid"] = device.Uuid;
@@ -317,7 +323,7 @@ internal static class UpscaleProgram
                 else {
                     using (components.AcquireLock()) {
                         if (request.Operation == "install") components.Install();
-                        else Prepare(request, components, device, result);
+                        else Prepare(request, components, device, model, result);
                     }
                     result["component_ready"] = true;
                     result["phase"] = "ready";
@@ -341,10 +347,11 @@ internal static class UpscaleProgram
     }
 
     static void Prepare(UpscaleRequest request, UpscaleComponents components, UpscaleDevice device,
-        Dictionary<string, object> result)
+        UpscaleModel model, Dictionary<string, object> result)
     {
         request.Progress("verifying");
         if (!components.IsReady(true)) throw new UpscaleFailure(components.HasReceipt ? "bundle_integrity" : "components_missing");
+        model.RequireAsset();
         string stage = components.CreateStage();
         try {
             string script = Path.Combine(request.ConfigRoot, "upscale", "prepare.py");
@@ -386,8 +393,7 @@ internal static class UpscaleProgram
             UpscaleData.RejectLinks(engine);
             if (!UpscaleData.SamePath(engine, UpscaleData.Text(last, "engine_path")) || !File.Exists(engine))
                 throw new UpscaleFailure("prepare_failed");
-            int paddedWidth = request.Model == "CUGAN" ? (request.Width + 3) / 4 * 4 : request.Width;
-            int paddedHeight = request.Model == "CUGAN" ? (request.Height + 3) / 4 * 4 : request.Height;
+            int paddedWidth = model.Pad(request.Width), paddedHeight = model.Pad(request.Height);
             if (UpscaleData.Number(last, "padded_width") != paddedWidth || UpscaleData.Number(last, "padded_height") != paddedHeight)
                 throw new UpscaleFailure("prepare_failed");
             result["engine_path"] = engine;

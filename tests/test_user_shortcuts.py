@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from support.lua_source import upscale_catalog_fixture
 import re
 import unittest
 
@@ -27,9 +28,12 @@ class UserShortcuts(unittest.TestCase):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'tests/lua/user_shortcuts.lua').read_text(encoding='utf-8')
         cls.source = cls.source.replace('-- MODEL SOURCE IS INSERTED HERE', MODULE.read_text(encoding='utf-8'))
+        cls.source = cls.source.replace('-- UPSCALE SOURCE IS INSERTED HERE',
+                                        (ROOT / 'config/script-modules/upscale.lua').read_text(encoding='utf-8'))
         cls.source = cls.source.replace('-- SCRIPT SOURCE IS INSERTED HERE', SCRIPT.read_text(encoding='utf-8'))
         cls.source = 'local input_source = [===[\n' + (ROOT / 'config/input.conf').read_text(encoding='utf-8') + '\n]===]\n' + cls.source
         cls.source = 'local native_commands = {' + ','.join(json.dumps(command) for command in sorted(NATIVE_COMMANDS)) + '}\n' + cls.source
+        cls.source = upscale_catalog_fixture() + cls.source
 
     def run_case(self, name, initial_document=None):
         setup = '' if initial_document is None else 'files[user_path]=[===[' + initial_document + ']===]'

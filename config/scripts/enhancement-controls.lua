@@ -4,6 +4,9 @@ local utils = require('mp.utils')
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local settings = dofile(mp.command_native({'expand-path', '~~/script-modules/user-settings.lua'}))
 local upscale_module = dofile(mp.command_native({'expand-path', '~~/script-modules/upscale.lua'}))
+local upscale_models = upscale_module.read_models(mp, utils)
+local model_descriptions = {}
+for name, model in pairs(upscale_models) do model_descriptions[name] = model.description end
 local upscale, requested_manually
 local deferred_preset, deferred_timer, schedule_deferred
 
@@ -24,7 +27,10 @@ local chains = {
 }
 local preset_field = settings.field('enhancement.default-preset')
 local labels = {}
-for _, choice in ipairs(preset_field.choices) do labels[choice.value] = choice.label end
+for _, choice in ipairs(preset_field.choices) do
+    local model = upscale_models[choice.value]
+    labels[choice.value] = model and model.label or choice.label
+end
 local startup_preset, manually_selected = preset_field.default, false
 local desired, applied, baseline = startup_preset, 'OFF', nil
 local ready, last_error, shutting_down = false, nil, false
@@ -35,9 +41,12 @@ local reason_text = {
     anime_unverified = 'Anime4K 尚未启用', shader_missing = '缺少增强文件',
     settings_failed = '无法应用增强设置', rollback_failed = '画面设置还原失败',
     renderer_error = '画面增强失败', unavailable = '此增强不可用',
-    source_unsupported = '首批超分支持 480p 及以下的 SDR 逐行动画', source_color = '无法识别视频色彩',
+    source_unsupported = '超分支持 480p 及以下的 SDR 逐行视频', source_color = '无法识别视频色彩',
     filter_conflict = '请先关闭其他 VapourSynth 处理', preparing = '请先取消当前准备',
 }
+local function unavailable_text(reason)
+    return upscale_module.model_error_text[reason] or reason_text[reason] or reason_text.unavailable
+end
 
 local function clone(value)
     if type(value) ~= 'table' then return value end
@@ -100,10 +109,12 @@ local function availability()
     end
     local source_ok, source_reason = false, 'initializing'
     if upscale then source_ok, source_reason = upscale.availability() end
-    for name in pairs(upscale_module.names) do
-        available[name] = renderer == true and source_ok and not upscale.busy()
+    local model_errors = upscale and upscale.state().model_errors or {}
+    local busy = upscale and upscale.busy()
+    for name in pairs(upscale_module.model_ids) do
+        available[name] = renderer == true and source_ok and not busy and not model_errors[name]
         if not available[name] then
-            reasons[name] = renderer_reason or source_reason or (upscale and upscale.busy() and 'preparing') or 'unavailable'
+            reasons[name] = model_errors[name] or renderer_reason or source_reason or (busy and 'preparing') or 'unavailable'
         end
     end
     if upscale and (upscale.state().phase=='preparing' or upscale.state().phase=='loading') then
@@ -115,11 +126,11 @@ end
 local function publish()
     local available, reasons = availability()
     local texts={}
-    for name,reason in pairs(reasons) do texts[name]=reason_text[reason] or reason_text.unavailable end
+    for name,reason in pairs(reasons) do texts[name]=unavailable_text(reason) end
     mp.set_property_native('user-data/mpvnet/enhancement', {
-        desired = desired, applied = applied, applied_scope = upscale_module.names[applied] and 'options+vf' or 'options',
+        desired = desired, applied = applied, applied_scope = upscale_module.model_ids[applied] and 'options+vf' or 'options',
         ready = ready, available = available, unavailable_reasons = reasons, error = last_error,
-        unavailable_text = texts,
+        unavailable_text = texts, model_descriptions = model_descriptions,
         error_reason = error_reason, error_preset = error_preset,
         anime_verified = opts.anime_verified,
         upscale = upscale and upscale.state() or nil,
@@ -167,10 +178,10 @@ local function apply(name, quiet)
         last_error = 'Preset unavailable: ' .. tostring(name)
         error_reason, error_preset = reasons[name] or 'unavailable', name
         publish()
-        if not quiet then feedback(reason_text[error_reason], 'error') end
+        if not quiet then feedback(unavailable_text(error_reason), 'error') end
         return false
     end
-    if upscale_module.names[name] then
+    if upscale_module.model_ids[name] then
         requested_manually = not quiet
         return upscale.select(name)
     end
@@ -239,8 +250,10 @@ upscale = upscale_module.new(mp,utils,{
         applied=ok and 'OFF' or nil
         return ok==true
     end,
+    configure=function(name)
+        return baseline and write_group(values_for(name)) or false
+    end,
     active=function(name)
-        if not baseline or not write_group(values_for(name)) then return false end
         desired,applied=name,name;last_error,error_reason,error_preset=nil,nil,nil
         publish();feedback('已启用 '..labels[name],'success');return true
     end,
@@ -254,7 +267,7 @@ upscale = upscale_module.new(mp,utils,{
         error_reason=ok and nil or 'rollback_failed'
         feedback(ok and '已取消准备，恢复原始画面' or reason_text.rollback_failed,ok and 'action' or 'error')
     end,
-})
+}, upscale_models)
 
 mp.register_script_message('upscale-action',function(action)
     if action=='enable-requested' or action=='retry' then requested_manually=true;deferred_preset=nil end
@@ -294,12 +307,12 @@ mp.register_event('file-loaded', function()
     applied = ready and 'OFF' or nil
     -- Fresh files get a fresh baseline after mpv's previous file-local reset.
     -- Preserve the desired instance preset even when this file lacks a GPU VO.
-    if ready and upscale_module.names[desired] then deferred_preset=desired;publish();schedule_deferred()
+    if ready and upscale_module.model_ids[desired] then deferred_preset=desired;publish();schedule_deferred()
     elseif ready and desired ~= 'OFF' then apply(desired, true) else publish() end
 end)
 local function refresh_availability()
     local available, reasons = availability()
-    if ready and upscale_module.names[applied] then
+    if ready and upscale_module.model_ids[applied] then
         local ok,code=upscale.availability()
         if not ok then upscale.invalidate(code) else publish() end
         return
@@ -311,7 +324,7 @@ local function refresh_availability()
         error_reason, error_preset = restored and reasons[previous] or 'rollback_failed', previous
         last_error = restored and reason_text[error_reason] or tostring(err)
         publish()
-    elseif ready and desired ~= 'OFF' and not upscale_module.names[desired] and applied == 'OFF' and available[desired] then
+    elseif ready and desired ~= 'OFF' and not upscale_module.model_ids[desired] and applied == 'OFF' and available[desired] then
         apply(desired, true)
     else publish() end
     schedule_deferred()
@@ -360,7 +373,7 @@ settings.owner(mp, {
         startup_preset = value
         if not manually_selected then
             desired = value
-            if ready and upscale_module.names[desired] then deferred_preset=desired;publish();schedule_deferred()
+            if ready and upscale_module.model_ids[desired] then deferred_preset=desired;publish();schedule_deferred()
             elseif ready and desired ~= 'OFF' then apply(desired, true) else publish() end
         end
         return true

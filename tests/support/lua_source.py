@@ -14,6 +14,18 @@ def feedback_module():
     return '(function()\n' + path.read_text(encoding='utf-8') + '\nend)()'
 
 
+def upscale_catalog_fixture():
+    """Use the production catalog's presentation fields in mp.utils JSON doubles."""
+    path = Path(__file__).resolve().parents[2] / 'config/upscale/models.json'
+    catalog = json.loads(path.read_text(encoding='utf-8'))
+    models = ',\n'.join(
+        f"{key}={{label={json.dumps(value['label'], ensure_ascii=False)},"
+        f"description={json.dumps(value['description'], ensure_ascii=False)}}}"
+        for key, value in catalog['models'].items()
+    )
+    return f"local upscale_catalog = {{schema={catalog['schema']},models={{\n{models}\n}}}}\n"
+
+
 def _options(path):
     for line in Path(path).read_text(encoding='utf-8').splitlines():
         if line.strip() and not line.lstrip().startswith('#'):

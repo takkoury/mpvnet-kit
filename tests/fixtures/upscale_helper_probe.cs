@@ -54,7 +54,17 @@ internal static class UpscaleHelperProbe
                 if (args[0] == "install") {
                     using (components.AcquireLock()) components.Install();
                 }
-                result["ready"] = components.IsReady(true);
+                if (args[0] == "probe") {
+                    result["component_ready"] = components.IsReady(false);
+                    result["model_errors"] = new UpscaleModels(request.ConfigRoot, components.BundleRoot).Probe();
+                } else if (args[0] == "prepare") {
+                    var model = new UpscaleModels(request.ConfigRoot, components.BundleRoot).Select(request.Model);
+                    model.RequireAsset();
+                    result["padded_width"] = model.Pad(request.Width);
+                    result["padded_height"] = model.Pad(request.Height);
+                } else {
+                    result["ready"] = components.IsReady(true);
+                }
             }
         } catch (UpscaleFailure error) { result["error_reason"] = error.Message; }
         catch (OperationCanceledException) { result["error_reason"] = "cancelled"; }

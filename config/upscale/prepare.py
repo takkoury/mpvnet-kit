@@ -1,5 +1,5 @@
 """Build one device/shape-specific engine. Invoked only by the owned preparation job."""
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import hashlib
 import json
 import msvcrt
@@ -8,8 +8,12 @@ import subprocess
 import sys
 import time
 
-MODELS = {"CUGAN": "cugan.onnx", "ESRGAN": "esrgan.onnx"}
-RECIPE = 1
+class ModelFailure(ValueError):
+    """A missing packaged model must not trigger another runtime download."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def digest(path):
@@ -22,6 +26,55 @@ def digest(path):
 
 def emit(phase, **data):
     print(json.dumps(dict(phase=phase, **data), ensure_ascii=True), flush=True)
+
+
+def model_source(config, bundle, model_id):
+    data = json.loads((config / "upscale/models.json").read_text(encoding="utf-8-sig"))
+    if data.get("schema") != 1 or model_id not in data.get("models", {}):
+        raise ValueError("unknown model")
+    model = data["models"][model_id]
+    if (any(type(model[key]) is not int for key in ("scale", "pad_multiple", "recipe"))
+            or model["scale"] != 2 or model["pad_multiple"] not in (1, 4) or model["recipe"] != 1):
+        raise ValueError("unsupported model recipe")
+    location = model["source"]
+    if location not in ("bundle", "config"):
+        raise ValueError("unsupported model source")
+    integrity = "model_integrity" if location == "config" else "bundle_integrity"
+    name = model["path"]
+    relative = PurePosixPath(name)
+    prefix = "models/" if location == "bundle" else "upscale/models/"
+    if (not name.startswith(prefix) or relative.is_absolute() or "\\" in name or ":" in name
+            or ".." in relative.parts or str(relative) != name):
+        raise ModelFailure(integrity)
+    root = config if location == "config" else bundle
+    source = root.joinpath(*relative.parts)
+    if not source.resolve().is_relative_to(root.resolve()):
+        raise ModelFailure(integrity)
+    for path in (source, *source.parents):
+        if path.is_symlink() or path.is_junction():
+            raise ModelFailure(integrity)
+        if path == root:
+            break
+    try:
+        actual = digest(source)
+    except FileNotFoundError:
+        raise ModelFailure("model_missing" if location == "config" else "bundle_integrity") from None
+    except OSError:
+        raise ModelFailure(integrity) from None
+    if actual != model["sha256"]:
+        raise ModelFailure(integrity)
+    return model, source, actual
+
+
+def cache_identity(model_id, model, model_hash, request, width, height, padded_w, padded_h):
+    # Preserve the original animation cache fields and values. A new catalogue
+    # entry must not invalidate engines for unchanged models or runtime bundles.
+    return dict(recipe=model["recipe"], model=model_id, model_sha256=model_hash,
+                width=width, height=height, padded_width=padded_w, padded_height=padded_h,
+                bundle_id=request["bundle_id"], manifest_sha256=request["manifest_sha256"],
+                gpu_uuid=request["gpu_uuid"], driver=request["driver"],
+                precision="fp16-fp32-io", streams=1, cuda_graph=True,
+                workspace_mib=1024, builder_optimization=3, aux_streams=0)
 
 
 def layout(bundle):
@@ -55,25 +108,19 @@ def check_engine(bundle, engine, width, height, device):
 def main(request_path):
     request = json.loads(Path(request_path).read_text(encoding="utf-8-sig"))
     model_id = request["model"]
-    if model_id not in MODELS:
-        raise ValueError("unknown model")
     width, height = int(request["width"]), int(request["height"])
     if not (16 <= width <= 854 and 16 <= height <= 480):
         raise ValueError("unsupported input size")
-    # CUGAN's encoder/decoder uses two spatial reductions. Replicate the edge in
-    # the video adapter, then crop the 2x output; never stretch the source image.
-    padded_w = (width + 3) // 4 * 4 if model_id == "CUGAN" else width
-    padded_h = (height + 3) // 4 * 4 if model_id == "CUGAN" else height
     bundle = Path(request["bundle_root"]).resolve()
+    model, source, model_hash = model_source(Path(__file__).resolve().parent.parent, bundle, model_id)
+    # CUGAN needs multiples of four; other current models preserve the input
+    # shape. The playback adapter replicates padding and crops the 2x output.
+    multiple = model["pad_multiple"]
+    padded_w = (width + multiple - 1) // multiple * multiple
+    padded_h = (height + multiple - 1) // multiple * multiple
     cache = Path(request["cache_root"]).resolve()
     cache.mkdir(parents=True, exist_ok=True)
-    source = bundle / "models" / MODELS[model_id]
-    identity = dict(recipe=RECIPE, model=model_id, model_sha256=digest(source),
-                    width=width, height=height, padded_width=padded_w, padded_height=padded_h,
-                    bundle_id=request["bundle_id"], manifest_sha256=request["manifest_sha256"],
-                    gpu_uuid=request["gpu_uuid"], driver=request["driver"],
-                    precision="fp16-fp32-io", streams=1, cuda_graph=True,
-                    workspace_mib=1024, builder_optimization=3, aux_streams=0)
+    identity = cache_identity(model_id, model, model_hash, request, width, height, padded_w, padded_h)
     key = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     final = cache / key
     def cached():
@@ -160,6 +207,9 @@ def main(request_path):
 if __name__ == "__main__":
     try:
         main(sys.argv[1])
+    except ModelFailure as error:
+        emit("failed", ok=False, error_reason=error.reason)
+        sys.exit(1)
     except Exception as error:
         # The helper maps stable reasons to user text; detailed failures stay local.
         emit("failed", ok=False, error_reason="prepare_failed", detail=type(error).__name__ + ": " + str(error))

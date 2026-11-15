@@ -36,6 +36,7 @@ local mp = {
     osd_message=function(message) messages[#messages+1] = message end,
 }
 package.loaded.mp = mp
+package.loaded['mp.utils'] = {}
 
 local renderer = {
     open=function(options)
@@ -66,6 +67,7 @@ local function dofile(path)
         if missing_labels then error('missing static action labels') end
         return make_shortcut_model()
     end
+    if path == '~~/script-modules/upscale.lua' then return {read_models=function() return {} end} end
     error('unexpected source read')
 end
 
