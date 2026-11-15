@@ -78,6 +78,21 @@ def _check_update_asset(source, destination, data):
         raise ValueError('update executable does not match its sources; rebuild KitUpdate.exe')
 
 
+def _check_upscale_asset(source, destination, data):
+    builds = {
+        'config/helpers/kitupscale.exe': 'build-upscale-helper.py',
+        'config/extensions/kitupscalehost/kitupscalehost.dll': 'build-upscale-host.py',
+    }
+    filename = builds.get(destination.casefold())
+    if not filename:
+        return
+    spec = importlib.util.spec_from_file_location('kit_upscale_build', Path(__file__).with_name(filename))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not module.matches_source_digest(data, module.source_digest(source)):
+        raise ValueError('upscale runtime asset does not match its sources; rebuild ' + destination)
+
+
 def _relative(value):
     if not isinstance(value, str):
         raise ValueError('relative path must be a string: ' + repr(value))
@@ -254,6 +269,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
         _check_playlist_input_asset(source, dst, data)
         _check_playlist_window_asset(source, dst, data)
         _check_update_asset(source, dst, data)
+        _check_upscale_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
     entries.sort(key=lambda x: x['path'])

@@ -43,6 +43,10 @@ internal static class Program
             var sound = new MenuItem { Header = "Sound" };
             var originalSound = new MenuItem { Header = "Original" };
             var nightSound = new MenuItem { Header = "Night", IsEnabled = true, ToolTip = "host tooltip" };
+            var enhancement = new MenuItem { Header = "Enhancement" };
+            var originalPicture = new MenuItem { Header = "Original" };
+            var cugan = new MenuItem { Header = "CUGAN" };
+            var esrgan = new MenuItem { Header = "ESRGAN" };
             var device = new MenuItem { Header = "Device" };
             var tracks = new MenuItem { Header = "Tracks" };
             var chapter = new MenuItem { Header = "Chapter" };
@@ -57,7 +61,7 @@ internal static class Program
             otherItem.Items.Add(otherSeparator);
 
             menu.Items.Add(category);
-            foreach (var item in new object[] { pause, unknown, separator, ignore, speed, motion, sound, device, tracks, chapter })
+            foreach (var item in new object[] { pause, unknown, separator, ignore, speed, motion, sound, enhancement, device, tracks, chapter })
                 category.Items.Add(item);
             speed.Items.Add(reset);
             speed.Items.Add(half);
@@ -65,6 +69,7 @@ internal static class Program
             foreach (var item in motionItems)
                 motion.Items.Add(item);
             sound.Items.Add(originalSound); sound.Items.Add(nightSound);
+            enhancement.Items.Add(originalPicture); enhancement.Items.Add(cugan); enhancement.Items.Add(esrgan);
             tracks.Items.Add(originalTrack);
 
             var items = new (string[] Path, string Command)[]
@@ -78,7 +83,10 @@ internal static class Program
                 (new[] { "Category", "Motion", "Display" }, "script-message-to motion_controls set-mode DISPLAY"),
                 (new[] { "Category", "Motion", "Blend" }, "script-message-to motion_controls set-mode BLEND"),
                 (new[] { "Category", "Sound", "Original" }, "script-message-to audio_controls set-mode OFF"),
-                (new[] { "Category", "Sound", "Night" }, "script-message-to audio_controls set-mode NIGHT")
+                (new[] { "Category", "Sound", "Night" }, "script-message-to audio_controls set-mode NIGHT"),
+                (new[] { "Category", "Enhancement", "Original" }, "script-message-to enhancement_controls set-preset OFF"),
+                (new[] { "Category", "Enhancement", "CUGAN" }, "script-message-to enhancement_controls set-preset CUGAN"),
+                (new[] { "Category", "Enhancement", "ESRGAN" }, "script-message-to enhancement_controls set-preset ESRGAN")
             };
 
             var evidence = new Dictionary<string, bool>
@@ -123,6 +131,8 @@ internal static class Program
             var appliedMotion = "";
             var appliedSound = "OFF";
             var nightAvailable = "no";
+            var pictureApplied = "OFF";
+            var upscalePhase = "idle";
             Func<string, string> read = property => property switch
             {
                 "user-data/mpvnet/shortcuts" => applied,
@@ -130,6 +140,9 @@ internal static class Program
                 "user-data/mpvnet/audio/applied" => JsonSerializer.Serialize(appliedSound),
                 "user-data/mpvnet/audio/available/NIGHT" => nightAvailable,
                 "user-data/mpvnet/audio/unavailable_text" => JsonSerializer.Serialize("夜间观看仅支持双声道音轨"),
+                "user-data/mpvnet/enhancement/applied" => JsonSerializer.Serialize(pictureApplied),
+                "user-data/mpvnet/enhancement/upscale/phase" => JsonSerializer.Serialize(upscalePhase),
+                "user-data/mpvnet/enhancement/available/CUGAN" or "user-data/mpvnet/enhancement/available/ESRGAN" => "true",
                 "pause" => "yes",
                 "speed" => "0.500000",
                 _ => ""
@@ -151,7 +164,8 @@ internal static class Program
             chapter.Items.Add(dynamicChapter);
 
             foreach (var item in new[] { category, pause, unknown, ignore, reset, half, device, tracks, chapter,
-                     rebuilt, uncheckedTrack, audioDevice, dynamicChapter, sound, originalSound, nightSound }.Concat(motionItems))
+                     rebuilt, uncheckedTrack, audioDevice, dynamicChapter, sound, originalSound, nightSound,
+                     enhancement, originalPicture, cugan, esrgan }.Concat(motionItems))
                 item.ApplyTemplate();
 
             static Visibility VisibilityOf(MenuItem item, string name) =>
@@ -198,6 +212,18 @@ internal static class Program
             evidence["unknownSoundDoesNotClaimEitherMode"] =
                 VisibilityOf(originalSound, "RadioMark") == Visibility.Collapsed &&
                 VisibilityOf(nightSound, "RadioMark") == Visibility.Collapsed;
+            upscalePhase = "preparing";
+            refresh.Invoke(presentation, new object[] { read, 400d });
+            evidence["preparingUpscaleKeepsOriginalMarkerAndDisablesSwitches"] =
+                !originalPicture.IsEnabled && !cugan.IsEnabled && !esrgan.IsEnabled &&
+                VisibilityOf(originalPicture, "RadioMark") == Visibility.Visible &&
+                VisibilityOf(cugan, "RadioMark") == Visibility.Collapsed;
+            upscalePhase = "active"; pictureApplied = "CUGAN";
+            refresh.Invoke(presentation, new object[] { read, 400d });
+            evidence["upscaleActualMarkerAndConciseTooltip"] = originalPicture.IsEnabled && cugan.IsEnabled &&
+                VisibilityOf(cugan, "RadioMark") == Visibility.Visible &&
+                VisibilityOf(esrgan, "RadioMark") == Visibility.Collapsed &&
+                Equals(cugan.ToolTip, "改善低清动画，线条相对柔和。需要准备超分组件。");
             evidence["rebuiltRadioMarker"] = VisibilityOf(rebuilt, "RadioMark") == Visibility.Visible
                 && VisibilityOf(rebuilt, "CheckMark") == Visibility.Collapsed && rebuilt.IsChecked && !rebuilt.IsCheckable;
             evidence["uncheckedReservedRadioColumn"] = VisibilityOf(uncheckedTrack, "CheckSpace") == Visibility.Visible

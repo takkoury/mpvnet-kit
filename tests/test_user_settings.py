@@ -61,6 +61,7 @@ class UserSettings(unittest.TestCase):
             ('PARSER SOURCE', 'config/script-modules/user-shortcuts.lua'),
             ('MODEL SOURCE', 'config/script-modules/user-settings.lua'),
             ('PATHS SOURCE', 'config/script-modules/mpvnet-paths.lua'),
+            ('UPSCALE SOURCE', 'config/script-modules/upscale.lua'),
             ('CONTROLLER SOURCE', 'config/scripts/user-settings.lua'),
             ('SUBTITLE SOURCE', 'config/scripts/subtitle-controls.lua'),
             ('OPTIONS SOURCE', 'config/scripts/settings-options.lua'),

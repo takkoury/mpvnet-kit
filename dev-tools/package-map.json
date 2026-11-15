@@ -763,6 +763,72 @@
       "destination": "config/helpers/KitSettings.exe",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/script-modules/upscale.lua",
+      "destination": "config/script-modules/upscale.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/components.json",
+      "destination": "config/upscale/components.json",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/prepare.py",
+      "destination": "config/upscale/prepare.py",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/upscale/runtime.vpy",
+      "destination": "config/upscale/runtime.vpy",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/extensions/KitUpscaleHost/KitUpscaleHost.dll",
+      "destination": "config/extensions/KitUpscaleHost/KitUpscaleHost.dll",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/KitUpscale.exe",
+      "destination": "config/helpers/KitUpscale.exe",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/upscale-host.cs",
+      "destination": "config/helpers/upscale-host.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/upscale-process.cs",
+      "destination": "config/helpers/upscale-process.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/upscale-components.cs",
+      "destination": "config/helpers/upscale-components.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/upscale-window.cs",
+      "destination": "config/helpers/upscale-window.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "config/helpers/settings-upscale.cs",
+      "destination": "config/helpers/settings-upscale.cs",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     }
   ]
 }

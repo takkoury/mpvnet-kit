@@ -104,7 +104,7 @@ local function instance(pid,order,startup_options)
         end,
         add_hook=function(name,_,callback) host.hooks[name]=host.hooks[name] or {};table.insert(host.hooks[name],callback) end,
         register_event=function(name,callback) host.events[name]=host.events[name] or {};table.insert(host.events[name],callback) end,
-        add_periodic_timer=function(_,callback) host.timers[#host.timers+1]=callback end,
+        add_periodic_timer=function(_,callback) host.timers[#host.timers+1]=callback;return {kill=function() end} end,
         add_timeout=function(_,callback)
             local timer={active=true,callback=callback}
             function timer:kill() self.active=false end
@@ -152,6 +152,9 @@ local function instance(pid,order,startup_options)
             if path==config..'script-modules/feedback.lua' then return feedback_module end
             if path==config..'script-modules/user-settings.lua' then return model end
             if path==config..'script-modules/user-shortcuts.lua' then return parser end
+            if path==config..'script-modules/upscale.lua' then return (function()
+-- UPSCALE SOURCE
+            end)() end
             if path==config..'script-modules/mpvnet-paths.lua' then
                 local paths=(function()
 -- PATHS SOURCE
@@ -694,7 +697,7 @@ function all_fields_publish_their_type_timing_and_page()
     local picture=host.field('enhancement.default-preset')
     eq(picture.page,'picture');eq(picture.section,'画质');eq(picture.kind,'choice');eq(picture.default,'OFF');eq(picture.timing,'startup')
     local presets={};for _,choice in ipairs(picture.choices) do presets[#presets+1]=choice.value end
-    eq(table.concat(presets,','),'OFF,QUALITY,SMOOTH,ANIME_LIGHT,ANIME_STRONG')
+    eq(table.concat(presets,','),'OFF,QUALITY,SMOOTH,ANIME_LIGHT,ANIME_STRONG,CUGAN,ESRGAN')
     assert(not model.proposed('picture','{"enhancement.default-preset":"RAVU"}',decode,parser))
     eq(host.field('mute').default,true);eq(host.field('modernz.timems').default,false)
     eq(host.field('modernz.timems').saved,false);eq(host.field('sub-pos').display,'position')

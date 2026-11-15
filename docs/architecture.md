@@ -277,6 +277,26 @@ DLL 是可重建的受管运行资产，源码和源码摘要随变更一并校�
 
 设置字段的choice可带可选tooltip，窗口在真正的ComboBoxItem上显示；声音选项使用已确认的短文案，不加常驻说明。侧栏显示“声音”“组件”，组件排在高级之前，稳定ID仍为audio／paths；关闭时原有设置与快捷键串行保存顺序不随导航排序改变。
 
+## 可选动画超分
+
+`enhancement-controls.lua`继续持有唯一的desired／applied和启动快照。`CUGAN`、`ESRGAN`加入既有互斥选择；菜单、设置及快捷键目录调用同一入口。保存不会改当前实例。首帧前的video-params可能不完整，每媒体保留一次延迟启动意图，等待资格就绪及退休helper退出；显式选择、卸载和已开始的失败会清除此意图，不形成自动失败重试。
+
+[upscale.lua](../config/script-modules/upscale.lua)管理组件任务、模型执行、媒体代次及临时借用，通过enhancement.upscale发布阶段、请求方案、对话框token和组件状态。组件获取／只读检查可跨媒体继续，模型准备属于当前媒体；旧结果可以留下合法缓存，但不能应用到新媒体。设置页用已验证editor token转发白名单动作；独立任务窗只发送匹配dialog token的取消、重试、关闭和前往组件意图。旧窗退出不隐藏新token窗口，准备窗异常退出会取消准备。
+
+[KitUpscaleHost](../src/upscale-host/UpscaleHostExtension.cs)使用宿主公开IExtension和ClientMessage，以单一后台worker处理固定bundle加载请求。它从当前配置根读取组件锁与回执，核Python／VS执行输入的摘要和原生目录布局，检测已加载冲突，按绝对路径加载并回读实际模块位置。关闭自有Python字节码写入，模块引用保留到进程退出，不强制卸载共享Python。桥接ready只表示API与路径就绪，不代表模型生效。
+
+[KitUpscale helper](../config/helpers/upscale-host.cs)只处理受管配置根中的固定清单，独立probe／install／prepare请求绑定父PID与任务ID。显式获取从固定HTTPS源流式下载并校验归档，按允许成员解包、拒绝链接和目录穿越，提交完整版本目录及receipt后才就绪。安装冲突不覆盖未知内容。对应[组件实现](../config/helpers/upscale-components.cs)持跨窗口写锁，[进程实现](../config/helpers/upscale-process.cs)将暂停创建的子进程先分配到kill-on-close Job，再继续执行；取消标记或父退出终止整个子进程树，只清理本任务stage。组件、缓存与暂存均留在配置根components/ai-upscale下，不进入配置包受管manifest。
+
+[prepare.py](../config/upscale/prepare.py)按实际输入尺寸生成静态FP16内部／FP32 IO图，使用固定构建器、单流与CUDA graph；CUGAN按4像素边界补齐。缓存身份包含模型、尺寸、配方、组件清单、GPU与驱动；独占写锁下构建，实际加载／首帧校验和摘要完成后同卷rename发布。已有缓存按身份和引擎摘要复用，损坏项保留并报错。帧数据不上传；准备依赖与播放器现有Python路径分离。
+
+[runtime.vpy](../config/upscale/runtime.vpy)只加载已准备引擎，使用当前媒体的矩阵、范围和色度位置，保留原色／传递／SAR／时长及mpv的opaque image属性；先边缘补齐再裁回2倍源尺寸，保留已验证的0–1裁剪配方。每次激活独立的首帧回执必须来自实际推理输出和非零时长输入，不能用前一个模型留下的2倍输出尺寸冒充新模式生效。首次回执与自有vf、输出尺寸共同确认后才发布applied；后续自有vf移除、禁用或参数变化会撤回状态。同尺寸源色彩变化会停止当前超分并要求明确重启，不继续使用旧解释。
+
+超分只管理完整匹配的`mpvnet-upscale`标签。hwdec按普通属性临时借用auto-copy，在on_unload和明确关闭时仅恢复仍等于自有写入的值，避免给核心增加会覆盖外部修改的file-local备份。移除或恢复失败保留归属供明确重试，不报还原成功。沿声音控制器的边界，在on_before_start_file记录已有标签，在on_load仅清除其后由续播新增、完整符合自有临时请求特征的滤镜，不让旧临时路径重新执行；预先存在或不同内容的标签保持。任意同值外部写入仍不可观测。
+
+准备只恢复自己导致的暂停；已有播放动作显式发送手动意图，暂停属性变化也会撤销恢复权。准备中禁止在菜单／增强浮层切换，取消动作有真实进程回执；实际开启后偶发掉帧不触发关闭，持续较多显示掉帧仅提示选择，不自动换模型、降帧或改驱动。已可捕获的任务／滤镜错误恢复原画，第三方原生DLL崩溃后的原窗口继续播放不在此保证内。
+
+外部组件来源、精确字节和许可记录在[components.json](../config/upscale/components.json)，当前固定普通TensorRT10.16／VSTRT15.16／VS R79。VSTRT的目录约定是plugins/vsmlrt-cuda，不创建链接或依赖系统PATH。API3弃用及TensorRT10.x维护状态是后续组件升级成本；不静默追随latest。首批只验证当前核心、NVIDIA、SDR逐行和限定SD尺寸，其他GPU、HDR、隔行及与重补帧叠加不从一次实播外推。
+
 ## 验证层次
 
 Python 回归使用标准库，Lua 回归执行实际脚本并提供 mpv 替身；Windows helper 检查覆盖真实存储、控件或合成安装目录。字体替身、控件事件、真实播放器运行和用户体验分别提供不同证据，不能互相替代。测试组、环境条件及允许跳过的项目统一见[测试说明](../tests/README.md)。

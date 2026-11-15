@@ -11,6 +11,10 @@ local function copy(value)
 end
 for key, value in pairs(original) do properties['options/' .. key] = copy(value) end
 local host = {
+    get_property_number = function(_, fallback) return fallback or 0 end,
+    get_property_bool = function(name, fallback) if properties[name]~=nil then return properties[name] end;return fallback end,
+    get_time = function() return 1 end,
+    add_periodic_timer = function() return {kill=function() end} end,
     get_property = function(name) return properties[name] end,
     get_property_native = function(name)
         if name == read_failure then return nil, 'injected read failure' end
@@ -49,6 +53,7 @@ end)()
 local function dofile(path)
     if path == '~~/script-modules/feedback.lua' then return feedback_module end
     if path == '~~/script-modules/user-settings.lua' then return settings_model end
+    if path == '~~/script-modules/upscale.lua' then return upscale_module end
     error('unexpected dofile '..path)
 end
 
@@ -109,7 +114,7 @@ end
 
 function sdr_settings_and_explicit_feedback()
     load_file()
-    for name in pairs(labels) do eq(current().available[name], true, name .. ' SDR availability') end
+    for _,name in ipairs({'OFF','QUALITY','SMOOTH','ANIME_LIGHT','ANIME_STRONG'}) do eq(current().available[name], true, name .. ' SDR availability') end
     select('QUALITY')
     eq(current().desired, 'QUALITY'); eq(current().applied, 'QUALITY'); eq(current().applied_scope, 'options')
     eq(properties['options/scale'], 'ewa_lanczos'); eq(properties['options/deband'], false)

@@ -126,6 +126,8 @@ local additions = {
     {'video.enhancement-deband', '画面', '画面增强：去色带（Deband）', 'script-message-to enhancement_controls set-preset SMOOTH'},
     {'video.enhancement-anime-light', '画面', '画面增强：动画增强·轻（Anime4K-L）', 'script-message-to enhancement_controls set-preset ANIME_LIGHT'},
     {'video.enhancement-anime-strong', '画面', '画面增强：动画增强·强（Anime4K-S）', 'script-message-to enhancement_controls set-preset ANIME_STRONG'},
+    {'video.enhancement-cugan', '画面', '画面增强：Real-CUGAN Pro · 动画', 'script-message-to enhancement_controls set-preset CUGAN'},
+    {'video.enhancement-esrgan', '画面', '画面增强：Real-ESRGAN · 动画', 'script-message-to enhancement_controls set-preset ESRGAN'},
     {'video.motion-original', '画面', '运动处理：沿用原始设置', 'script-message-to motion_controls set-mode OFF'},
     {'video.motion-display', '画面', '运动处理：显示同步', 'script-message-to motion_controls set-mode DISPLAY'},
     {'video.motion-blend', '画面', '运动处理：显示同步与帧混合', 'script-message-to motion_controls set-mode BLEND'},

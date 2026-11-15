@@ -21,6 +21,7 @@ try {
         (Join-Path $PSScriptRoot 'settings-controls.cs'),
         (Join-Path $PSScriptRoot 'settings-chrome.cs'),
         (Join-Path $PSScriptRoot 'settings-close.cs'),
+        (Join-Path $PSScriptRoot 'settings-upscale.cs'),
         (Join-Path $PSScriptRoot 'settings-window.cs'))
     $request = [UserPreferencesStorage]::Request($RequestPath)
     $editor = New-Object SettingsEditor($request, [bool]$ValidateOnly, [bool]$NoShow)

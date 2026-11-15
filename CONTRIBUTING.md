@@ -78,7 +78,18 @@ python -B dev-tools/build-update-window.py --output D:/Builds/update-window-chec
 
 省略`--apply`仅预览。核对仓外构建证据后将EXE复制回`config/helpers/KitUpdate.exe`，与源码一起交付；普通构包验证源码摘要，不调用SDK。检查器只提供版本查询与浏览器发行页入口，安装事务仍归`tools/`。
 
-### 构建安装包
+### 动画超分运行资产
+
+超分使用公开IExtension桥接及独立.NET Framework helper，普通打包校验源码摘要，不为用户编译或安装SDK。修改对应输入后，在全新仓外目录离线重建：
+
+```powershell
+python -B dev-tools/build-upscale-host.py --host C:/Tools/mpv.net/mpvnet.exe --output D:/Builds/upscale-host --apply
+python -B dev-tools/build-upscale-helper.py --output D:/Builds/upscale-helper --apply
+```
+
+核对build-evidence后，把DLL／EXE分别复制到`config/extensions/KitUpscaleHost/`及`config/helpers/`，与源码一起提交。组件页还属于KitSettings的输入，修改后按上面的设置窗口流程重建。外部GPU包不进入package-map；固定上游清单是`config/upscale/components.json`，版本、文件与许可变化须单独核对。GPU和真实播放器验证沿已批准范围执行；纯CPU的`UpscaleHelperTests`与Lua的`UpscaleControls`不能替代它们。
+
+## 构建安装包
 
 在仓库根目录执行。将示例输出位置换成一个全新的仓外目录；不要指向播放器、源码检出或其他 Git 仓库。
 
