@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>低清动画超分 · mpvnet-kit 交互原型</title>
+<style>
+:root{color-scheme:dark;--bg:#111;--surface:#151515;--control:#242424;--line:#3b3b3b;--text:#f2f2f2;--muted:#ababab;--accent:#1287bb}
+*{box-sizing:border-box}body{margin:0;background:#0c0c0c;color:var(--text);font:14px/1.6 "Microsoft YaHei UI","Microsoft YaHei",sans-serif}main{max-width:1168px;margin:24px auto;padding:0 24px 36px}h1{font-size:25px;font-weight:600;margin:0 0 6px}p{margin:0;color:var(--muted)}.eyebrow{font-size:12px;color:#83c5e3;margin-bottom:5px}button,input{font:inherit;color:inherit}button{cursor:pointer;background:var(--control);border:1px solid #555;border-radius:3px;min-height:34px;padding:5px 13px}button:hover:not(:disabled){background:#353535}button:disabled{opacity:.48;cursor:default}button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.primary{background:var(--accent);border-color:var(--accent)}.primary:hover:not(:disabled){background:#1697cd}a{color:#83c5e3;text-underline-offset:3px}h2,h3{font-weight:600}.summary{margin:18px 0 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px 20px;padding:12px 0}.summary dt{font-size:12px;color:var(--muted)}.summary dd{margin:2px 0 0;font-size:13px;min-height:21px}.view-tabs,.scenario-tabs{display:flex;gap:24px;flex-wrap:wrap}.view-tabs{margin-bottom:10px}.view-tabs button,.scenario-tabs button{border:0;border-radius:0;background:transparent;color:var(--muted);padding:5px 0;border-bottom:2px solid transparent}.view-tabs button[aria-selected=true],.scenario-tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
+.window,.player{height:530px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);position:relative}.titlebar{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 18px;border-bottom:1px solid #292929}.titlebar button{border:0;background:none;min-height:30px;width:30px;padding:0;font-size:19px}.window-body{height:calc(100% - 36px);display:grid;grid-template-columns:190px minmax(0,1fr)}nav{background:#111;border-right:1px solid #282828;padding:15px 12px}.search{border:1px solid #555;border-radius:3px;background:#242424;display:flex;align-items:center;gap:9px;height:34px;margin-bottom:13px;padding:0 9px}.search svg{width:14px;height:14px;flex:none}.search input{width:100%;background:none;border:0;outline:0;color:#888;min-width:0}.category{display:block;text-align:left;width:100%;height:37px;min-height:37px;border:0;border-left:2px solid transparent;border-radius:0;background:none;margin:3px 0;padding:0 12px;color:#aaa}.category.active{background:#242424;border-left-color:var(--accent);color:white}.category:disabled{opacity:1;color:#818181}.settings{padding:23px 28px 0;display:flex;flex-direction:column;min-width:0;min-height:0}.settings h2{font-size:21px;margin:0 0 18px}.fields{flex:1;min-height:0;overflow:auto;padding:0 3px 12px}.group{font-size:14px;color:var(--muted);font-weight:600;margin:18px 0 8px}.group:first-child{margin-top:0}.row{display:grid;grid-template-columns:145px minmax(0,430px);align-items:center;min-height:48px;gap:12px}.choice{width:100%;display:flex;align-items:center;justify-content:space-between;text-align:left;min-height:35px;padding:0 10px}.choice svg{width:12px;height:12px;flex:none}.readonly{background:var(--control);border:1px solid #555;border-radius:3px;min-height:35px;display:flex;align-items:center;padding:5px 10px;color:#8b8b8b;font-size:13px}.footer{flex-shrink:0;padding:13px 0 16px;border-top:1px solid #282828;display:flex;justify-content:space-between;gap:10px;align-items:center}.footer-actions{display:flex;gap:8px}.notice{min-height:22px;margin:8px 0;color:#ccc;font-size:12px}.component-line{display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #333;padding:5px 0 14px}.component-name{font-size:15px}.component-state{font-size:13px;margin-top:4px;color:#ababab}.component-actions{display:flex;gap:8px;flex-shrink:0}.inline-message{font-size:13px;color:#bbb;margin-top:12px}.component-stage{padding:14px 0;border-bottom:1px solid #333}.stages{display:flex;gap:12px;flex-wrap:wrap;color:#7e7e7e;font-size:13px;margin:14px 0}.stages .now{color:var(--text);border-bottom:2px solid var(--accent)}.stages .done{color:#b3b3b3}.details{font-size:12px;color:#ababab;margin-top:14px}.details summary{cursor:pointer;color:#ccc}.detail-grid{display:grid;grid-template-columns:105px 1fr;gap:7px 14px;margin:10px 0}.detail-grid dt{color:#909090}.detail-grid dd{margin:0;overflow-wrap:anywhere}.paths-context{margin-top:15px}.paths-context .row{min-height:41px}.paths-context .readonly{min-height:29px;font-size:12px}
+.player{background:#080808}.player-title{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#aaa;border-bottom:1px solid #252525}.picture-placeholder{position:absolute;inset:36px 0 64px;display:grid;place-content:center;text-align:center;gap:9px;color:#535353}.picture-placeholder strong{font-size:28px;font-weight:400;color:#696969}.picture-placeholder p{font-size:12px;color:#666}.player-bottom{position:absolute;bottom:0;left:0;right:0;height:64px;padding:13px 18px;border-top:1px solid #242424;display:flex;align-items:center;gap:12px}.player-bottom .grow{flex:1}.player-bottom button{border:0;background:transparent}.player-bottom span{font-size:12px;color:#888}.osd{position:absolute;left:22px;top:51px;max-width:calc(100% - 44px);color:#eee;font-size:15px;white-space:pre-line}.menu-stack{position:absolute;left:30px;top:108px;display:flex;gap:4px;align-items:flex-start}.menu{padding:4px;border:1px solid #454545;border-radius:6px;background:#151515;box-shadow:0 8px 20px #0008;flex-shrink:0;font-size:13px}.picture-menu{width:178px}.enhance-menu{width:298px}.menu button,.context-row{display:flex;align-items:center;gap:9px;width:100%;height:32px;min-height:32px;border:0;background:transparent;padding:0 10px;border-radius:3px;text-align:left;font-size:13px}.menu button:hover:not(:disabled),.context-row.active{background:#303030}.context-row{color:#8c8c8c;justify-content:space-between}.context-row.active{color:#eee}.menu button[aria-disabled=true]{color:#777;cursor:default}.dot{width:6px;height:6px;border-radius:50%;background:transparent;flex:none;margin:0 4px}.menu [aria-checked=true] .dot{background:var(--accent)}.sep{height:1px;background:#383838;margin:5px 9px}.task-box{position:absolute;top:120px;left:50%;transform:translateX(-50%);width:min(420px,calc(100% - 40px));background:#181818;border:1px solid #444;border-radius:6px;padding:23px 25px;box-shadow:0 12px 35px #0009}.task-box h3{margin:0 0 7px;font-size:17px}.task-box p{font-size:13px;line-height:1.75}.task-box .actions{display:flex;gap:9px;margin-top:17px}.task-box .stages{font-size:12px}.elapsed{font-size:12px;color:#999}.closed{height:530px;border:1px solid var(--line);border-radius:8px;display:grid;place-content:center;text-align:center;gap:12px}.popup{position:fixed;z-index:30;background:#242424;border:1px solid #555;border-radius:3px;padding:4px;box-shadow:0 6px 18px #0009}.popup button{display:block;width:100%;height:34px;min-height:34px;text-align:left;border:0;border-radius:2px;background:transparent;padding:0 10px;font-size:13px}.popup button[aria-selected=true]{background:#303030;color:white}.popup button:hover,.popup button:focus{background:#353535;outline:1px solid var(--accent);outline-offset:-1px}.tooltip{position:fixed;z-index:40;max-width:min(440px,calc(100vw - 24px));background:#242424;border:1px solid #555;border-radius:3px;padding:10px 12px;font-size:13px;line-height:1.7;box-shadow:0 5px 16px #0008;white-space:pre-line}.harness{margin-top:18px}.harness-label{font-size:12px;color:#999;margin-bottom:8px}.free-actions{display:flex;gap:8px;flex-wrap:wrap}.free-actions button{font-size:12px;min-height:30px;padding:3px 10px}.event{font-size:13px;min-height:23px;color:#ccc;margin-top:10px}.previous{font-size:12px;color:#929292;margin-top:5px}.walkthrough{border-top:1px solid var(--line);padding-top:13px;margin-top:16px}.scenario-copy{font-size:13px;margin:8px 0}.steps{display:flex;gap:8px;flex-wrap:wrap}.steps button{font-size:12px}.steps .next{border-color:var(--accent)}.steps .complete{color:#999}.scope{font-size:12px;color:#858585;margin-top:18px}dialog{background:#1b1b1b;color:var(--text);border:1px solid #555;border-radius:6px;max-width:455px;width:calc(100% - 40px);padding:24px}dialog::backdrop{background:#0009}dialog h3{font-size:18px;margin:0 0 10px}dialog p{font-size:13px}dialog .actions{display:flex;gap:9px;margin-top:21px}dialog .actions button{flex:1}.dialog-list{padding:13px 0;margin:10px 0;border-top:1px solid #333;border-bottom:1px solid #333;font-size:13px}.dialog-list div+div{margin-top:6px}[hidden]{display:none!important}
+@media(max-width:760px){main{padding:0 14px 24px;margin-top:18px}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.window-body{grid-template-columns:130px minmax(0,1fr)}nav{padding:14px 7px}.category{padding:0 8px;font-size:12px}.settings{padding:19px 17px 0}.row{grid-template-columns:1fr;gap:5px;margin-bottom:12px}.footer{flex-wrap:wrap}.footer-actions{flex-wrap:wrap}.component-line{align-items:flex-start;flex-direction:column}.component-actions{flex-wrap:wrap}.menu-stack{left:14px;right:14px}.picture-menu{display:none}.enhance-menu{width:min(100%,310px)}.player-bottom span{display:none}.paths-context{display:none}.detail-grid{grid-template-columns:80px 1fr}.settings h2{font-size:19px}.stages{gap:8px}.view-tabs{gap:20px}}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">MPVNET-KIT · 可丢弃的交互原型</div>
+<h1>低清动画超分</h1>
+<p>确认方案选择、启动默认、首次准备与取消恢复是否清楚。只模拟界面和状态，不下载、不调用超分、不写入播放器配置。</p>
+<dl class="summary" aria-label="演示状态，非正式播放器面板">
+ <div><dt>当前窗口与片源</dt><dd id="s-media"></dd></div><div><dt>当前选择</dt><dd id="s-desired"></dd></div><div><dt>实际生效</dt><dd id="s-applied"></dd></div><div><dt>播放状态</dt><dd id="s-paused"></dd></div>
+ <div><dt>已保存启动默认</dt><dd id="s-saved"></dd></div><div><dt>画面页草稿</dt><dd id="s-draft"></dd></div><div><dt>组件与当前任务</dt><dd id="s-task"></dd></div><div><dt>本机已准备的方案</dt><dd id="s-cache"></dd></div>
+</dl>
+<div class="view-tabs" role="tablist" aria-label="查看入口"><button id="tab-menu" role="tab" aria-selected="true" aria-controls="view-menu">播放中菜单</button><button id="tab-picture" role="tab" aria-selected="false" aria-controls="view-settings">画面设置</button><button id="tab-components" role="tab" aria-selected="false" aria-controls="view-settings">组件准备</button></div>
+<section id="view-menu" role="tabpanel" aria-labelledby="tab-menu">
+ <div class="player" id="player">
+  <div class="player-title"><span id="media-title"></span><span>mpv.net</span></div>
+  <div class="picture-placeholder"><strong>模拟播放画面</strong><p>这里不演示超分画质</p></div>
+  <div class="osd" id="osd" role="status" aria-live="polite"></div>
+  <div class="menu-stack" id="menu-stack"><div class="menu picture-menu"><div class="context-row active">画面增强 <span>›</span></div><div class="context-row">运动处理 <span>›</span></div><div class="sep"></div><div class="context-row">选择视频轨…</div><div class="context-row">切换宽高比</div><div class="context-row">旋转画面</div></div><div class="menu enhance-menu" role="menu" aria-label="画面增强" id="enhance-options"></div></div>
+  <div class="task-box" id="build-box" hidden><h3>正在准备画面增强</h3><p id="build-model"></p><div class="stages" id="build-stages"></div><p class="elapsed" id="build-elapsed"></p><div class="actions"><button id="cancel-build">取消准备</button></div></div>
+  <div class="task-box" id="missing-box" hidden><h3>需要超分组件</h3><p id="missing-model"></p><div class="actions"><button class="primary" id="go-components">前往组件</button><button id="dismiss-missing">暂不准备</button></div></div>
+  <div class="task-box" id="failure-box" hidden><h3>画面增强未启用</h3><p>本次准备失败，已恢复原始画面。</p><div class="actions"><button class="primary" id="retry-mode">重试</button><button id="dismiss-error">知道了</button></div><details class="details"><summary>查看详情</summary><p>演示原因：准备任务没有生成可用结果。真实实现应说明对应原因，不显示成功状态。</p></details></div>
+  <div class="player-bottom"><button id="play-pause" aria-label="暂停模拟播放">Ⅱ 暂停</button><span id="player-state"></span><div class="grow"></div><button id="open-menu">画面增强 ▾</button><button id="open-settings">设置</button></div>
+ </div>
+</section>
+<section id="view-settings" role="tabpanel" aria-labelledby="tab-picture" hidden>
+ <div class="window" id="settings-window"><div class="titlebar"><span>设置</span><button id="close-settings" aria-label="关闭设置">×</button></div><div class="window-body">
+  <nav aria-label="设置分类，原型展示画面和组件"><div class="search"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 5 5"/></svg><input aria-label="搜索设置（原型未模拟搜索）" placeholder="搜索设置" readonly></div><button class="category" disabled>字幕</button><button class="category" disabled>声音</button><button class="category" disabled>窗口</button><button class="category" disabled>控制栏</button><button class="category" id="nav-picture">画面</button><button class="category" disabled>解码</button><button class="category" disabled>快捷键</button><button class="category" id="nav-components">组件</button><button class="category" disabled>高级</button></nav>
+  <div class="settings"><h2 id="settings-heading">画面</h2><div class="fields">
+   <div id="picture-fields"><div class="group">画质</div><div class="row"><label id="startup-label">启动画质预设</label><button class="choice" id="startup-choice" aria-labelledby="startup-label startup-value" aria-haspopup="listbox" aria-expanded="false"><span id="startup-value"></span><svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><path d="m2 4 4 4 4-4"/></svg></button></div><div class="group">运动</div><div class="row"><label>启动运动模式</label><div class="readonly">沿用原始设置</div></div></div>
+   <div id="component-fields" hidden><div class="component-line"><div><div class="component-name">动画超分组件</div><div class="component-state" id="component-state"></div></div><div class="component-actions"><button id="prepare-components" class="primary">准备组件…</button><button id="use-requested" hidden>启用刚才的方案</button></div></div><div class="component-stage" id="download-box" hidden><p>正在准备组件</p><div class="stages" id="download-stages"></div><button id="cancel-download">取消准备</button></div><p class="inline-message" id="component-message"></p><details class="details"><summary>版本与来源</summary><dl class="detail-grid"><dt>包含方案</dt><dd>Real-CUGAN Pro、Real-ESRGAN 动画模型</dd><dt>本轮验证</dt><dd>普通 TensorRT 10.16、VapourSynth；正式组件包尚未定版。</dd><dt>来源依据</dt><dd><a href="https://github.com/bilibili/ailab/tree/main/Real-CUGAN" target="_blank" rel="noopener">Real-CUGAN</a> · <a href="https://github.com/xinntao/Real-ESRGAN" target="_blank" rel="noopener">Real-ESRGAN</a> · <a href="https://github.com/AmusementClub/vs-mlrt" target="_blank" rel="noopener">运行组件</a></dd></dl></details><div class="paths-context"><div class="group">现有路径设置</div><div class="row"><label>截图与片段目录</label><div class="readonly">沿用当前设置</div></div><div class="row"><label>FFmpeg</label><div class="readonly">沿用当前设置</div></div><div class="row"><label>Python</label><div class="readonly">沿用当前设置</div></div></div></div>
+  </div><div class="notice" id="settings-notice" role="status"></div><div class="footer"><button id="restore-default">恢复本页默认</button><div class="footer-actions"><button id="undo-draft">撤销更改</button><button id="save-draft" class="primary">保存本页</button></div></div></div>
+ </div></div>
+ <div class="closed" id="settings-closed" hidden><p>设置已关闭</p><button id="reopen-settings">重新打开设置</button></div>
+</section>
+<section class="harness" aria-label="原型演示控制，不属于正式播放器"><div class="harness-label">演示控制 · 用下面的按钮模拟任务结果，不会执行真实任务</div><div class="free-actions"><button id="advance-task">推进准备一步</button><button id="complete-task">模拟准备成功</button><button id="fail-task">模拟准备失败</button><button id="manual-pause">模拟手动暂停</button><button id="next-media">切换模拟视频</button><button id="late-complete">送达上一片的旧结果</button><button id="new-window">新开模拟窗口</button><button id="reset-demo">重置演示</button></div><div class="event" id="last-event" aria-live="polite"></div><div class="previous" id="previous-window" hidden></div></section>
+<section class="walkthrough"><div class="harness-label">引导流程 · 点选标签会重置到相应起点，再依次点击步骤</div><div class="scenario-tabs" role="tablist" aria-label="引导流程" id="scenario-tabs"></div><p class="scenario-copy" id="scenario-copy"></p><div class="steps" id="scenario-steps"></div></section>
+<p class="scope">原型中的组件下载量只是实验包示例，不代表正式产品体积。所有状态只保留在本页内存中，刷新即重置；本页不连接播放器，也不使用浏览器存储。</p>
+</main>
+<div class="popup" id="startup-options" role="listbox" aria-labelledby="startup-label" hidden></div><div class="tooltip" id="choice-tooltip" role="tooltip" hidden></div>
+<dialog id="component-dialog"><h3>准备动画超分组件</h3><p>为 Real-CUGAN 和 Real-ESRGAN 准备共用的运行组件。完成后由你选择何时启用。</p><div class="dialog-list"><div>下载示例：2.49 GiB（本轮实验配套包）</div><div>位置：播放器的独立组件目录</div><div>来源：所选方案的公开发布组件</div></div><p>本原型只模拟准备过程，不会实际下载。</p><div class="actions"><button id="cancel-component-dialog">取消</button><button id="confirm-components" class="primary">开始准备</button></div></dialog>
+<dialog id="close-dialog"><h3>保存画面页的更改？</h3><p>更改启动默认只影响新窗口。</p><div class="actions"><button id="close-save" class="primary">保存</button><button id="close-discard">不保存</button><button id="close-cancel">取消</button></div></dialog>
+<script>
+// Prototype only: pure state transitions; no DOM, storage, IPC, downloads or inference.
+const UpscalePrototype = (() => {
+ const modes = {
+  OFF:{name:'原始画面',menu:'原始画面（Original）'}, QUALITY:{name:'高质量缩放',menu:'高质量缩放（Scaling）'}, SMOOTH:{name:'去色带',menu:'去色带（Deband）'},
+  ANIME_LIGHT:{name:'Anime4K-L',menu:'动画增强·轻（Anime4K-L）'}, ANIME_STRONG:{name:'Anime4K-S',menu:'动画增强·强（Anime4K-S）'},
+  CUGAN:{name:'Real-CUGAN Pro · 动画',menu:'Real-CUGAN Pro · 动画',tip:'改善低清动画，线条相对柔和。需要准备超分组件。'},
+  ESRGAN:{name:'Real-ESRGAN · 动画',menu:'Real-ESRGAN · 动画',tip:'改善低清动画，轮廓更锐利，可能简化纹理。需要准备超分组件。'}
+ };
+ const ai = m => m==='CUGAN'||m==='ESRGAN';
+ const initial = () => ({instance:1,media:1,desired:'OFF',applied:'OFF',saved:'OFF',draft:'OFF',component:'missing',downloadStep:0,requested:null,task:null,serial:0,retired:null,cache:[],paused:false,pauseChanged:false,missing:false,error:false,osd:'',notice:'',event:'可以直接点击菜单，或选择下方引导流程。',settingsOpen:true,previous:null});
+ const retire = s => {if(s.task){s.retired={id:s.task.id,model:s.task.model,media:s.task.media};s.task=null;}};
+ const returnPlayback = s => {if(s.task&&s.task.resume&&!s.pauseChanged)s.paused=false;retire(s);s.pauseChanged=false;};
+ function select(s,mode,time){
+  if(!modes[mode])return;
+  s.missing=false;s.error=false;
+  if(ai(mode)&&s.component!=='ready'){
+   s.requested=mode;s.missing=true;s.osd='';s.event='组件未就绪，当前画面保持。组件准备不会自动开启增强。';return;
+  }
+  returnPlayback(s);s.desired=mode;s.requested=mode;
+  if(!ai(mode)||s.cache.includes(mode)){
+   s.applied=mode;s.osd=mode==='OFF'?'已恢复原始画面':'已启用 '+modes[mode].name;
+   s.event=s.osd+(ai(mode)?'，复用已准备的本机缓存。':'。');return;
+  }
+  s.applied='OFF';s.serial++;s.task={id:s.serial,media:s.media,model:mode,step:0,resume:!s.paused,started:time};s.pauseChanged=false;s.paused=true;s.osd='';s.event='正在准备 '+modes[mode].name+'；当前仍是原始画面。';
+ }
+ function reduce(previous,action){
+  const s=structuredClone(previous);const time=action.time||0;
+  switch(action.type){
+   case 'SELECT':select(s,action.mode,time);break;
+   case 'DRAFT':if(modes[action.mode]){s.draft=action.mode;s.notice='';s.event='仅修改设置草稿，当前画面保持。';}break;
+   case 'SAVE':s.saved=s.draft;s.notice='启动默认已保存，在新窗口中生效。';s.event='启动默认已保存；当前选择与实际画面保持。';break;
+   case 'UNDO':s.draft=s.saved;s.notice='';s.event='已撤销画面页草稿。';break;
+   case 'DEFAULT':s.draft='OFF';s.notice='';s.event='原始画面已进入草稿，保存后才修改启动默认。';break;
+   case 'INSTALL':if(s.component==='ready')break;s.component='downloading';s.downloadStep=0;s.missing=false;s.event='开始模拟组件准备；当前视频继续保持原有状态。';break;
+   case 'ADVANCE':
+    if(s.component==='downloading'){s.downloadStep=Math.min(s.downloadStep+1,2);s.event='组件准备进入下一阶段。';}
+    else if(s.task){s.task.step=Math.min(s.task.step+1,2);s.event='画面准备进入下一阶段，尚未宣称已经启用。';}
+    else s.event='当前没有准备任务。';break;
+   case 'COMPLETE':
+    if(action.kind==='build'&&(!s.task||s.task.id!==action.taskId)){s.event='已忽略上一任务的迟到结果，当前视频与任务保持。';break;}
+    if(action.kind==='component'&&s.component==='downloading'){s.component='ready';s.event='组件已就绪。不会自动暂停或切换当前视频，请主动启用方案。';}
+    else if(action.kind==='build'&&s.task){const task=s.task;s.applied=task.model;s.desired=task.model;if(!s.cache.includes(task.model))s.cache.push(task.model);returnPlayback(s);s.error=false;s.osd='已启用 '+modes[s.applied].name;s.event=s.osd+(s.paused?'；保留暂停。':'，继续播放。');}
+    else s.event='当前没有准备任务。';break;
+   case 'CANCEL_BUILD':if(s.task){returnPlayback(s);s.desired=s.applied='OFF';s.osd='已取消准备，恢复原始画面';s.event=s.osd+'；模拟准备进程已停止，启动默认保持。';}break;
+   case 'CANCEL_INSTALL':if(s.component==='downloading'){s.component='missing';s.downloadStep=0;s.event='已取消组件准备；当前视频和已保存默认保持。';}break;
+   case 'FAIL':
+    if(s.component==='downloading'){s.component='failed';s.event='组件准备失败，可重试；当前画面保持。';}
+    else if(s.task||ai(s.applied)){s.requested=s.task?s.task.model:s.applied;returnPlayback(s);s.desired=s.applied='OFF';s.error=true;s.osd='';s.event='准备失败，已恢复原始画面；已保存默认保持。';}
+    else s.event='当前没有超分任务可模拟失败。';break;
+   case 'DISMISS':s.error=false;s.missing=false;s.event='当前画面保持。';break;
+   case 'PAUSE':s.paused=action.value??!s.paused;if(s.task)s.pauseChanged=true;s.event=s.paused?'用户手动暂停；准备完成后不会擅自续播。':'用户继续原画播放；准备任务仍由页面模拟。';break;
+   case 'MEDIA':{const wanted=s.desired;returnPlayback(s);s.media++;s.applied='OFF';s.missing=false;s.error=false;s.osd='';select(s,wanted,time);s.event='已切换模拟视频；旧准备任务退休，当前视频独立处理。';break;}
+   case 'LATE':if(s.retired)return reduce(previous,{type:'COMPLETE',kind:'build',taskId:s.retired.id});s.event='尚无旧任务结果，当前状态保持。';break;
+   case 'NEW':{
+    const snapshot={instance:s.instance,desired:s.desired,applied:s.applied,draft:s.draft,paused:s.paused};
+    returnPlayback(s);s.previous=snapshot;s.instance++;s.media++;s.desired=s.applied='OFF';s.draft=s.saved;s.paused=false;s.settingsOpen=true;s.notice='';select(s,s.saved,time);s.event='新窗口读取已保存默认；未保存草稿不带入新窗口。';break;
+   }
+   case 'CLOSE':if(action.save)s.saved=s.draft;s.draft=s.saved;s.settingsOpen=false;s.notice='';s.event='设置已关闭；当前播放保持。';break;
+   case 'OPEN':s.settingsOpen=true;s.event='已打开设置。';break;
+  }
+  return s;
+ }
+ return {modes,ai,initial,reduce};
+})();
+</script>
+<script>
+const $=id=>document.getElementById(id), M=UpscalePrototype;
+let state=M.initial(),view='menu',menuOpen=true,guide=null,guideStep=0,tipTimer,tipHide;
+const modeIds=Object.keys(M.modes);
+const optionMarkup=(id,startup)=>`<button ${startup?'role="option" data-draft':'role="menuitemradio" data-mode'}="${id}">${startup?'':'<span class="dot"></span>'}<span>${startup?M.modes[id].name:M.modes[id].menu}</span></button>`;
+$('enhance-options').innerHTML=modeIds.map(id=>(id==='CUGAN'?'<div class="sep"></div>':'')+optionMarkup(id,false)).join('');
+$('startup-options').innerHTML=modeIds.map(id=>optionMarkup(id,true)).join('');
+const scenarios=[
+ {name:'首次使用',copy:'组件准备完成后不会突然切换视频；由你确认启用，再准备本机画面处理。',setup:()=>M.initial(),steps:[['选择 Real-CUGAN',{type:'SELECT',mode:'CUGAN'},'menu'],['查看组件','components'],['准备组件','install'],['模拟组件就绪',{type:'COMPLETE'},'components'],['启用 Real-CUGAN',{type:'SELECT',mode:'CUGAN'},'menu'],['模拟画面准备完成',{type:'COMPLETE'},'menu']]},
+ {name:'取消与失败',copy:'从已准备好组件的状态开始。取消或失败回到原始画面；下一次选择仍由你决定。',setup:()=>({...M.initial(),component:'ready'}),steps:[['选择 Real-CUGAN',{type:'SELECT',mode:'CUGAN'},'menu'],['取消准备',{type:'CANCEL_BUILD'},'menu'],['选择 Real-ESRGAN',{type:'SELECT',mode:'ESRGAN'},'menu'],['模拟失败',{type:'FAIL'},'menu'],['明确重试',{type:'SELECT',mode:'ESRGAN'},'menu'],['模拟成功',{type:'COMPLETE'},'menu']]},
+ {name:'保存启动默认',copy:'保存只改变新窗口的默认。当前窗口可继续使用另一个方案；未保存的草稿不会跟到新窗口。',setup:()=>({...M.initial(),component:'ready',cache:['CUGAN','ESRGAN']}),steps:[['当前使用 CUGAN',{type:'SELECT',mode:'CUGAN'},'menu'],['草稿选 Real-ESRGAN',{type:'DRAFT',mode:'ESRGAN'},'picture'],['保存启动默认',{type:'SAVE'},'picture'],['再改草稿但不保存',{type:'DRAFT',mode:'OFF'},'picture'],['新开模拟窗口',{type:'NEW'},'menu']]},
+ {name:'暂停与换片',copy:'用户主动暂停必须被保留。换片后，旧任务的完成消息不能误标当前视频已经启用。',setup:()=>({...M.initial(),component:'ready'}),steps:[['开始准备 CUGAN',{type:'SELECT',mode:'CUGAN'},'menu'],['模拟用户手动暂停',{type:'PAUSE',value:true},'menu'],['模拟准备完成',{type:'COMPLETE'},'menu'],['开始准备 ESRGAN',{type:'SELECT',mode:'ESRGAN'},'menu'],['切换模拟视频',{type:'MEDIA'},'menu'],['送达旧任务结果',{type:'LATE'},'menu'],['当前任务完成',{type:'COMPLETE'},'menu']]}
+];
+function hideTip(){clearTimeout(tipTimer);clearTimeout(tipHide);$('choice-tooltip').hidden=true;}
+function showTip(anchor,mode,startup){
+ hideTip();const data=M.modes[mode];let text=data.tip||'';
+ if(startup)text+=(text?'\n':'')+'在新窗口中生效。若想立即生效：右键菜单→画面→画面增强。';
+ if(!text)return;
+ tipTimer=setTimeout(()=>{
+  if(!anchor.isConnected||anchor.closest('[hidden]'))return;
+  const tip=$('choice-tooltip');tip.textContent=text;tip.hidden=false;
+  const a=anchor.getBoundingClientRect(),r=tip.getBoundingClientRect(),list=anchor.closest('#startup-options,.enhance-menu')?.getBoundingClientRect();
+  // Keep the next model option accessible while its neighbour's help is open.
+  let left=a.left+10,top=a.bottom+8;
+  if(list&&list.right+r.width+20<=innerWidth){left=list.right+8;top=a.top;}
+  else if(list)top=list.bottom+r.height+20<=innerHeight?list.bottom+8:list.top-r.height-8;
+  else if(top+r.height+12>innerHeight)top=a.top-r.height-8;
+  tip.style.left=Math.max(12,Math.min(left,innerWidth-r.width-12))+'px';tip.style.top=Math.max(12,Math.min(top,innerHeight-r.height-12))+'px';
+ },550);
+}
+function leaveTip(){clearTimeout(tipTimer);tipHide=setTimeout(()=>{if(!$('choice-tooltip').matches(':hover'))hideTip();},120);}
+function closeOptions(focus=false){$('startup-options').hidden=true;$('startup-choice').setAttribute('aria-expanded','false');hideTip();if(focus)$('startup-choice').focus();}
+function openOptions(keyboard=false){const a=$('startup-choice').getBoundingClientRect(),p=$('startup-options');p.hidden=false;p.style.width=a.width+'px';p.style.left=a.left+'px';p.style.top=Math.max(8,a.bottom+p.offsetHeight+4<innerHeight?a.bottom+4:a.top-p.offsetHeight-4)+'px';$('startup-choice').setAttribute('aria-expanded','true');if(keyboard)p.querySelector(`[data-draft="${state.draft}"]`).focus({preventScroll:true});}
+function act(action,fromGuide=false){closeOptions();const resultTarget=action.type==='COMPLETE'?{kind:state.component==='downloading'?'component':'build',taskId:state.task?.id}:{};state=M.reduce(state,{...resultTarget,...action,time:Date.now()});if(!fromGuide)guide=null;if(action.type==='SELECT'||action.type==='NEW')menuOpen=false;render();}
+function setView(next){closeOptions();view=next;if(next!=='menu')state=M.reduce(state,{type:'OPEN'});else menuOpen=!state.task&&!state.missing&&!state.error;render();}
+function taskStages(step,labels){return labels.map((label,i)=>`<span class="${i===step?'now':i<step?'done':''}">${i+1} ${label}</span>`).join('');}
+function elapsed(){if(state.task){const n=Math.max(0,Math.floor((Date.now()-state.task.started)/1000));$('build-elapsed').textContent=`已等待 ${n} 秒 · 可随时取消`;} }
+function render(){
+ const name=id=>M.modes[id].name,dirty=state.draft!==state.saved;
+ $('s-media').textContent=`窗口 ${state.instance} · 片段 ${state.media} / 480p`;$('s-desired').textContent=name(state.desired);$('s-applied').textContent=name(state.applied);$('s-paused').textContent=state.paused?'已暂停':'播放中';$('s-saved').textContent=name(state.saved);$('s-draft').textContent=name(state.draft)+(dirty?' · 未保存':'');
+ const status={missing:'组件未准备',downloading:'正在准备组件',ready:'组件已就绪',failed:'组件准备失败'};
+ $('s-task').textContent=state.task?'正在准备 '+name(state.task.model):status[state.component];$('s-cache').textContent=state.cache.length?state.cache.map(x=>x==='CUGAN'?'CUGAN':'ESRGAN').join('、')+' · 480p':'暂无';
+ $('tab-menu').setAttribute('aria-selected',String(view==='menu'));$('tab-picture').setAttribute('aria-selected',String(view==='picture'));$('tab-components').setAttribute('aria-selected',String(view==='components'));
+ $('view-menu').hidden=view!=='menu';$('view-settings').hidden=view==='menu';$('view-settings').setAttribute('aria-labelledby',view==='components'?'tab-components':'tab-picture');
+ $('settings-window').hidden=!state.settingsOpen;$('settings-closed').hidden=state.settingsOpen;$('settings-heading').textContent=view==='components'?'组件':'画面';$('picture-fields').hidden=view==='components';$('component-fields').hidden=view!=='components';$('nav-picture').classList.toggle('active',view==='picture');$('nav-components').classList.toggle('active',view==='components');
+ $('startup-value').textContent=name(state.draft);$('startup-options').querySelectorAll('[data-draft]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.draft===state.draft)));$('save-draft').disabled=view!=='picture'||!dirty;$('undo-draft').disabled=view!=='picture'||!dirty;$('restore-default').disabled=view!=='picture';$('settings-notice').textContent=view==='picture'?state.notice:'';
+ $('component-state').textContent=status[state.component];$('prepare-components').hidden=state.component==='downloading';$('prepare-components').disabled=state.component==='ready';$('prepare-components').textContent=state.component==='ready'?'已就绪':state.component==='failed'?'重试准备…':'准备组件…';$('download-box').hidden=state.component!=='downloading';$('download-stages').innerHTML=taskStages(state.downloadStep,['获取组件','校验文件','完成配置']);
+ $('use-requested').hidden=state.component!=='ready'||!M.ai(state.requested);$('use-requested').textContent=state.requested?'启用 '+name(state.requested):'启用刚才的方案';$('component-message').textContent=state.component==='ready'?'组件已就绪。由你选择何时启用画面增强。':state.component==='failed'?'组件准备失败，请重试。当前视频保持原有状态。':'';
+ $('media-title').textContent=`片段 ${state.media} · 480p 动画`; $('osd').textContent=state.osd;$('menu-stack').hidden=!menuOpen||!!state.task||state.missing||state.error;$('enhance-options').querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.mode===state.applied)));
+ $('build-box').hidden=!state.task;if(state.task){$('build-model').textContent=name(state.task.model);$('build-stages').innerHTML=taskStages(state.task.step,['检查条件','准备处理','加载画面']);elapsed();}
+ $('missing-box').hidden=!state.missing;$('missing-model').textContent=state.requested?name(state.requested)+' 需要先准备组件。当前画面保持。':'';$('failure-box').hidden=!state.error;
+ $('play-pause').textContent=state.paused?'▶ 播放':'Ⅱ 暂停';$('play-pause').setAttribute('aria-label',state.paused?'继续模拟播放':'暂停模拟播放');$('player-state').textContent=name(state.applied);$('open-menu').disabled=!!state.task;$('open-menu').title=state.task?'先取消当前准备，再选择其他方案':'';$('last-event').textContent=state.event;
+ $('previous-window').hidden=!state.previous;if(state.previous){const p=state.previous;$('previous-window').textContent=`上一窗口快照：窗口 ${p.instance}，实际 ${name(p.applied)}，草稿 ${name(p.draft)}。`;}renderGuide();
+}
+function renderGuide(){
+ $('scenario-tabs').innerHTML=scenarios.map((s,i)=>`<button role="tab" aria-selected="${guide===i}" data-scenario="${i}">${s.name}</button>`).join('');
+ if(guide===null){$('scenario-copy').textContent='自由体验中。也可以选择一个流程，从明确起点开始。';$('scenario-steps').innerHTML='';return;}
+ const s=scenarios[guide];$('scenario-copy').textContent=s.copy;$('scenario-steps').innerHTML=s.steps.map((item,i)=>`<button data-step="${i}" class="${i===guideStep?'next':i<guideStep?'complete':''}" ${i!==guideStep?'disabled':''}>${i<guideStep?'✓':i+1} ${item[0]}</button>`).join('');
+}
+function startGuide(index){closeOptions();if($('component-dialog').open)$('component-dialog').close();if($('close-dialog').open)$('close-dialog').close();state=scenarios[index].setup();guide=index;guideStep=0;view='menu';menuOpen=true;render();}
+function guideAction(){const i=guide,step=scenarios[i].steps[guideStep];guideStep++;
+ if(step[1]==='components')setView('components');else if(step[1]==='install'){view='components';act({type:'INSTALL'},true);}else{view=step[2]||view;state.settingsOpen=true;act(step[1],true);}guide=i;render();}
+for(const button of $('enhance-options').querySelectorAll('[data-mode]')){button.addEventListener('click',()=>act({type:'SELECT',mode:button.dataset.mode}));button.addEventListener('mouseenter',()=>showTip(button,button.dataset.mode,false));button.addEventListener('focus',()=>showTip(button,button.dataset.mode,false));button.addEventListener('mouseleave',leaveTip);button.addEventListener('blur',leaveTip);}
+for(const button of $('startup-options').querySelectorAll('[data-draft]')){button.addEventListener('click',()=>{act({type:'DRAFT',mode:button.dataset.draft});$('startup-choice').focus();});button.addEventListener('mouseenter',()=>showTip(button,button.dataset.draft,true));button.addEventListener('focus',()=>showTip(button,button.dataset.draft,true));button.addEventListener('mouseleave',leaveTip);button.addEventListener('blur',leaveTip);}
+$('startup-options').addEventListener('keydown',e=>{const all=[...$('startup-options').querySelectorAll('button')],i=all.indexOf(document.activeElement);if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();all[(i+(e.key==='ArrowDown'?1:-1)+all.length)%all.length].focus({preventScroll:true});}if(e.key==='Escape'){e.preventDefault();closeOptions(true);}});
+$('startup-choice').onclick=e=>{if($('startup-options').hidden)openOptions(e.detail===0);else closeOptions();};$('startup-choice').addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();openOptions(true);}});$('startup-choice').addEventListener('mouseenter',()=>showTip($('startup-choice'),state.draft,true));$('startup-choice').addEventListener('mouseleave',leaveTip);$('startup-choice').addEventListener('focus',()=>showTip($('startup-choice'),state.draft,true));$('startup-choice').addEventListener('blur',leaveTip);
+$('choice-tooltip').onmouseenter=()=>clearTimeout(tipHide);$('choice-tooltip').onmouseleave=leaveTip;
+for(const v of ['menu','picture','components'])$('tab-'+v).onclick=()=>setView(v);$('nav-picture').onclick=()=>setView('picture');$('nav-components').onclick=()=>setView('components');$('open-settings').onclick=()=>setView('picture');$('go-components').onclick=()=>setView('components');$('reopen-settings').onclick=()=>act({type:'OPEN'});
+$('save-draft').onclick=()=>act({type:'SAVE'});$('undo-draft').onclick=()=>act({type:'UNDO'});$('restore-default').onclick=()=>act({type:'DEFAULT'});$('cancel-build').onclick=()=>act({type:'CANCEL_BUILD'});$('cancel-download').onclick=()=>act({type:'CANCEL_INSTALL'});$('dismiss-missing').onclick=$('dismiss-error').onclick=()=>act({type:'DISMISS'});
+$('retry-mode').onclick=()=>act({type:'SELECT',mode:state.requested});$('use-requested').onclick=()=>{view='menu';act({type:'SELECT',mode:state.requested});};$('play-pause').onclick=()=>act({type:'PAUSE'});$('open-menu').onclick=()=>{act({type:'DISMISS'});menuOpen=!menuOpen;render();};$('player').oncontextmenu=e=>{e.preventDefault();if(!state.task&&!state.missing&&!state.error){menuOpen=!menuOpen;render();}};
+$('prepare-components').onclick=()=>$('component-dialog').showModal();$('cancel-component-dialog').onclick=()=>$('component-dialog').close();$('confirm-components').onclick=()=>{$('component-dialog').close();act({type:'INSTALL'});};
+$('close-settings').onclick=()=>{if(state.draft!==state.saved)$('close-dialog').showModal();else act({type:'CLOSE'});};$('close-save').onclick=()=>{$('close-dialog').close();act({type:'CLOSE',save:true});};$('close-discard').onclick=()=>{$('close-dialog').close();act({type:'CLOSE'});};$('close-cancel').onclick=()=>$('close-dialog').close();
+for(const [id,action] of Object.entries({'advance-task':{type:'ADVANCE'},'complete-task':{type:'COMPLETE'},'fail-task':{type:'FAIL'},'manual-pause':{type:'PAUSE',value:true},'next-media':{type:'MEDIA'},'late-complete':{type:'LATE'},'new-window':{type:'NEW'}}))$(id).onclick=()=>act(action);
+$('reset-demo').onclick=()=>{closeOptions();state=M.initial();guide=null;view='menu';menuOpen=true;render();};$('scenario-tabs').onclick=e=>{const b=e.target.closest('[data-scenario]');if(b)startGuide(Number(b.dataset.scenario));};$('scenario-steps').onclick=e=>{const b=e.target.closest('[data-step]');if(b&&!b.disabled)guideAction();};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#startup-options,#startup-choice,#choice-tooltip'))closeOptions();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeOptions();hideTip();}});window.addEventListener('resize',()=>closeOptions());window.addEventListener('scroll',()=>closeOptions(),true);
+setInterval(elapsed,1000);render();document.documentElement.dataset.ready='true';
+</script>
+</body>
+</html>
