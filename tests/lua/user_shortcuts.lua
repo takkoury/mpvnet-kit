@@ -1,9 +1,6 @@
 local model = (function()
 -- MODEL SOURCE IS INSERTED HERE
 end)()
-local upscale = (function()
--- UPSCALE SOURCE IS INSERTED HERE
-end)()
 local files, requests, commands, timers, bindings, events, messages, removed = {}, {}, {}, {}, {}, {}, {}, {}
 local config = 'X:/config/'
 local user_path = config .. 'mpvnet-user.json'
@@ -24,7 +21,6 @@ local function utf8(code)
 end
 -- Host-only scalar JSON conversion. Production structural validation is real.
 local function decode(text)
-    if text == 'model-catalog' then return upscale_catalog end
     if text == 'writer-ok' then return {ok=true} end
     if text == 'writer-conflict' then return {ok=false, conflict=true} end
     if text == 'writer-failed' then return {ok=false} end
@@ -92,7 +88,6 @@ local mp = {
 package.loaded['mp'],package.loaded['mp.utils']=mp,utils
 dofile=function(path)
     if path == config..'script-modules/user-shortcuts.lua' then return model end
-    if path == config..'script-modules/upscale.lua' then return upscale end
     return {powershell=function() return 'powershell.exe' end}
 end
 os.getenv=function(name) if name=='TEMP' then return 'X:/temp' end end
@@ -108,7 +103,6 @@ io.open=function(path,mode)
     return {write=function(_,data) files[path]=data; return true end, close=function() return true end}
 end
 files[config..'input.conf']=input_source
-files[config..'upscale/models.json']='model-catalog'
 -- INITIAL DOCUMENT IS INSERTED HERE
 
 -- SCRIPT SOURCE IS INSERTED HERE
@@ -347,13 +341,10 @@ function new_action_bindings()
     }
     local old={};for _,id in ipairs(original) do old[id]=true;assert(catalog.by_id[id]) end
     for _,entry in ipairs(catalog.actions) do if not old[entry.id] then eq(#entry.default_keys,0) end end
-    local span=action(state(),'video.enhancement-span')
-    eq(span.label,'画面增强：'..upscale_catalog.models.SPAN.label);eq(#span.keys,0)
-    local draft='{"schema":1,"shortcuts":{"audio.mute":["j"],"audio.volume-up":["F6"],"capture.format-gif":["F7"],"video.enhancement-span":["F8"]}}'
+    local draft='{"schema":1,"shortcuts":{"audio.mute":["j"],"audio.volume-up":["F6"],"capture.format-gif":["F7"]}}'
     local mapping=resolve(draft)
     eq(mapping.by_key.j.command,'cycle mute');eq(mapping.by_key.F6.command,'add volume 2')
     eq(mapping.by_key.F7.command,'script-message-to capture_controls set-default-format gif')
-    eq(mapping.by_key.F8.command,'script-message-to enhancement_controls set-preset SPAN')
     eq(mapping.by_key.Space.id,'playback.pause');assert(contains(mapping.forward_keys,'j'))
     local commands={};for _,entry in ipairs(model.plan(catalog,resolve(''),mapping)) do commands[entry.key]=entry.command end
     eq(commands.j,'cycle mute');eq(commands.F6,'add volume 2');eq(commands.F7,'script-message-to capture_controls set-default-format gif')

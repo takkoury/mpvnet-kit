@@ -78,30 +78,7 @@ python -B dev-tools/build-update-window.py --output D:/Builds/update-window-chec
 
 省略`--apply`仅预览。核对仓外构建证据后将EXE复制回`config/helpers/KitUpdate.exe`，与源码一起交付；普通构包验证源码摘要，不调用SDK。检查器只提供版本查询与浏览器发行页入口，安装事务仍归`tools/`。
 
-### 超分运行资产
-
-超分使用公开IExtension桥接及独立.NET Framework helper，普通打包校验源码摘要，不为用户编译或安装SDK。修改对应输入后，在全新仓外目录离线重建：
-
-```powershell
-python -B dev-tools/build-upscale-host.py --host C:/Tools/mpv.net/mpvnet.exe --output D:/Builds/upscale-host --apply
-python -B dev-tools/build-upscale-helper.py --output D:/Builds/upscale-helper --apply
-```
-
-核对build-evidence后，把DLL／EXE分别复制到`config/extensions/KitUpscaleHost/`及`config/helpers/`，与源码一起提交。组件页还属于KitSettings的输入，修改后按上面的设置窗口流程重建。外部GPU包不进入package-map；固定上游清单是`config/upscale/components.json`，版本、文件与许可变化须单独核对。GPU和真实播放器验证沿已批准范围执行；纯CPU的`UpscaleHelperTests`与Lua的`UpscaleControls`不能替代它们。
-
-### 写实模型复现
-
-配置包携带固定的NomosUni SPAN ONNX，来源、权重摘要与转换说明见[模型记录](config/upscale/models/README.md)。维护工具只在CPU导出，不为用户安装训练工具或启动GPU。
-
-使用Python3.12、PyTorch2.9.1+cpu、Spandrel0.4.2、ONNX1.18.0、NumPy2.2.6，以及其CPU加载依赖（包括torchvision0.24.1+cpu、einops0.8.1、safetensors0.6.2）。这些是维护者准备的独立环境，不进入运行包。脚本不会下载或安装依赖，也不会覆盖源码资产；输出须为新的仓外目录。
-
-```powershell
-python -B dev-tools/export-span-model.py --checkpoint D:/Models/2xNomosUni_span_multijpg_ldl.pth --output D:/Builds/span-export
-```
-
-已有依赖若只解包在独立目录，可重复传入`--dependency-dir`。导出先核作者权重摘要，保留归一化和已验证的推理卷积，比较CPU输出，并要求生成ONNX与随包资产SHA256完全一致。差异保留在仓外供调查，不自动更新固定值。准备入口的模型目录由models.json声明；主运行组件清单仍保持原版本，不因新增小型模型而要求用户重新获取运行库。
-
-## 构建安装包
+### 构建安装包
 
 在仓库根目录执行。将示例输出位置换成一个全新的仓外目录；不要指向播放器、源码检出或其他 Git 仓库。
 

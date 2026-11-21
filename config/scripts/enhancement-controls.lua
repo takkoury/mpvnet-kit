@@ -1,14 +1,8 @@
--- Rendering choice owner. The optional upscale module owns its vf and hwdec loan.
+-- Optional per-file rendering presets. No color, VO, hardware-decoding or FPS changes.
 local mp = require('mp')
 local utils = require('mp.utils')
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local settings = dofile(mp.command_native({'expand-path', '~~/script-modules/user-settings.lua'}))
-local upscale_module = dofile(mp.command_native({'expand-path', '~~/script-modules/upscale.lua'}))
-local upscale_models = upscale_module.read_models(mp, utils)
-local model_descriptions = {}
-for name, model in pairs(upscale_models) do model_descriptions[name] = model.description end
-local upscale, requested_manually
-local deferred_preset, deferred_timer, schedule_deferred
 
 local options = require('mp.options')
 local msg = require('mp.msg')
@@ -27,10 +21,7 @@ local chains = {
 }
 local preset_field = settings.field('enhancement.default-preset')
 local labels = {}
-for _, choice in ipairs(preset_field.choices) do
-    local model = upscale_models[choice.value]
-    labels[choice.value] = model and model.label or choice.label
-end
+for _, choice in ipairs(preset_field.choices) do labels[choice.value] = choice.label end
 local startup_preset, manually_selected = preset_field.default, false
 local desired, applied, baseline = startup_preset, 'OFF', nil
 local ready, last_error, shutting_down = false, nil, false
@@ -41,12 +32,7 @@ local reason_text = {
     anime_unverified = 'Anime4K 尚未启用', shader_missing = '缺少增强文件',
     settings_failed = '无法应用增强设置', rollback_failed = '画面设置还原失败',
     renderer_error = '画面增强失败', unavailable = '此增强不可用',
-    source_unsupported = '超分支持 480p 及以下的 SDR 逐行视频', source_color = '无法识别视频色彩',
-    filter_conflict = '请先关闭其他 VapourSynth 处理', preparing = '请先取消当前准备',
 }
-local function unavailable_text(reason)
-    return upscale_module.model_error_text[reason] or reason_text[reason] or reason_text.unavailable
-end
 
 local function clone(value)
     if type(value) ~= 'table' then return value end
@@ -107,33 +93,16 @@ local function availability()
     for _, name in ipairs({'ANIME_LIGHT', 'ANIME_STRONG'}) do
         if not available[name] then reasons[name] = anime_reason or 'shader_missing' end
     end
-    local source_ok, source_reason = false, 'initializing'
-    if upscale then source_ok, source_reason = upscale.availability() end
-    local model_errors = upscale and upscale.state().model_errors or {}
-    local busy = upscale and upscale.busy()
-    for name in pairs(upscale_module.model_ids) do
-        available[name] = renderer == true and source_ok and not busy and not model_errors[name]
-        if not available[name] then
-            reasons[name] = model_errors[name] or renderer_reason or source_reason or (busy and 'preparing') or 'unavailable'
-        end
-    end
-    if upscale and (upscale.state().phase=='preparing' or upscale.state().phase=='loading') then
-        for name in pairs(available) do available[name]=false;reasons[name]='preparing' end
-    end
     return available, reasons
 end
 
 local function publish()
     local available, reasons = availability()
-    local texts={}
-    for name,reason in pairs(reasons) do texts[name]=unavailable_text(reason) end
     mp.set_property_native('user-data/mpvnet/enhancement', {
-        desired = desired, applied = applied, applied_scope = upscale_module.model_ids[applied] and 'options+vf' or 'options',
+        desired = desired, applied = applied, applied_scope = 'options',
         ready = ready, available = available, unavailable_reasons = reasons, error = last_error,
-        unavailable_text = texts, model_descriptions = model_descriptions,
         error_reason = error_reason, error_preset = error_preset,
         anime_verified = opts.anime_verified,
-        upscale = upscale and upscale.state() or nil,
     })
 end
 
@@ -172,22 +141,12 @@ local function write_group(values)
 end
 
 local function apply(name, quiet)
-    if not quiet then deferred_preset=nil end
     local available, reasons = availability()
     if not available[name] then
         last_error = 'Preset unavailable: ' .. tostring(name)
         error_reason, error_preset = reasons[name] or 'unavailable', name
         publish()
-        if not quiet then feedback(unavailable_text(error_reason), 'error') end
-        return false
-    end
-    if upscale_module.model_ids[name] then
-        requested_manually = not quiet
-        return upscale.select(name)
-    end
-    if upscale and not upscale.clear() then
-        applied=nil;error_reason='rollback_failed';publish()
-        if not quiet then feedback(reason_text.rollback_failed,'error') end
+        if not quiet then feedback(reason_text[error_reason], 'error') end
         return false
     end
     local previous, err = snapshot()
@@ -218,72 +177,6 @@ local function apply(name, quiet)
     return true
 end
 
--- file-loaded can precede usable video metadata, or an old cancelled helper's
--- exit. Keep one startup intent for this media, never an automatic failure retry.
-schedule_deferred=function()
-    if not deferred_preset or deferred_timer or not ready or not upscale or upscale.busy() then return end
-    local available=availability()
-    if not available[deferred_preset] then return end
-    deferred_timer=mp.add_timeout(0,function()
-        deferred_timer=nil
-        if deferred_preset and ready and not upscale.busy() then
-            local choices=availability()
-            if choices[deferred_preset] then
-                local name=deferred_preset;deferred_preset=nil;apply(name,true)
-            end
-        end
-    end)
-end
-
-upscale = upscale_module.new(mp,utils,{
-    changed=function() publish();schedule_deferred() end,
-    notice=function(text) feedback(text,'notice') end,
-    begin=function(name)
-        if not baseline or not write_group(baseline) then return false end
-        desired,applied=name,'OFF'
-        if requested_manually then manually_selected=true end
-        last_error,error_reason,error_preset=nil,nil,nil
-        publish();return true
-    end,
-    restore=function()
-        local ok=baseline and write_group(baseline)
-        applied=ok and 'OFF' or nil
-        return ok==true
-    end,
-    configure=function(name)
-        return baseline and write_group(values_for(name)) or false
-    end,
-    active=function(name)
-        desired,applied=name,name;last_error,error_reason,error_preset=nil,nil,nil
-        publish();feedback('已启用 '..labels[name],'success');return true
-    end,
-    failed=function(code)
-        desired='OFF';error_reason=code;error_preset=upscale.state().requested
-        if code=='restore_failed' then applied=nil end
-        last_error='Upscaling failed: '..tostring(code)
-    end,
-    cancelled=function(ok)
-        desired='OFF';manually_selected=true
-        error_reason=ok and nil or 'rollback_failed'
-        feedback(ok and '已取消准备，恢复原始画面' or reason_text.rollback_failed,ok and 'action' or 'error')
-    end,
-}, upscale_models)
-
-mp.register_script_message('upscale-action',function(action)
-    if action=='enable-requested' or action=='retry' then requested_manually=true;deferred_preset=nil end
-    upscale.action(action)
-end)
-mp.register_script_message('upscale-dialog-action',function(token,action)
-    if action=='retry' then requested_manually=true;deferred_preset=nil end
-    upscale.dialog_action(token,action)
-end)
-mp.register_script_message('pause-intent',function() upscale.manual_pause() end)
-mp.add_hook('on_unload',0,function() deferred_preset=nil;upscale.retire() end)
-mp.add_hook('on_before_start_file',0,function() upscale.before_file() end)
-mp.add_hook('on_load',90,function()
-    if not upscale.scrub_resumed_filter() then feedback(reason_text.rollback_failed,'error') end
-end)
-
 mp.register_script_message('set-preset', function(name)
     name = tostring(name or ''):upper()
     if not labels[name] then feedback(reason_text.unavailable, 'error'); return end
@@ -291,8 +184,6 @@ mp.register_script_message('set-preset', function(name)
 end)
 
 mp.register_event('start-file', function()
-    deferred_preset=nil
-    upscale.retire()
     baseline, ready, applied, last_error = nil, false, nil, nil
     error_reason, error_preset = nil, nil
     publish()
@@ -307,16 +198,10 @@ mp.register_event('file-loaded', function()
     applied = ready and 'OFF' or nil
     -- Fresh files get a fresh baseline after mpv's previous file-local reset.
     -- Preserve the desired instance preset even when this file lacks a GPU VO.
-    if ready and upscale_module.model_ids[desired] then deferred_preset=desired;publish();schedule_deferred()
-    elseif ready and desired ~= 'OFF' then apply(desired, true) else publish() end
+    if ready and desired ~= 'OFF' then apply(desired, true) else publish() end
 end)
 local function refresh_availability()
     local available, reasons = availability()
-    if ready and upscale_module.model_ids[applied] then
-        local ok,code=upscale.availability()
-        if not ok then upscale.invalidate(code) else publish() end
-        return
-    end
     if ready and applied and applied ~= 'OFF' and not available[applied] then
         local previous = applied
         local restored, err = write_group(baseline)
@@ -324,10 +209,9 @@ local function refresh_availability()
         error_reason, error_preset = restored and reasons[previous] or 'rollback_failed', previous
         last_error = restored and reason_text[error_reason] or tostring(err)
         publish()
-    elseif ready and desired ~= 'OFF' and not upscale_module.model_ids[desired] and applied == 'OFF' and available[desired] then
+    elseif ready and desired ~= 'OFF' and applied == 'OFF' and available[desired] then
         apply(desired, true)
     else publish() end
-    schedule_deferred()
 end
 mp.observe_property('current-vo', 'string', refresh_availability)
 mp.observe_property('video-params', 'native', refresh_availability)
@@ -336,7 +220,6 @@ mp.observe_property('video-params', 'native', refresh_availability)
 -- baseline. Pinned chains still require the separate real-renderer verification.
 mp.enable_messages('error')
 mp.register_event('log-message', function(event)
-    upscale.on_error(event)
     if not ready or not chains[applied] or event.level ~= 'error' then return end
     local prefix = tostring(event.prefix or '')
     if not prefix:find('vo/gpu', 1, true) and not prefix:find('libplacebo', 1, true) then return end
@@ -351,15 +234,11 @@ mp.register_event('log-message', function(event)
     feedback(reason_text[error_reason], 'error')
 end)
 mp.register_event('end-file', function()
-    deferred_preset=nil
-    upscale.retire()
     baseline, ready, applied = nil, false, nil
     publish()
 end)
 mp.register_event('shutdown', function()
     shutting_down = true
-    if deferred_timer then deferred_timer:kill() end
-    upscale.shutdown()
     mp.del_property('user-data/mpvnet/enhancement')
 end)
 publish()
@@ -373,8 +252,7 @@ settings.owner(mp, {
         startup_preset = value
         if not manually_selected then
             desired = value
-            if ready and upscale_module.model_ids[desired] then deferred_preset=desired;publish();schedule_deferred()
-            elseif ready and desired ~= 'OFF' then apply(desired, true) else publish() end
+            if ready and desired ~= 'OFF' then apply(desired, true) else publish() end
         end
         return true
     end,

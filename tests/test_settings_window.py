@@ -224,45 +224,12 @@ class SettingsWindow(unittest.TestCase):
         self.assertEqual(data['dirty_pages'], [])
 
     def test_navigation_rejects_unknown_target_stale_token_and_bad_serial(self):
-        steps = [dict(op='state', state=state(open_page='unknown', open_serial=99)),
+        steps = [dict(op='state', state=state(open_page='paths', open_serial=99)),
                  dict(op='state', state=state(open_page='shortcuts', open_serial=5, editor_token='stale')),
                  dict(op='state', state=state(open_page='shortcuts', open_serial='bad'))]
         data = self.run_window(steps)
         self.assertEqual(data['page'], 'subtitles')
         self.assertEqual(data['navigation_serial'], 0)
-
-    def test_component_navigation_preserves_drafts_and_path_editors(self):
-        steps = [dict(op='edit', id='sub-scale', text='1.2'),
-                 dict(op='state', state=state(open_page='paths', open_serial=1))]
-        data = self.run_window(steps)
-        self.assertEqual(data['page'], 'paths')
-        self.assertEqual(data['navigation_serial'], 1)
-        self.assertEqual(data['drafts']['sub-scale']['text'], '1.2')
-        self.assertCountEqual(data['editor_types'], ['capture_root', 'ffmpeg_path', 'python_path', 'mpv_path'])
-        self.assertIn(['script-message-to', 'user_settings', 'upscale-action', TOKEN, 'probe'], data['sent'])
-
-    def test_component_preparation_waits_for_confirmation_and_routes_actions(self):
-        def component(phase, can_install=True):
-            return dict(op='ipc', events=[dict(event='property-change', name='user-data/mpvnet/enhancement/upscale',
-                data=dict(phase='missing', requested='SPAN', component=dict(phase=phase, ready=phase == 'ready', can_install=can_install,
-                    download_bytes=2073902538, expanded_bytes=2600475213, bundle_root='D:/fixture/components')))])
-
-        steps = [component('missing'), dict(op='invoke-control', name='准备组件')]
-        entry = dict(open_page='paths', open_serial=1)
-        blocked = self.run_window([component('missing', False), steps[1]], entry=entry)
-        self.assertFalse(blocked['overlay_open'])
-        data = self.run_window(steps, entry=entry)
-        self.assertTrue(data['overlay_open'])
-        self.assertEqual(data['picker_items'], ['取消组件确认', '开始准备'])
-        self.assertFalse(any(command[-1] == 'install' for command in data['sent']))
-
-        steps += [dict(op='invoke-control', name='开始准备'), component('installing'),
-                  dict(op='invoke-control', name='取消组件准备'), component('ready'),
-                  dict(op='invoke-control', name='启用刚才的方案')]
-        data = self.run_window(steps, entry=entry)
-        self.assertFalse(data['overlay_open'])
-        actions = [command[-1] for command in data['sent'] if len(command) == 5 and command[2] == 'upscale-action']
-        self.assertEqual(actions, ['probe', 'install', 'cancel-install', 'enable-requested'])
 
     def test_navigation_only_replaces_content_when_its_dirty_marker_changes(self):
         data = self.run_window([dict(op='edit', id='sub-scale', text='1.2'),

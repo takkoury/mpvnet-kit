@@ -21,7 +21,6 @@ class EnhancementControls(unittest.TestCase):
         prelude = prelude.replace('-- SETTINGS MODEL IS INSERTED HERE',
                                   (ROOT / 'config/script-modules/user-settings.lua').read_text(encoding='utf-8'))
         cls.source = '\n'.join([
-            'local upscale_module = (function()\n' + (ROOT / 'config/script-modules/upscale.lua').read_text(encoding='utf-8') + '\nend)()',
             'local feedback_module = ' + feedback_module(), prelude,
             SCRIPT.read_text(encoding='utf-8'), cases,
         ])

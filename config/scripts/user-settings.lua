@@ -4,8 +4,6 @@ local utils=require('mp.utils')
 local function expand(path) return mp.command_native({'expand-path','~~/'..path}) end
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local model=dofile(expand('script-modules/user-settings.lua'))
-local upscale=dofile(expand('script-modules/upscale.lua'))
-model.describe_upscale_models(upscale.read_models(mp,utils))
 local parser=dofile(expand('script-modules/user-shortcuts.lua'))
 local paths=dofile(expand('script-modules/mpvnet-paths.lua'))
 local settings_path,local_path=expand('mpvnet-user.json'),expand('script-opts/mpvnet-local.conf')
@@ -260,13 +258,13 @@ open=function(target,prepare)
         -- Reopen only after that process releases the old window/session.
         if token=='' then queued_open=true;queued_page=target or queued_page;return end
         if prepare then return end
-        if target then open_page=target;open_serial=open_serial+1 end
+        if target=='shortcuts' then open_page=target;open_serial=open_serial+1 end
         editor_visible=true;reload(false)
         mp.commandv('script-message','mpvnet-settings-show',token);return
     end
     session=session+1;token=instance..':editor:'..session;save_error=''
     editor_prepared=false
-    open_page=target or '';open_serial=open_page~='' and 1 or 0
+    open_page=target=='shortcuts' and target or '';open_serial=open_page~='' and 1 or 0
     local pipe=mp.get_property('options/input-ipc-server','')
     if pipe=='' then
         pipe='\\\\.\\pipe\\mpvnet-settings-'..instance
@@ -309,13 +307,6 @@ open=function(target,prepare)
 end
 mp.add_key_binding(nil,'open',function() open() end)
 mp.register_script_message('open-shortcuts',function() open('shortcuts') end)
-mp.register_script_message('open-components',function() open('paths') end)
-local upscale_actions={probe=true,install=true,['cancel-install']=true,['enable-requested']=true}
-mp.register_script_message('upscale-action',function(received,action)
-    if current(received) and upscale_actions[action] then
-        mp.commandv('script-message-to','enhancement_controls','upscale-action',action)
-    end
-end)
 mp.register_script_message('editor-ready',function(received) if current(received) then publish() end end)
 mp.register_script_message('editor-prepared',function(received) if current(received) then editor_prepared=true;publish() end end)
 mp.register_script_message('editor-refresh',function(received,id)
@@ -329,7 +320,7 @@ mp.register_script_message('editor-close',function(received,received_serial)
         -- saw; pending requests already seen when the user closed are dropped.
         local seen=type(received_serial)=='string' and #received_serial<=16
             and received_serial:match('^%d+$') and tonumber(received_serial) or nil
-        if seen and seen<open_serial and open_page~='' then queued_open,queued_page=true,open_page end
+        if seen and seen<open_serial and open_page=='shortcuts' then queued_open,queued_page=true,'shortcuts' end
         if not editor_visible then prewarm_failed=true end
         display_preview(received,'end')
         retire(received);cancel(nil,received);token='';editor_visible=false;editor_prepared=false;publish()

@@ -570,8 +570,7 @@ local function binding_catalog()
         -- sole source for commands; no input or preference file is read here.
         local ok, labels = pcall(function()
             local model = dofile(mp.command_native({'expand-path', '~~/script-modules/user-shortcuts.lua'}))
-            local upscale = dofile(mp.command_native({'expand-path', '~~/script-modules/upscale.lua'}))
-            return model.catalog('', upscale.read_models(mp, require('mp.utils'))).by_command
+            return model.catalog('').by_command
         end)
         binding_labels = ok and type(labels) == 'table' and labels or {}
     end

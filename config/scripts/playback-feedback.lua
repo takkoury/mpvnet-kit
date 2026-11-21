@@ -145,7 +145,6 @@ local function seek(value, flags)
 end
 
 local function toggle_pause()
-    mp.commandv('script-message-to','enhancement_controls','pause-intent')
     local paused = not mp.get_property_bool("pause", false)
     mp.set_property_bool("pause", paused)
     feedback_client.show(paused and "已暂停" or "继续播放", 'action')
@@ -168,7 +167,6 @@ local function space(event)
         hold_timer = mp.add_timeout(0.25, function()
             if not held then return end
             held.active = true
-            mp.commandv('script-message-to','enhancement_controls','pause-intent')
             set_speed(2)
             mp.set_property_bool("pause", false)
         end)

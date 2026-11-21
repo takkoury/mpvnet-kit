@@ -126,9 +126,6 @@ local additions = {
     {'video.enhancement-deband', '画面', '画面增强：去色带（Deband）', 'script-message-to enhancement_controls set-preset SMOOTH'},
     {'video.enhancement-anime-light', '画面', '画面增强：动画增强·轻（Anime4K-L）', 'script-message-to enhancement_controls set-preset ANIME_LIGHT'},
     {'video.enhancement-anime-strong', '画面', '画面增强：动画增强·强（Anime4K-S）', 'script-message-to enhancement_controls set-preset ANIME_STRONG'},
-    {'video.enhancement-cugan', '画面', nil, 'script-message-to enhancement_controls set-preset CUGAN'},
-    {'video.enhancement-esrgan', '画面', nil, 'script-message-to enhancement_controls set-preset ESRGAN'},
-    {'video.enhancement-span', '画面', nil, 'script-message-to enhancement_controls set-preset SPAN'},
     {'video.motion-original', '画面', '运动处理：沿用原始设置', 'script-message-to motion_controls set-mode OFF'},
     {'video.motion-display', '画面', '运动处理：显示同步', 'script-message-to motion_controls set-mode DISPLAY'},
     {'video.motion-blend', '画面', '运动处理：显示同步与帧混合', 'script-message-to motion_controls set-mode BLEND'},
@@ -315,9 +312,8 @@ local function copy(values)
     local result = {}; for i, value in ipairs(values) do result[i] = value end; return result
 end
 
-function M.catalog(input, upscale_models)
+function M.catalog(input)
     input = input:gsub('^\239\187\191', '')
-    if type(upscale_models) ~= 'table' then upscale_models = {} end
     local catalog = {actions={}, by_id={}, by_command={}, baseline={}, foreign={}, command_sources={}}
     local menu_commands = {}
     for line in (input .. '\n'):gmatch('(.-)\r?\n') do
@@ -328,13 +324,7 @@ function M.catalog(input, upscale_models)
         -- Trial renderer APIs only exist in its separate branch. Presence of the
         -- exact managed menu command opts in; arbitrary menu text is not code.
         if not def[6] or menu_commands[def[4]] then
-            local label=def[3]
-            if not label then
-                local model_id=def[4]:match('(%S+)$')
-                local model=upscale_models[model_id]
-                label='画面增强：'..(model and model.label or model_id)
-            end
-            local action = {id=def[1], group=def[2], label=label, command=def[4],
+            local action = {id=def[1], group=def[2], label=def[3], command=def[4],
                 focus_main=def[5] == true, default_keys={}}
             catalog.actions[#catalog.actions+1], catalog.by_id[action.id], catalog.by_command[action.command] = action, action, action
             catalog.command_sources[action.command] = {id=action.id, command=action.command, kind='exact'}

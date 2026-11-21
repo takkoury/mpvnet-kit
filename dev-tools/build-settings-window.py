@@ -18,7 +18,7 @@ MANIFEST = 'src/settings-window/app.manifest'
 SOURCE_FILES = tuple('config/helpers/' + name for name in (
     'user-preferences-storage.cs', 'settings-preview.cs', 'shortcut-key-names.cs',
     'settings-shortcuts.cs', 'settings-controls.cs', 'settings-chrome.cs',
-    'settings-close.cs', 'settings-upscale.cs', 'settings-window.cs', 'settings-host.cs',
+    'settings-close.cs', 'settings-window.cs', 'settings-host.cs',
 )) + (MANIFEST,)
 FRAMEWORK_VERSION = 'v4.7.2'
 REFERENCE_FILES = (

@@ -4,7 +4,7 @@ import json
 import unittest
 
 from lua_runtime import load_lua51
-from support.lua_source import feedback_module, upscale_catalog_fixture
+from support.lua_source import feedback_module
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,7 +40,7 @@ class UserSettings(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lua = load_lua51()
-        cls.source = (upscale_catalog_fixture() + 'local feedback_module = ' + feedback_module() + '\n'
+        cls.source = ('local feedback_module = ' + feedback_module() + '\n'
                       + (ROOT / 'tests/lua/user_settings.lua').read_text(encoding='utf-8'))
         package_options = {}
         for line in (ROOT / 'config/mpv.conf').read_text(encoding='utf-8').splitlines():
@@ -61,7 +61,6 @@ class UserSettings(unittest.TestCase):
             ('PARSER SOURCE', 'config/script-modules/user-shortcuts.lua'),
             ('MODEL SOURCE', 'config/script-modules/user-settings.lua'),
             ('PATHS SOURCE', 'config/script-modules/mpvnet-paths.lua'),
-            ('UPSCALE SOURCE', 'config/script-modules/upscale.lua'),
             ('CONTROLLER SOURCE', 'config/scripts/user-settings.lua'),
             ('SUBTITLE SOURCE', 'config/scripts/subtitle-controls.lua'),
             ('OPTIONS SOURCE', 'config/scripts/settings-options.lua'),
@@ -87,9 +86,6 @@ class UserSettings(unittest.TestCase):
 
     def test_saved_picture_preset_changes_only_new_instances(self):
         self.run_case('saved_picture_preset_changes_only_new_instances')
-
-    def test_saved_span_defers_until_a_new_instance(self):
-        self.run_case('saved_span_defers_until_a_new_instance')
 
     def test_unreadable_picture_startup_does_not_adopt_later_repair(self):
         self.run_case('unreadable_picture_startup_does_not_adopt_later_repair')

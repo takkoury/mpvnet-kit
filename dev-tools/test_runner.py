@@ -23,7 +23,6 @@ PROFILES = {
         'test_playlist_window_build.PlaylistWindowBuild',
         'test_test_support.TestSupport', 'test_test_runner.RunnerContract',
         'test_documentation.DocumentationLinks',
-        'test_upscale_prepare.UpscalePrepare',
     ),
     'lua': (
         'test_playlist_selector_data.PlaylistSelectorData',
@@ -41,7 +40,6 @@ PROFILES = {
         'test_capture_single_format.CaptureRouting', 'test_chapter_preview.ChapterPreview',
         'test_control_tooltips.ControlTooltips', 'test_enhancement_controls.EnhancementControls',
         'test_enhancement_controls.ModernzEnhancementFooter',
-        'test_upscale_controls.UpscaleControls',
         'test_motion_controls.MotionControls',
         'test_audio_controls.AudioControls',
         'test_feedback_client.FeedbackClient', 'test_feedback_osd.FeedbackOSD',
@@ -54,7 +52,6 @@ PROFILES = {
         'test_user_shortcuts.UserShortcuts', 'test_user_settings.UserSettings', 'test_settings_display.SettingsDisplay',
     ),
     'helpers': (
-        'test_upscale_helper.UpscaleHelperTests',
         'test_playlist_input.PlaylistInput',
         'test_playlist_files.PlaylistFiles',
         'test_playlist_input_build.PlaylistInputCompilation',

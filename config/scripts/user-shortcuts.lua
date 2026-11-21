@@ -3,7 +3,6 @@
 local mp = require('mp')
 local utils = require('mp.utils')
 local model = dofile(mp.command_native({'expand-path', '~~/script-modules/user-shortcuts.lua'}))
-local upscale = dofile(mp.command_native({'expand-path', '~~/script-modules/upscale.lua'}))
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 local settings_path = mp.command_native({'expand-path', '~~/mpvnet-user.json'})
 local helper_path = mp.command_native({'expand-path', '~~/helpers/shortcuts-window.ps1'})
@@ -187,7 +186,7 @@ end)
 
 local input, exists = read(input_path)
 if input and exists then
-    catalog = model.catalog(input, upscale.read_models(mp, utils))
+    catalog = model.catalog(input)
     effective = model.resolve(catalog, model.document('', decode))
     reload(true)
 else

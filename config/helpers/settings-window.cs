@@ -214,9 +214,8 @@ public sealed partial class SettingsEditor : Window
     Grid previewPane, previewLayout; ScrollViewer settingsScroll; Border previewArea; TextBlock previewMessage, previewTitle; Button previewMode;
     bool fullPreview;
     string page = "subtitles", pendingPage, pendingRevision, localError = "";
-    string navigationPendingPage;
     long navigationSerial;
-    bool nativeDialogOpen;
+    bool navigationPending, nativeDialogOpen;
     int pendingSerial, serial, sequence;
     bool syncing, saving, forceClose, finished, disconnected;
     bool prepared, showRequested, shownOnce;
@@ -251,9 +250,8 @@ public sealed partial class SettingsEditor : Window
         if (pipeName.StartsWith(@"\\.\pipe\", StringComparison.Ordinal)) pipeName = pipeName.Substring(9);
         if (pipeName.Length < 1 || pipeName.Length > 256 || pipeName.IndexOfAny(new[] { '\\', '/', ':', '\r', '\n', '\0' }) >= 0)
             throw new InvalidDataException("播放器连接无效。");
-        string directPage = ReadNavigationPage(request);
-        if (directPage != null) {
-            page = directPage; navigationSerial = ReadNavigationSerial(request);
+        if (SettingsDraft.Str(request,"open_page") == "shortcuts") {
+            page = "shortcuts"; navigationSerial = ReadNavigationSerial(request);
         }
         // Hidden permits layout. Queue the visibility change before IPC can request Show.
         if (startHidden && !validation && !noShow) Visibility = Visibility.Hidden;
@@ -356,7 +354,6 @@ public sealed partial class SettingsEditor : Window
     }
     void SelectPage(string id)
     {
-        bool enteredComponents = id == "paths" && page != id;
         if (page != id && displayRequested) EndDisplay();
         if (page != id) fullPreview = false;
         if (!SettingsDraft.Pages.Contains(id)) return;
@@ -367,10 +364,6 @@ public sealed partial class SettingsEditor : Window
         shortcuts.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         ArrangePreview();
         if (page == "subtitles" && model.Fields.Values.Where(f => f.Page == page).All(f => f.Section.Length == 0)) content.Children.Add(SubtitleExample());
-        if (page == "paths") {
-            content.Children.Add(UpscaleComponentsPanel());
-            if (enteredComponents && model.Fields.Count > 0) ProbeUpscaleComponents();
-        }
         string section = null;
         foreach (var f in model.Fields.Values.Where(x => x.Page == page).GroupBy(x => x.Section).SelectMany(group => group))
         {
@@ -682,9 +675,8 @@ public sealed partial class SettingsEditor : Window
     {
         if (SessionEnded || SettingsDraft.Str(state, "editor_token") != token) return;
         long incomingNavigation = ReadNavigationSerial(state);
-        string incomingPage = ReadNavigationPage(state);
-        if (incomingPage != null && incomingNavigation > navigationSerial) {
-            navigationSerial = incomingNavigation; navigationPendingPage = incomingPage;
+        if (SettingsDraft.Str(state,"open_page") == "shortcuts" && incomingNavigation > navigationSerial) {
+            navigationSerial = incomingNavigation; navigationPending = true;
         }
         int nextSerial = Convert.ToInt32(SettingsDraft.Value(state, "save_serial") ?? 0);
         string committed = null;
@@ -702,10 +694,7 @@ public sealed partial class SettingsEditor : Window
         }
         bool first = model.Fields.Count == 0;
         latest = state; serial = nextSerial; model.Adopt(state, committed, pendingRevision);
-        if (first) {
-            SelectPage(page); Search();
-            if (page == "paths") ProbeUpscaleComponents();
-        } else { SyncInputs(); Refresh(); }
+        if (first) { SelectPage(page); Search(); } else { SyncInputs(); Refresh(); }
         if (completed && closeSaveRunning && closeSavePhase == "save" && closeSavePage == pendingPage) {
             string error = SettingsDraft.Str(state,"save_error");
             if (committed == null && localError.Length > 0) error = localError;
@@ -725,18 +714,13 @@ public sealed partial class SettingsEditor : Window
         return Int64.TryParse(Convert.ToString(SettingsDraft.Value(state,"open_serial"),CultureInfo.InvariantCulture),
             NumberStyles.None,CultureInfo.InvariantCulture,out value) && value > 0 ? value : 0;
     }
-    static string ReadNavigationPage(Dictionary<string, object> state)
-    {
-        string target = SettingsDraft.Str(state, "open_page");
-        return target == "shortcuts" || target == "paths" ? target : null;
-    }
     void ApplyPendingNavigation()
     {
-        if (navigationPendingPage == null || overlayOpen || nativeDialogOpen || saving || shortcuts.Saving ||
+        if (!navigationPending || overlayOpen || nativeDialogOpen || saving || shortcuts.Saving ||
             SettingsDraft.Flag(latest,"saving") || closeSaveRunning || settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed ||
             forceClose || closeAccepted || finished || disconnected) return;
-        string target = navigationPendingPage; navigationPendingPage = null;
-        search.Clear(); SelectPage(target); Search();
+        navigationPending = false;
+        search.Clear(); SelectPage("shortcuts"); Search();
     }
     void Send(object[] command)
     {
@@ -760,7 +744,7 @@ public sealed partial class SettingsEditor : Window
         EndDisplay(); playerPreview.Hide(); displayAvailable = false;
         localError = "播放器连接中断，草稿已保留。请核对保存结果后关闭并重新打开设置。";
         if (saving) settingsSaveUnconfirmed = true;
-        saving = false; if (closeSaveRunning) StopCloseSave(localError); Refresh(); RefreshUpscaleComponents();
+        saving = false; if (closeSaveRunning) StopCloseSave(localError); Refresh();
     }
     bool SessionEnded { get { return disconnected || forceClose || closeAccepted || finished; } }
     bool ReadyToShow { get { return showRequested && (!startHidden || prepared) && !SessionEnded; } }
@@ -805,12 +789,11 @@ public sealed partial class SettingsEditor : Window
         if (SessionEnded) return;
         string eventName = SettingsDraft.Str(message, "event");
         var data = SettingsDraft.Value(message, "data") as Dictionary<string, object>;
-        if (eventName == "property-change")
+        if (eventName == "property-change" && data != null)
         {
             string name = SettingsDraft.Str(message, "name");
-            if (name == "user-data/mpvnet/enhancement/upscale") UpscaleState(data);
-            else if (data != null && name == "user-data/mpvnet/settings") State(data);
-            else if (data != null && name == "user-data/mpvnet/shortcuts") ShortcutsState(data);
+            if (name == "user-data/mpvnet/settings") State(data);
+            else if (name == "user-data/mpvnet/shortcuts") ShortcutsState(data);
         }
         else if (eventName == "shutdown") CloseFromPlayer();
         else if (eventName == "client-message")
@@ -981,7 +964,7 @@ public sealed partial class SettingsEditor : Window
             prepared = prepared, show_requested = showRequested, ready_to_show = ReadyToShow, page = page, pages = SettingsDraft.Pages,
             navigation_labels = VisualChildren<Button>(bodyPanel).Where(categories.ContainsValue)
                 .Select(button => ((StackPanel)button.Content).Children.OfType<TextBlock>().Last().Text).ToArray(),
-            navigation_pending = navigationPendingPage != null, navigation_serial = navigationSerial,
+            navigation_pending = navigationPending, navigation_serial = navigationSerial,
             navigation_reused = categories.Where(item => ReferenceEquals(initialNavigation[item.Key], item.Value.Content)).Select(item => item.Key).ToArray(),
             show_in_taskbar = ShowInTaskbar, window_style = WindowStyle.ToString(), caption_height = System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight,
             close_accepted = closeAccepted, close_saving = closeSaveRunning, close_save_phase = closeSavePhase, close_saved_pages = closeSavedPages.ToArray(), save_unconfirmed = settingsSaveUnconfirmed || shortcuts.SaveUnconfirmed,

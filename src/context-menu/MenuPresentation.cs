@@ -44,7 +44,6 @@ internal sealed class MenuPresentation : IDisposable
             .Where(group => group.Count() == 1)
             .Select(group => new StaticItem(group.Key, group.Single().Command, group.Key.InputGestureText,
                 IndicatorFor(group.Single().Command), group.Single().Command == "script-message-to audio_controls set-mode NIGHT"
-                    || EnhancementChoice(group.Single().Command) is not null
                     ? new Availability(group.Key.ReadLocalValue(UIElement.IsEnabledProperty),
                         BindingOperations.GetBindingBase(group.Key, UIElement.IsEnabledProperty),
                         group.Key.ReadLocalValue(FrameworkElement.ToolTipProperty),
@@ -154,28 +153,6 @@ internal sealed class MenuPresentation : IDisposable
 
             if (entry.Availability is { } availability)
             {
-                if (EnhancementChoice(entry.Command) is { } preset)
-                {
-                    string phase = ReadStateValue(readProperty, "user-data/mpvnet/enhancement/upscale/phase");
-                    bool busy = phase is "preparing" or "loading";
-                    bool ai = preset is "CUGAN" or "ESRGAN" or "SPAN";
-                    if (busy || ai)
-                    {
-                        bool enabled = !busy && ReadStateValue(readProperty, "user-data/mpvnet/enhancement/available/" + preset) is "yes" or "true";
-                        entry.Item.SetCurrentValue(UIElement.IsEnabledProperty, enabled);
-                        string help = busy ? "请先取消当前准备" : enabled
-                            ? ReadStateValue(readProperty, "user-data/mpvnet/enhancement/model_descriptions/" + preset)
-                            : ReadStateValue(readProperty, "user-data/mpvnet/enhancement/unavailable_text/" + preset);
-                        entry.Item.SetCurrentValue(FrameworkElement.ToolTipProperty, help);
-                    }
-                    else
-                    {
-                        RestoreValue(entry.Item, UIElement.IsEnabledProperty, availability.Enabled, availability.EnabledBinding);
-                        RestoreValue(entry.Item, FrameworkElement.ToolTipProperty, availability.Tooltip, availability.TooltipBinding);
-                    }
-                }
-                else
-                {
                 string active = readProperty("user-data/mpvnet/audio/available/NIGHT");
                 bool enabled = active is "yes" or "true";
                 entry.Item.SetCurrentValue(UIElement.IsEnabledProperty, enabled);
@@ -186,7 +163,6 @@ internal sealed class MenuPresentation : IDisposable
                     string reason = ReadStateValue(readProperty, "user-data/mpvnet/audio/unavailable_text");
                     entry.Item.SetCurrentValue(FrameworkElement.ToolTipProperty,
                         string.IsNullOrWhiteSpace(reason) ? "声音处理尚未就绪" : reason);
-                }
                 }
             }
 
@@ -260,20 +236,11 @@ internal sealed class MenuPresentation : IDisposable
     }
 
     private static Indicator Flag(string property) => new(property, value => value is "yes" or "true");
-    private static string? EnhancementChoice(string command)
-    {
-        const string prefix = "script-message-to enhancement_controls set-preset ";
-        if (!command.StartsWith(prefix, StringComparison.Ordinal)) return null;
-        string value = command[prefix.Length..];
-        return value is "OFF" or "QUALITY" or "SMOOTH" or "ANIME_LIGHT" or "ANIME_STRONG" or "CUGAN" or "ESRGAN" or "SPAN" ? value : null;
-    }
     private static Indicator Choice(string property, string choice) => new(property, value => value == choice, true);
     private static Indicator Speed(double speed) => new("speed", value =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double current) && current == speed, true);
 
-    private static Indicator? IndicatorFor(string command) => EnhancementChoice(command) is { } preset
-        ? Choice("user-data/mpvnet/enhancement/applied", preset)
-        : command switch
+    private static Indicator? IndicatorFor(string command) => command switch
     {
         "script-binding playback_feedback/toggle-pause" or "script-binding playback_feedback/space" or
             "script-message-to mpvnet play-pause" or "cycle pause" => Flag("pause"),
@@ -294,6 +261,11 @@ internal sealed class MenuPresentation : IDisposable
         "script-message-to playback_feedback set-speed 1.25" => Speed(1.25),
         "script-message-to playback_feedback set-speed 1.5" => Speed(1.5),
         "script-message-to playback_feedback set-speed 2" => Speed(2),
+        "script-message-to enhancement_controls set-preset OFF" => Choice("user-data/mpvnet/enhancement/applied", "OFF"),
+        "script-message-to enhancement_controls set-preset QUALITY" => Choice("user-data/mpvnet/enhancement/applied", "QUALITY"),
+        "script-message-to enhancement_controls set-preset SMOOTH" => Choice("user-data/mpvnet/enhancement/applied", "SMOOTH"),
+        "script-message-to enhancement_controls set-preset ANIME_LIGHT" => Choice("user-data/mpvnet/enhancement/applied", "ANIME_LIGHT"),
+        "script-message-to enhancement_controls set-preset ANIME_STRONG" => Choice("user-data/mpvnet/enhancement/applied", "ANIME_STRONG"),
         "script-message-to motion_controls set-mode OFF" => Choice("user-data/mpvnet/motion/applied", "OFF"),
         "script-message-to motion_controls set-mode DISPLAY" => Choice("user-data/mpvnet/motion/applied", "DISPLAY"),
         "script-message-to motion_controls set-mode BLEND" => Choice("user-data/mpvnet/motion/applied", "BLEND"),

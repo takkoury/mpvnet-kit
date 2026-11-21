@@ -1472,7 +1472,6 @@ local enhancement_reasons = {
     anime_unverified = "Anime4K 尚未启用", shader_missing = "缺少增强文件",
     settings_failed = "无法应用增强设置", rollback_failed = "画面设置还原失败",
     renderer_error = "画面增强失败", unavailable = "此增强不可用",
-    preparing = "请先取消当前准备",
 }
 
 local function fit_popover_label(text, style, width)

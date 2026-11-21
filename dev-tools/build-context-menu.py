@@ -106,11 +106,11 @@ def read_host_references(stream):
     return references
 
 
-def _source_snapshot(source_dir, source_files=SOURCE_FILES):
+def _source_snapshot(source_dir):
     if any(is_link_or_reparse(path) for path in (source_dir, *source_dir.parents)):
         raise ValueError('extension source path contains a link or junction')
     contents = {}
-    for name in source_files:
+    for name in SOURCE_FILES:
         path = source_dir / name
         if is_link_or_reparse(path) or not path.is_file():
             raise ValueError('missing or linked extension source: ' + name)
@@ -175,8 +175,7 @@ def _host_snapshot(host):
     return references, digest.hexdigest(), runtime
 
 
-def _build(output, dotnet, contents, references, digest, *, project_file='ContextMenu.csproj',
-           assembly=ASSEMBLY, metadata_key=SOURCE_METADATA_KEY):
+def _build(output, dotnet, contents, references, digest):
     output.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix='build-', dir=output) as directory:
         staging = Path(directory)
@@ -189,7 +188,7 @@ def _build(output, dotnet, contents, references, digest, *, project_file='Contex
         for name, data in references.items():
             (refs / name).write_bytes(data)
         (project / 'BuildEvidence.cs').write_text(
-            f'[assembly: System.Reflection.AssemblyMetadata("{metadata_key}", "{digest}")]\n',
+            f'[assembly: System.Reflection.AssemblyMetadata("{SOURCE_METADATA_KEY}", "{digest}")]\n',
             encoding='utf-8',
         )
         (staging / 'global.json').write_text(
@@ -211,7 +210,7 @@ def _build(output, dotnet, contents, references, digest, *, project_file='Contex
             raise ValueError('the locally installed .NET 10 SDK is required')
         binary_dir = staging / 'bin'
         result = subprocess.run([
-            dotnet, 'build', project_file, '--configuration', 'Release',
+            dotnet, 'build', 'ContextMenu.csproj', '--configuration', 'Release',
             '--output', str(binary_dir), '--disable-build-servers',
             f'-p:HostReferenceDirectory={refs}', f'-p:RestoreConfigFile={nuget}',
             '-p:ImportDirectoryBuildProps=false', '-p:ImportDirectoryBuildTargets=false',
@@ -224,12 +223,12 @@ def _build(output, dotnet, contents, references, digest, *, project_file='Contex
             with (output / 'build.log').open('xb') as stream:
                 stream.write(result.stdout)
             raise ValueError('extension compilation failed; see build.log in the output directory')
-        return (binary_dir / assembly).read_bytes(), version.stdout.decode('utf-8').strip()
+        return (binary_dir / ASSEMBLY).read_bytes(), version.stdout.decode('utf-8').strip()
 
 
-def build_extension(host, output, source, source_files, assembly_name, compile_extension, *, apply=False):
+def build_context_menu(host, output, *, apply=False):
     output = validate_output(output, host)
-    contents = _source_snapshot(source, source_files)
+    contents = _source_snapshot(SOURCE)
     references, host_digest, runtime = _host_snapshot(host)
     evidence = {
         'sourceSha256': _source_digest(contents),
@@ -242,18 +241,14 @@ def build_extension(host, output, source, source_files, assembly_name, compile_e
         dotnet = shutil.which('dotnet')
         if dotnet is None:
             raise ValueError('the locally installed .NET 10 SDK is required')
-        assembly, sdk_version = compile_extension(output, dotnet, contents, references, evidence['sourceSha256'])
+        assembly, sdk_version = _build(output, dotnet, contents, references, evidence['sourceSha256'])
         evidence.update({'assemblySha256': _sha256(assembly), 'sdkVersion': sdk_version})
-        with (output / assembly_name).open('xb') as stream:
+        with (output / ASSEMBLY).open('xb') as stream:
             stream.write(assembly)
         with (output / 'build-evidence.json').open('x', encoding='utf-8') as stream:
             json.dump(evidence, stream, indent=2, sort_keys=True)
             stream.write('\n')
     return evidence
-
-
-def build_context_menu(host, output, *, apply=False):
-    return build_extension(host, output, SOURCE, SOURCE_FILES, ASSEMBLY, _build, apply=apply)
 
 
 def main():
