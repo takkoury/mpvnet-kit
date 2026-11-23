@@ -1,6 +1,6 @@
 # 开发与打包
 
-本仓库直接维护运行配置、安装器、用户文档、测试和构建工具。用户安装请下载 README 中的完整 Release ZIP；源码检出目录不是可直接安装的发行包。
+本仓库直接维护运行配置、安装器、用户文档、测试和构建工具。用户安装请按对应版本的[安装指南](docs/installation.md)获取完整发行包。
 
 ## 开始与完成一个工作包
 
@@ -119,17 +119,17 @@ python -B dev-tools/run-tests.py --profile core --profile lua
 
 此工具只读取源码，不读取个人播放器配置、不启动窗口，也不判断入口是否实际可见。动态菜单、间接调用、异常状态及实际键鼠路径仍需人工核对；引用数量不代表界面覆盖率。它不随安装包分发。
 
-## ZIP 与发行
+## 打包与发行
 
 ### M6 完整离线候选
 
-使用本地保存的官方 Windows x64 portable ZIP。下例预览会核对附件和其中的播放器、核心摘要。追加 `--apply` 后生成安装目录、可直接解压的单一发行 ZIP 及校验文件，三个输出都需要全新仓外位置。
+使用本地保存的官方 Windows x64 portable ZIP。下例默认预览并校验附件、宿主和核心摘要。追加 `--apply` 后，使用本机 .NET 10 SDK 和 .NET Framework 4.7.2 引用程序集离线编译 x64 安装器。输出是开发核验用的展开目录、面向用户的单个 EXE 及其 SHA-256 校验文件，均使用全新仓外位置。
 
 ```powershell
-python -B dev-tools/build-portable-release.py --upstream D:/Inputs/mpv.net-v7.1.2.0-portable-x64.zip --destination D:/Builds/m6/package --output D:/Builds/m6/mpvnet-kit-0.7.0.zip
+python -B dev-tools/build-portable-release.py --upstream D:/Inputs/mpv.net-v7.1.2.0-portable-x64.zip --destination D:/Builds/m6/package --output D:/Builds/m6/mpvnet-kit-0.7.0.exe
 ```
 
-用户只需解压外层 ZIP 并运行根目录的 `Install.cmd`。官方 ZIP 原样位于 `upstream/`。更新所选上游版本时，从 mpv.net 官方 Release 固定 x64 附件，对照官方摘要，更新 [版本记录](tools/portable-release.json)，再用独立目录验证已有播放器的 kit 更新与还原、新装及实播兼容性。完成后重新构包。播放器和内置核心的更新由上游提供。
+双击 EXE 进入图形安装器。可使用 `--extract` 将同一份内容展开至全新绝对路径，用于核对打包产物或运行命令行维护工具。构包输出指定为 `.zip` 时生成内部测试夹具。官方 ZIP 原样位于内嵌包的 `upstream/`。更新上游版本时，从 mpv.net 官方 Release 固定 x64 附件，对照官方摘要，更新[版本记录](tools/portable-release.json)，再用独立目录验证已有播放器的 kit 更新与还原、新装及实播兼容性。
 
 ### 配置包测试夹具
 
@@ -142,6 +142,6 @@ python -B dev-tools/prepare-release.py --source C:/Temp/mpvnet-kit-trial/package
 
 每个工作包使用新的仓外输出目录。已用于交付或留证的候选包、ZIP 和测试目录应保留原样，不将历史证据目录复用为下一次构建目标。
 
-正式发行应从已确认、干净的源码提交生成新包，记录源码提交、manifest 和 ZIP 摘要，核对 ZIP 中的源文件字节与该提交一致。manifest 属于生成结果，单独核对其文件清单及摘要；不再要求整个源码仓库与 ZIP 文件列表相同。
+正式发行应从已确认、干净的源码提交生成新包，记录源码提交、EXE、内嵌包和 manifest 的摘要。核对内嵌文件与白名单源码、上游附件的字节对应关系。README 与 Release 正文经用户确认后再生成正式发行件。
 
-构建工具不提交、不推送、不创建 Tag 或 Release。发行授权后，在源码提交创建 Tag，使用完整 ZIP 与 `SHA256SUMS.txt` 作为附件；保留旧发行及恢复资料。
+发行授权后，在确认的源码提交创建 Tag，使用完整 EXE 与 `SHA256SUMS.txt` 作为附件，保留旧发行及恢复资料。

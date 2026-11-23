@@ -1,18 +1,18 @@
 # 安装与个人配置维护
 
-M6 离线候选包随附 mpv.net 官方 Windows x64 portable ZIP 和 mpvnet-kit。已有播放器和首次安装共用一个安装器。公开版 v0.6.0 只提供 kit，需要自行准备播放器。功能操作见[功能指南](features.md)，参数调整见[配置说明](configuration.md)。
+mpvnet-kit 0.7.0 使用单个离线安装程序，内含套件及 mpv.net 官方 Windows x64 portable ZIP。已有播放器和首次安装共用一个窗口。功能操作见[功能指南](features.md)，参数调整见[配置说明](configuration.md)。
 
 ## 1. 环境与依赖
 
-M6 候选使用 Windows 自带的 Windows PowerShell 和随包的官方 mpv.net 7.1.2.0 x64。两种安装方式都可以离线完成。已有播放器的程序与播放核心须匹配本候选已验证的官方文件。公开版 v0.6.0 的用户可从 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)获取播放器。
+0.7.0 安装程序面向 Windows x64，使用 .NET Framework 4.7.2 或更高版本及系统自带的 Windows PowerShell。两种安装方式都可以离线完成。已有播放器的程序与播放核心须匹配此版已验证的 mpv.net 7.1.2.0 x64 官方文件。使用 v0.6.0 时需自行准备播放器，可从 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)获取。
 
 FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者均为可选依赖，缺少时不影响基本安装和本地播放。
 
 ## 2. 下载与安装前准备
 
-1. 准备完整的安装 ZIP。M6 试用请使用收到的离线候选。公开版 `mpvnet-kit-0.6.0.zip` 可从 [Releases](https://github.com/takkoury/mpvnet-kit/releases) 下载。
-2. 完整解压到独立目录。不要直接从 ZIP 中运行，也不要将安装包解压到播放器的配置目录内。
-3. 退出所有 mpv.net 实例。已有配置无需预先清空；不要为通过检查直接删除文件。
+1. 准备 `mpvnet-kit-0.7.0.exe`。试用时使用收到的候选文件，公开版本见 [Releases](https://github.com/takkoury/mpvnet-kit/releases)。
+2. 退出所有 mpv.net 实例，保留原配置与备份。
+3. 双击 EXE。安装程序自动校验并展开所需文件，随后显示安装窗口。
 
 已有播放器沿用实际使用的配置目录。M6 新装的播放器通过 `Play.cmd` 使用同一安装位置内的 `player\portable_config`。对其他已有播放器，安装器按以下顺序判断目录。
 
@@ -26,7 +26,7 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 ## 3. 图形安装
 
-双击完整解压目录中的 `Install.cmd`。
+在安装窗口中选择适合的方式。
 
 - **已有播放器**　核对窗口识别的路径，或点“已有…”选择平时使用的 `mpvnet.exe`。选择“安装”或“更新”前，核对配置目录和备份位置。此路径只写 kit，播放器和播放核心继续使用原文件。公开版 v0.6.0 的对应按钮为“选择播放器”。
 - **新装播放器**　点“新装…”选择空文件夹，可在选择窗口中新建文件夹。核对启动入口，再点“安装播放器”并确认。安装器校验并解压随包的官方 ZIP，再安装同一份 kit。完成后双击所选目录中的 `Play.cmd`，它会为本次启动指定便携配置。以后更新或还原时，选择其中的 `player\mpvnet.exe`。
@@ -63,6 +63,8 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 ## 6. 重新安装与个人配置维护
 
+需要更新、还原或恢复时，可再次运行完整安装 EXE，点“已有…”选择原播放器，核对配置目录后按检查结果继续。请保留对应的配置备份和安装记录。
+
 v0.6.0允许音视频混排，增加可选递归入队、列表文件读写和侧窗右键操作；“启动时打开播放列表”和“将图片纳入播放列表”默认关闭。自动检查更新默认开启，只提示和打开浏览器中的发行页，下载及安装仍由用户主动完成。更新确认会说明入口行为差异、列表保存及清空的边界，详见[功能指南](features.md)。原有设置、快捷键、本机路径和观看记录不纳入受管覆盖；未修改的新版默认文件随更新替换。
 
 从 v0.3.0、v0.4.0 或 v0.5.0 升级到 v0.6.0 时，完整解压新包，运行新包的 `Install.cmd` 并选择原播放器。先核对配置目录和更新范围，点击“更新”后阅读确认说明，再确认更新，无需卸载或清空配置。旧版本尚不具备自动检查更新，需要先手动下载安装本版。若受管文件有个人修改，安装器会停止；先保存差异并处理提示，不直接用新包整目录覆盖。
@@ -85,7 +87,7 @@ v0.5.0 更新播放列表、安装器、关于、媒体信息、右键菜单和�
 
 | 现象 | 处理方式 |
 | --- | --- |
-| `Install.cmd` 无法打开 | 确认安装包已完整解压，并可使用系统 Windows PowerShell 与 Windows Forms |
+| 安装程序无法打开或提示文件校验失败 | 核对 EXE 的下载是否完整，确认 Windows x64 上可使用 .NET Framework 和 Windows PowerShell，再运行安装程序 |
 | 操作按钮不可用 | 等待检查结束，查看具体原因；处理后可点击“重新检查” |
 | 提示播放器仍在运行 | 退出所有 mpv.net 实例后重新检查 |
 | 提示文件被修改或存在同名文件 | 先保存个人修改并核对差异；本版不会自动合并或覆盖，不确定时请保留原文件 |
@@ -96,7 +98,13 @@ v0.5.0 更新播放列表、安装器、关于、媒体信息、右键菜单和�
 <details>
 <summary>高级说明：命令行与手动安装</summary>
 
-建议使用与图形窗口共用逻辑的 [maintain.ps1](../tools/maintain.ps1)。默认 `Inspect` 只读检查，`-OutputFormat Text` 显示中文摘要，`-Details` 显示文件明细。
+需要保留一份包内文档和命令行工具时，可使用 `--extract`。指定一个尚不存在的绝对目录，其上级目录应已存在。例如在 EXE 所在目录打开 PowerShell，执行以下命令并等待完成。
+
+```powershell
+Start-Process .\mpvnet-kit-0.7.0.exe -ArgumentList '--extract "C:\Temp\mpvnet-kit-0.7.0"' -Wait
+```
+
+进入解出的目录后，可使用与图形窗口共用逻辑的 [maintain.ps1](../tools/maintain.ps1)。默认 `Inspect` 只读检查，`-OutputFormat Text` 显示中文摘要，`-Details` 显示文件明细。
 
 ```powershell
 .\tools\maintain.ps1 -PlayerPath 'C:\Players\mpv.net\mpvnet.exe' -OutputFormat Text

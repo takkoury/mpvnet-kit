@@ -10,7 +10,7 @@ import unittest
 import zipfile
 
 from support.dev_imports import package_zip, stage_package
-from portable_release import DESCRIPTOR, build_portable_release
+from portable_release import DESCRIPTOR, LAUNCHER, build_portable_release
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / 'dev-tools/build-package.py'
@@ -180,6 +180,21 @@ class PackageBuild(unittest.TestCase):
                     build_portable_release(source, upstream, destination, output, apply=True)
                 self.assertEqual(before, self.snapshot(root))
                 self.assertFalse(destination.exists())
+
+    def test_exe_preview_checks_launcher_without_creating_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, upstream, _ = self.portable_fixture(root)
+            destination, output = root / 'package', root / 'installer.exe'
+            with self.assertRaisesRegex(ValueError, 'missing or linked offline installer source'):
+                build_portable_release(source, upstream, destination, output)
+            launcher = source / LAUNCHER
+            launcher.parent.mkdir(parents=True)
+            launcher.write_bytes((ROOT / LAUNCHER).read_bytes())
+            before = self.snapshot(root)
+            report = build_portable_release(source, upstream, destination, output)
+            self.assertTrue(report['dry_run'])
+            self.assertEqual(self.snapshot(root), before)
 
     def test_offline_candidate_requires_all_outputs_to_be_new_and_separate(self):
         for occupied in ('destination', 'zip', 'sidecar', 'nested'):

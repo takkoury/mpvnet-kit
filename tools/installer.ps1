@@ -42,7 +42,7 @@ public static class MpvnetInstallerDpi {
     }
     if (-not $PackageRoot) { $PackageRoot = Split-Path -Parent $PSScriptRoot }
     $script:modulePath = Join-Path $PSScriptRoot 'maintenance.psm1'
-    if (-not [IO.File]::Exists($script:modulePath)) { throw '安装器文件不完整，请重新解压完整配置包。' }
+    if (-not [IO.File]::Exists($script:modulePath)) { throw '安装器文件不完整，请重新获取完整安装包。' }
     Import-Module $script:modulePath
     $script:portableModulePath = Join-Path $PSScriptRoot 'portable-install.psm1'
     $script:portablePackage = $false

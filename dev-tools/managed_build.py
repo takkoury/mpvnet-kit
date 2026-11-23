@@ -97,7 +97,8 @@ def reference_snapshot(framework_version, reference_files):
 
 
 def compile_assembly(output, dotnet, compiler_path, contents, references, digest, *,
-                     assembly, framework_version, metadata_key, label, target='winexe', manifest=None):
+                     assembly, framework_version, metadata_key, label, target='winexe', manifest=None,
+                     platform='anycpu', resources=()):
     if target not in ('winexe', 'library'):
         raise ValueError('unsupported managed assembly target')
     output.mkdir(parents=True, exist_ok=False)
@@ -120,10 +121,11 @@ def compile_assembly(output, dotnet, compiler_path, contents, references, digest
         mapped_path = str(staging).replace('=', '==').replace(',', ',,')
         result = subprocess.run([
             dotnet, str(compiler_path), '-nologo', '-noconfig', '-nostdlib+', '-utf8output',
-            '-codepage:65001', '-target:' + target, '-platform:anycpu', '-langversion:7.3',
+            '-codepage:65001', '-target:' + target, '-platform:' + platform, '-langversion:7.3',
             '-deterministic+', '-optimize+', '-warnaserror+', f'-pathmap:{mapped_path}=/_/src',
             *([f'-win32manifest:{manifest}'] if manifest else []), f'-out:{assembly}',
             *(f'-reference:refs/{name}' for name in references),
+            *(f'-resource:{name},{logical_name}' for name, logical_name in resources),
             *(name for name in contents if name.endswith('.cs')), 'BuildEvidence.cs',
         ], cwd=staging, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode:

@@ -68,7 +68,7 @@ function Expand-KitPortableArchive($Package, [string]$Staging) {
     try {
         $hash = [Security.Cryptography.SHA256]::Create()
         try { $digest = [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-','').ToLowerInvariant() } finally { $hash.Dispose() }
-        if ($digest -cne $release.archive.sha256) { throw '官方 portable ZIP 在检查后发生变化，请重新解压安装包。' }
+        if ($digest -cne $release.archive.sha256) { throw '官方 portable ZIP 在检查后发生变化，请重新运行完整安装程序。' }
         $stream.Position = 0
         $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read)
         try {

@@ -4,14 +4,53 @@ import io
 import json
 from pathlib import Path
 import re
+import tempfile
 import zipfile
 
+import managed_build
 from package_lib import (
     _clean_root, _safe_file, manifest_bytes, read_source_contents, release_blockers, write_package_zip,
 )
 
 
 DESCRIPTOR = 'tools/portable-release.json'
+LAUNCHER = 'src/offline-installer/Program.cs'
+
+
+def _compile_installer(staging, launcher, version, contents):
+    framework = 'v4.7.2'
+    dotnet, compiler, sdk = managed_build.compiler()
+    references = managed_build.reference_snapshot(framework, (
+        'mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.IO.Compression.dll', 'System.Windows.Forms.dll',
+    ))
+    with io.BytesIO() as buffer:
+        write_package_zip(buffer, contents)
+        payload = buffer.getvalue()
+    payload_hash = hashlib.sha256(payload).hexdigest()
+    identity = (
+        'using System.Reflection;\n'
+        '[assembly: AssemblyTitle("mpvnet-kit 离线安装程序")]\n'
+        '[assembly: AssemblyProduct("mpvnet-kit")]\n'
+        f'[assembly: AssemblyVersion("{version}.0")]\n'
+        f'[assembly: AssemblyFileVersion("{version}.0")]\n'
+        f'[assembly: AssemblyInformationalVersion("{version}")]\n'
+        f'internal static class InstallerPayload {{ public const string Sha256 = "{payload_hash}"; }}\n'
+    )
+    build_dir = staging / 'compiler'
+    try:
+        exe = managed_build.compile_assembly(
+            build_dir, dotnet, compiler,
+            {**launcher, 'PackageIdentity.cs': identity.encode(), 'payload.zip': payload}, references,
+            managed_build.source_digest(launcher), assembly='mpvnet-kit.exe', framework_version=framework,
+            metadata_key='MpvnetKitInstallerSource', label='offline installer', platform='x64',
+            resources=(('payload.zip', 'mpvnet-kit.payload.zip'),),
+        )
+    except ValueError:
+        log = build_dir / 'build.log'
+        if log.is_file():
+            raise ValueError('offline installer compilation failed:\n' + log.read_text(encoding='utf-8-sig')) from None
+        raise
+    return exe, {'sdk_version': sdk, 'payload_sha256': payload_hash, 'exe_sha256': hashlib.sha256(exe).hexdigest()}
 
 
 def _stream_digest(handle):
@@ -55,14 +94,15 @@ def _check_new_path(path, source):
 
 
 def build_portable_release(source, upstream, destination, output, *, apply=False):
-    """Validate an offline candidate, then create a fresh package directory and ZIP."""
+    """Build a single Windows installer or an unpackaged ZIP for internal trials."""
     source, upstream = _clean_root(source), _clean_root(upstream)
     destination, output = _clean_root(destination), _clean_root(output)
     sidecar = _clean_root(Path(str(output) + '.sha256'))
     if source in upstream.parents or not upstream.is_file():
         raise ValueError('upstream ZIP must be a regular file outside the source checkout')
-    if output.suffix.lower() != '.zip':
-        raise ValueError('output must end in .zip')
+    executable = output.suffix.lower() == '.exe'
+    if not executable and output.suffix.lower() != '.zip':
+        raise ValueError('output must end in .exe (installer) or .zip (fixture)')
     for path in (destination, output, sidecar):
         _check_new_path(path, source)
     for path in (output, sidecar):
@@ -80,6 +120,10 @@ def build_portable_release(source, upstream, destination, output, *, apply=False
         raise ValueError('portable package requires Install.cmd and ' + DESCRIPTOR)
     if any(name.split('/', 1)[0].casefold() == 'upstream' for name in contents):
         raise ValueError('the upstream directory is reserved for the official ZIP')
+    if executable:
+        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) or any(int(p) > 65534 for p in version.split('.')):
+            raise ValueError('the installer needs a three-part numeric Windows file version')
+        launcher = managed_build.source_snapshot(source, (LAUNCHER,), 'offline installer')
     upstream_data = upstream.read_bytes()
     entry = _verify_upstream(json.loads(contents[DESCRIPTOR]), upstream_data)
     entries.append(entry)
@@ -97,6 +141,12 @@ def build_portable_release(source, upstream, destination, output, *, apply=False
     if not apply:
         return report
 
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if executable:
+        # Fail before creating either deliverable if the offline compiler is unavailable.
+        with tempfile.TemporaryDirectory(prefix='mpvnet-compile-', dir=output.parent) as work:
+            exe, details = _compile_installer(Path(work), launcher, version, contents)
+        report.update(details)
     # Exclusive creation preserves any outputs that appear after preflight.
     destination.mkdir(parents=True)
     for name, data in contents.items():
@@ -104,11 +154,18 @@ def build_portable_release(source, upstream, destination, output, *, apply=False
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('xb') as handle:
             handle.write(data)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open('x+b') as handle:
-        write_package_zip(handle, contents)
-        handle.seek(0)
-        report['zip_sha256'] = _stream_digest(handle)
+    if executable:
+        # Windows rename publishes only a complete, closed PE and refuses an existing destination.
+        with tempfile.TemporaryDirectory(prefix='mpvnet-publish-', dir=output.parent) as work:
+            staged = Path(work) / 'installer.exe'
+            staged.write_bytes(exe)
+            staged.rename(output)
+        checksum = report['exe_sha256']
+    else:
+        with output.open('x+b') as handle:
+            write_package_zip(handle, contents)
+            handle.seek(0)
+            checksum = report['zip_sha256'] = _stream_digest(handle)
     with sidecar.open('x', encoding='utf-8', newline='\n') as handle:
-        handle.write(report['zip_sha256'] + '  ' + output.name + '\n')
+        handle.write(checksum + '  ' + output.name + '\n')
     return report

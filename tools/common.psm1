@@ -132,7 +132,7 @@ function Get-KitPackage([string]$PackageRoot) {
         $seen[$file.path] = $file.sha256
         $path = Get-KitPath $root $file.path
         if ($file.path.StartsWith('upstream/', [StringComparison]::OrdinalIgnoreCase)) {
-            if ((Get-KitHash $path) -cne $file.sha256) { throw "随包播放器附件校验失败，请重新解压完整安装包。文件：$($file.path)" }
+            if ((Get-KitHash $path) -cne $file.sha256) { throw "随包播放器附件校验失败，请重新获取完整安装包。文件：$($file.path)" }
             continue
         }
         $bytes = [IO.File]::ReadAllBytes($path)
@@ -159,7 +159,7 @@ function Get-KitPackage([string]$PackageRoot) {
             $portableRelease.archive.path -cnotmatch '^upstream/[^/]+\.zip$' -or $seen[$portableRelease.archive.path] -cne $portableRelease.archive.sha256 -or
             $portableRelease.archive.sha256 -cnotmatch '^[0-9a-f]{64}$' -or $portableRelease.runtime.executable -cne 'mpvnet.exe' -or
             $portableRelease.runtime.core -cne 'libmpv-2.dll' -or $portableRelease.runtime.executableSha256 -cnotmatch '^[0-9a-f]{64}$' -or
-            $portableRelease.runtime.coreSha256 -cnotmatch '^[0-9a-f]{64}$') { throw '播放器版本记录与随包附件不匹配，请重新解压完整安装包。' }
+            $portableRelease.runtime.coreSha256 -cnotmatch '^[0-9a-f]{64}$') { throw '播放器版本记录与随包附件不匹配，请重新获取完整安装包。' }
     }
     return [pscustomobject]@{ root = $root; version = $manifest.version; manifestSha256 = (Get-KitHashBytes $manifestBytes); runtime = $runtime; verifiedFileCount = @($manifest.files).Count; releaseNotice = $releaseNotice; portableRelease = $portableRelease }
 }
