@@ -126,7 +126,7 @@ python -B dev-tools/run-tests.py --profile core --profile lua
 使用本地保存的官方 Windows x64 portable ZIP。下例预览会核对附件和其中的播放器、核心摘要。追加 `--apply` 后生成安装目录、可直接解压的单一发行 ZIP 及校验文件，三个输出都需要全新仓外位置。
 
 ```powershell
-python -B dev-tools/build-portable-release.py --upstream D:/Inputs/mpv.net-v7.1.2.0-portable-x64.zip --destination D:/Builds/m6/package --output D:/Builds/m6/mpvnet-kit-0.7.0-m6.zip
+python -B dev-tools/build-portable-release.py --upstream D:/Inputs/mpv.net-v7.1.2.0-portable-x64.zip --destination D:/Builds/m6/package --output D:/Builds/m6/mpvnet-kit-0.7.0.zip
 ```
 
 用户只需解压外层 ZIP 并运行根目录的 `Install.cmd`。官方 ZIP 原样位于 `upstream/`。更新所选上游版本时，从 mpv.net 官方 Release 固定 x64 附件，对照官方摘要，更新 [版本记录](tools/portable-release.json)，再用独立目录验证已有播放器的 kit 更新与还原、新装及实播兼容性。完成后重新构包。播放器和内置核心的更新由上游提供。

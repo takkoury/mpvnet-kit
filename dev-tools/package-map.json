@@ -2,7 +2,7 @@
   "schema": 1,
   "version": "0.6.0",
   "portable": {
-    "version": "0.7.0-m6",
+    "version": "0.7.0",
     "files": [
       {
         "source": "tools/portable-release.json",

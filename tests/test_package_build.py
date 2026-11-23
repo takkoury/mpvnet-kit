@@ -148,7 +148,8 @@ class PackageBuild(unittest.TestCase):
             self.assertEqual({**preview, 'dry_run': False, 'zip_sha256': applied['zip_sha256']}, applied)
             archive_path = description['archive']['path']
             manifest = json.loads((destination / 'manifest.json').read_bytes())
-            self.assertEqual(manifest['version'], '0.7.0-m6')
+            self.assertRegex(manifest['version'], r'\A[0-9]+\.[0-9]+\.[0-9]+\Z')
+            self.assertEqual(manifest['version'], applied['version'])
             entries = {entry['path']: entry['sha256'] for entry in manifest['files']}
             self.assertEqual(entries.keys(), self.snapshot(destination).keys() - {'manifest.json'})
             self.assertEqual(entries[archive_path], description['archive']['sha256'])
