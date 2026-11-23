@@ -17,6 +17,14 @@
 
 离线安装 EXE 的启动器源码位于 `src/offline-installer/`，采用项目 MIT 许可。EXE 随附 [mpv.net 官方 x64 portable ZIP](https://github.com/mpvnet-player/mpv.net/releases/tag/v7.1.2.0)。播放器及其内置组件由上游维护，原归属和适用许可保留。上游附件的位置与摘要记录在包内的 `tools/portable-release.json`。Python、用于导出的 FFmpeg 命令行程序及网页插件仍由各自项目分发。
 
+### 离线包中的上游材料
+
+完整 EXE 中的 `licenses/mpvnet-7.1.2.0/` 收录所选播放器源码的 License.txt、MediaInfo 25.10 的许可、.NET 10.0.1 的项目许可与 Windows 组件许可索引，以及 runtime 和 WPF 的第三方声明。可按[安装指南](docs/installation.md)使用 `--extract` 将这些文件保存在本地。各份原文的来源及摘要列在包内的 `manifest.json`。[mpv.net 对应源码](https://github.com/mpvnet-player/mpv.net/tree/96afc62165b5a1df186fc79c58813f37061ace9a) · [.NET Windows 组件许可索引](https://github.com/dotnet/core/blob/68f06e817742dfcce948f6c27233f6a0017525f5/license-information-windows.md)
+
+同目录还收录了宿主内嵌的 CommunityToolkit.Mvvm 8.4.0、Microsoft.Xaml.Behaviors.Wpf 1.1.135 和 NGettext 0.6.7 的许可，以及 CommunityToolkit.Mvvm 随包提供的第三方声明。
+
+宿主源码中的 NGettext.Wpf 声明为 LGPL-3.0-or-later。目录中附有该组件的版权归属、LGPLv3 和 GPLv3 正文。播放核心中可识别的 mpv 和 FFmpeg 源码版本见各自仓库。[NGettext.Wpf 项目记录](https://github.com/mpvnet-player/mpv.net/blob/96afc62165b5a1df186fc79c58813f37061ace9a/src/NGettext.Wpf/NGettext.Wpf.nuspec) · [mpv](https://github.com/mpv-player/mpv/tree/85bf9f4ff46cd45686cfe2fd22f49828877db5cb) · [FFmpeg](https://github.com/FFmpeg/FFmpeg/tree/272c273d30f737632e6630458ed36a0bdbfbc3fc)
+
 ## MIT 适用文件
 
 以下清单对应 manifest 中 component 为 author 的文件；第三方归属文件分别按上表处理。后续新增或移植代码必须重新核对来源，不能仅凭路径推断许可。

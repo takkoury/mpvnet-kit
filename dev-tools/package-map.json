@@ -9,6 +9,84 @@
         "destination": "tools/portable-release.json",
         "component": "author",
         "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/mpvnet-License.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/mpvnet-License.txt",
+        "component": "upstream",
+        "origin": "https://github.com/mpvnet-player/mpv.net/blob/96afc62165b5a1df186fc79c58813f37061ace9a/License.txt"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/MediaInfo-25.10-License.html",
+        "destination": "licenses/mpvnet-7.1.2.0/MediaInfo-25.10-License.html",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/MediaArea/MediaInfoLib/v25.10/License.html"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/dotnet-runtime-10.0.1-NOTICES.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/dotnet-runtime-10.0.1-NOTICES.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/dotnet/runtime/v10.0.1/THIRD-PARTY-NOTICES.TXT"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/dotnet-wpf-10.0.1-NOTICES.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/dotnet-wpf-10.0.1-NOTICES.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/dotnet/wpf/v10.0.1/THIRD-PARTY-NOTICES.TXT"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/NGettext-0.6.7-LICENSE.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/NGettext-0.6.7-LICENSE.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/VitaliiTsilnyk/NGettext/0d7d59ce3e1e95f79f9886f6a6fb39a7dfc31913/LICENSE"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/Microsoft.Xaml.Behaviors.Wpf-1.1.135-LICENSE.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/Microsoft.Xaml.Behaviors.Wpf-1.1.135-LICENSE.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/microsoft/XamlBehaviorsWpf/1a72a7608536fcae884c1ed318b18ce6411974c5/LICENSE"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/dotnet-10.0.1-LICENSE.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/dotnet-10.0.1-LICENSE.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/dotnet/core/68f06e817742dfcce948f6c27233f6a0017525f5/LICENSE.TXT"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/dotnet-10.0.1-windows-licenses.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/dotnet-10.0.1-windows-licenses.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/dotnet/core/68f06e817742dfcce948f6c27233f6a0017525f5/license-information-windows.md"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/CommunityToolkit.Mvvm-8.4.0-License.md",
+        "destination": "licenses/mpvnet-7.1.2.0/CommunityToolkit.Mvvm-8.4.0-License.md",
+        "component": "upstream",
+        "origin": "https://api.nuget.org/v3-flatcontainer/communitytoolkit.mvvm/8.4.0/communitytoolkit.mvvm.8.4.0.nupkg (archive member License.md)"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/CommunityToolkit.Mvvm-8.4.0-ThirdPartyNotices.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/CommunityToolkit.Mvvm-8.4.0-ThirdPartyNotices.txt",
+        "component": "upstream",
+        "origin": "https://api.nuget.org/v3-flatcontainer/communitytoolkit.mvvm/8.4.0/communitytoolkit.mvvm.8.4.0.nupkg (archive member ThirdPartyNotices.txt)"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-Attribution.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-Attribution.txt",
+        "component": "upstream",
+        "origin": "https://github.com/mpvnet-player/mpv.net/blob/96afc62165b5a1df186fc79c58813f37061ace9a/src/NGettext.Wpf/NGettext.Wpf.nuspec (attribution from project metadata)"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-LGPL-3.0.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-LGPL-3.0.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/robert-j-engdahl/ngettext-wpf/f4c872cfc23c5a35adbabdc9bd91f13ae3a3c356/LICENSE"
+      },
+      {
+        "source": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-GPL-3.0.txt",
+        "destination": "licenses/mpvnet-7.1.2.0/NGettext.Wpf-GPL-3.0.txt",
+        "component": "upstream",
+        "origin": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/272c273d30f737632e6630458ed36a0bdbfbc3fc/COPYING.GPLv3"
       }
     ]
   },

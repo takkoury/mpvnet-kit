@@ -129,10 +129,17 @@ class PackageBuild(unittest.TestCase):
         description['runtime']['executableSha256'] = hashlib.sha256(executable).hexdigest()
         description['runtime']['coreSha256'] = hashlib.sha256(core).hexdigest()
         portable = json.loads((ROOT / 'dev-tools/package-map.json').read_text(encoding='utf-8'))['portable']
-        for name, data in ((DESCRIPTOR, description), ('dev-tools/package-map.json', {**mapping, 'portable': portable})):
+        for item in portable['files']:
+            name = item['source']
             path = source / name
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps(data), encoding='utf-8')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if name == DESCRIPTOR:
+                path.write_text(json.dumps(description), encoding='utf-8')
+            else:
+                path.write_bytes((ROOT / name).read_bytes())
+        spec = source / 'dev-tools/package-map.json'
+        spec.parent.mkdir(parents=True, exist_ok=True)
+        spec.write_text(json.dumps({**mapping, 'portable': portable}), encoding='utf-8')
         return source, upstream, description
 
     def test_offline_candidate_preserves_official_archive_and_uses_zip_root(self):

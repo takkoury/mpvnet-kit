@@ -131,6 +131,8 @@ python -B dev-tools/build-portable-release.py --upstream D:/Inputs/mpv.net-v7.1.
 
 双击 EXE 进入图形安装器。可使用 `--extract` 将同一份内容展开至全新绝对路径，用于核对打包产物或运行命令行维护工具。构包输出指定为 `.zip` 时生成内部测试夹具。官方 ZIP 原样位于内嵌包的 `upstream/`。更新上游版本时，从 mpv.net 官方 Release 固定 x64 附件，对照官方摘要，更新[版本记录](tools/portable-release.json)，再用独立目录验证已有播放器的 kit 更新与还原、新装及实播兼容性。
 
+更换播放器版本时，一并核对宿主及其内置依赖的版本。在 `licenses/` 保存对应版本的许可和第三方声明，在 `dev-tools/package-map.json` 的 `portable.files` 中登记随完整 EXE 交付的原文及来源。
+
 ### 配置包测试夹具
 
 ```powershell

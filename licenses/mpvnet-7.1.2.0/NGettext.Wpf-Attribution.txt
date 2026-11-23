@@ -1,0 +1,4 @@
+NGettext.Wpf (mpv.net v7.1.2.0, src/NGettext.Wpf)
+LGPL-3.0-or-later
+https://github.com/robert-j-engdahl/ngettext-wpf
+Copyright 2017, 2018, 2019 Accuratech ApS
