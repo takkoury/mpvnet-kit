@@ -87,9 +87,9 @@
 
 在 [Releases](https://github.com/takkoury/mpvnet-kit/releases) 中找到最新版本并下载对应安装包。v0.6.0 及后续版本支持自动检测版本更新。目前还不支持在播放器内直接更新 `mpvnet-kit`。
 
-1. 自行安装 [mpv.net](https://github.com/mpvnet-player/mpv.net/releases)。本包不包含播放器，未来会将 mpv.net 集成到同一个包里。
+1. 使用公开版 v0.6.0 时，先准备 [mpv.net](https://github.com/mpvnet-player/mpv.net/releases)。试用 M6 离线候选时，官方播放器已随附。
 2. 退出 mpv.net。将完整安装包解压到**独立**目录。
-3. 打开 `Install.cmd`，点击「选择播放器」，找到并选择本机的 `mpvnet.exe`。
+3. 打开 `Install.cmd`，选择本机的 `mpvnet.exe`。M6 候选也可以点击「新装…」，选择空文件夹安装播放器与 kit，完成后双击该目录中的 `Play.cmd`。
 4. 等待检查完成，核对配置目录，并在「查看详情」中检查文件变更和备份位置，再点击「安装」或「更新」并确认。
 5. 需要撤回时，再次打开安装器，选择「还原更新前配置」。
 

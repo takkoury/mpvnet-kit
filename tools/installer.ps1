@@ -44,13 +44,21 @@ public static class MpvnetInstallerDpi {
     $script:modulePath = Join-Path $PSScriptRoot 'maintenance.psm1'
     if (-not [IO.File]::Exists($script:modulePath)) { throw '安装器文件不完整，请重新解压完整配置包。' }
     Import-Module $script:modulePath
+    $script:portableModulePath = Join-Path $PSScriptRoot 'portable-install.psm1'
+    $script:portablePackage = $false
+    if ([IO.File]::Exists($script:portableModulePath)) {
+        Import-Module $script:portableModulePath
+        $script:portablePackage = Test-KitPortablePackage -PackageRoot $PackageRoot
+    }
     $script:backupRoot = $BackupRoot; $script:packageRoot = $PackageRoot; $script:plan = $null; $script:worker = $null; $script:runspace = $null
+    $script:playerPath = ''; $script:installDirectory = ''; $script:launcherPath = ''
     $script:busy = $false; $script:confirming = $false; $script:installed = $false; $script:snapshotTaken = $false; $script:detailsExpanded = $false
     $script:lastResult = $null; $script:lastOperation = ''; $script:restoreLabel = '还原上次操作'; $script:preserveResult = $false
     $script:target = ''; $script:targetSource = ''; $script:targetExists = $null; $script:dependencies = @(); $script:resultState = 'idle'
     $script:form = New-Object KitInstallerForm([single]$script:uiScale)
     $script:form.SuspendLayout()
-    $script:form.Text = 'mpv.net 配置包 · 安装与更新'; $script:form.StartPosition = 'CenterScreen'
+    $script:form.Text = if ($script:portablePackage) { 'mpv.net · 安装与更新' } else { 'mpv.net 配置包 · 安装与更新' }
+    $script:form.StartPosition = 'CenterScreen'
     $script:form.ClientSize = New-InstallerSize 690 460
     $script:form.MinimumSize = New-InstallerSize 520 440
     $script:form.BackColor = [Drawing.Color]::FromArgb(21, 21, 21)
@@ -103,9 +111,9 @@ public static class MpvnetInstallerDpi {
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute', (ConvertTo-InstallerPixels 76))))
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent', 100)))
     [void]$playerLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute', (ConvertTo-InstallerPixels 100))))
-    $playerCaption = New-Label '播放器'; $playerCaption.ForeColor=$script:mutedColor; $playerCaption.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
-    $playerCaption.TextAlign='MiddleLeft'
-    $playerLayout.Controls.Add($playerCaption, 0, 0)
+    $script:playerCaption = New-Label '播放器'; $script:playerCaption.ForeColor=$script:mutedColor; $script:playerCaption.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
+    $script:playerCaption.TextAlign='MiddleLeft'
+    $playerLayout.Controls.Add($script:playerCaption, 0, 0)
     function New-PathSurface($Layout,[int]$Column) {
         $surface=New-Object Windows.Forms.Panel
         $surface.Dock='Fill';$surface.Margin=New-InstallerPadding 0;$surface.Padding=New-InstallerPadding 10 8
@@ -151,14 +159,17 @@ public static class MpvnetInstallerDpi {
     [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute',(ConvertTo-InstallerPixels 76))))
     [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent',100)))
     [void]$targetLayout.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Absolute',(ConvertTo-InstallerPixels 100))))
-    $targetCaption = New-Label '配置目录'; $targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI',9); $targetCaption.ForeColor=$script:mutedColor
-    $targetCaption.TextAlign='MiddleLeft'
-    $targetLayout.Controls.Add($targetCaption, 0, 0)
+    $script:targetCaption = New-Label '配置目录'; $script:targetCaption.Font = New-Object Drawing.Font('Microsoft YaHei UI',9); $script:targetCaption.ForeColor=$script:mutedColor
+    $script:targetCaption.TextAlign='MiddleLeft'
+    $targetLayout.Controls.Add($script:targetCaption, 0, 0)
     $targetSurface=New-PathSurface $targetLayout 1
     $script:targetBox = New-ReadOnlyBox; $script:targetBox.Multiline = $true; $script:targetBox.WordWrap = $true; $script:targetBox.ScrollBars = 'Vertical'
     $script:targetBox.Font=New-Object Drawing.Font('Microsoft YaHei UI',9)
     $script:targetBox.ForeColor = [Drawing.Color]::FromArgb(208,208,208); $script:targetBox.BackColor=$targetSurface.BackColor; $script:targetBox.Text = ''
     $script:targetBox.AccessibleName = '配置目录，可选择完整路径'; $script:targetBox.TabIndex = 0; Add-PathBox $targetSurface $script:targetBox
+    $script:directoryBrowse = New-Button '新装…(&N)' 94; $script:directoryBrowse.Anchor = 'Right'; $script:directoryBrowse.TabIndex = 1
+    $script:directoryBrowse.Margin = New-InstallerPadding 6 0 0 0
+    $targetLayout.Controls.Add($script:directoryBrowse, 2, 0)
     # Retain full diagnostics for the details text and snapshots, not extra rows.
     $script:sourceLabel = New-Label ''; $script:nextLabel = New-Label ''; $script:dependencyLabel = New-Label ''
     $separator=New-Object Windows.Forms.Panel; $separator.Dock='Fill';$separator.Margin=New-InstallerPadding 0
@@ -167,11 +178,13 @@ public static class MpvnetInstallerDpi {
     $root.Controls.Add($resultHost, 0, 4); $resultHost.Dock = 'Fill'; $resultHost.Margin = New-InstallerPadding 0
     $script:resultLayout = New-Layout $resultHost 3
     Add-Row $script:resultLayout 'Absolute' 34; Add-Row $script:resultLayout 'Absolute' 26; Add-Row $script:resultLayout 'Percent' 100
-    $script:statusLabel = New-Label '先选择播放器'; $script:statusLabel.Font = New-Object Drawing.Font('Microsoft YaHei UI',16,[Drawing.FontStyle]::Bold)
+    $idleTitle = if ($script:portablePackage) { '选择安装方式' } else { '先选择播放器' }
+    $idleReason = if ($script:portablePackage) { '请选择新装目录，或选择已有的 mpvnet.exe。' } else { '选择你正在使用的 mpvnet.exe。' }
+    $script:statusLabel = New-Label $idleTitle; $script:statusLabel.Font = New-Object Drawing.Font('Microsoft YaHei UI',16,[Drawing.FontStyle]::Bold)
     $script:resultLayout.Controls.Add($script:statusLabel, 0, 0)
     $script:summaryLabel = New-Label ''; $script:summaryLabel.ForeColor = $script:mutedColor
     $script:summaryLabel.Font=New-Object Drawing.Font('Microsoft YaHei UI',9.75);$script:resultLayout.Controls.Add($script:summaryLabel,0,1)
-    $script:reasonLabel = New-Label '选择你正在使用的 mpvnet.exe。'
+    $script:reasonLabel = New-Label $idleReason
     $script:reasonLabel.ForeColor=$script:mutedColor;$script:reasonLabel.Font=New-Object Drawing.Font('Microsoft YaHei UI',9.75)
     $script:reasonLabel.AutoEllipsis = $false; $script:resultLayout.Controls.Add($script:reasonLabel, 0, 2)
     $script:detailsButton = New-Button '查看详情' 92; $script:detailsButton.Subtle=$true; $script:detailsButton.Disclosure=$true
@@ -216,22 +229,42 @@ public static class MpvnetInstallerDpi {
         $script:detailsButton.Expanded = $Expanded
         $script:detailsButton.AccessibleName = if($Expanded){'收起详情'}else{'查看详情'}
     }
+    function Set-InstallSelection([string]$Player, [string]$Directory = '', [string]$Launcher = '') {
+        $script:playerPath = $Player; $script:installDirectory = $Directory; $script:launcherPath = $Launcher
+        if ($Directory) {
+            $script:playerCaption.Text = '安装目录'; $script:playerBox.AccessibleName = '播放器安装目录'
+            $script:playerBox.Text = $Directory
+        } elseif ($Launcher) {
+            $script:playerCaption.Text = '启动入口'; $script:playerBox.AccessibleName = '启动入口完整路径'
+            $script:playerBox.Text = $Launcher
+        } else {
+            $script:playerCaption.Text = '播放器'; $script:playerBox.AccessibleName = '播放器程序路径'
+            $script:playerBox.Text = $Player
+        }
+    }
+    function Set-InstallerIdle {
+        $script:resultState = 'idle'; $script:statusLabel.Text = $idleTitle
+        $script:reasonLabel.Text = $idleReason; $script:nextLabel.Text = ''
+    }
     function Update-Enabled {
         $available = -not $script:busy -and -not $script:confirming
-        $hasPlayer=[bool]$script:playerBox.Text
-        $canApply=$script:plan -and [bool]$script:plan.eligible -and $script:plan.action -in @('install','update','recover')
-        $script:primaryMode=if(-not $hasPlayer){'browse'}elseif($script:resultState -in @('current','completed','completed-check-failed')){'finish'}elseif(-not $script:plan -and $script:resultState -eq 'blocked'){'check'}elseif($canApply){'apply'}else{'none'}
+        $hasSelection = [bool]($script:playerPath -or $script:installDirectory)
+        $canApply=$script:plan -and [bool]$script:plan.eligible -and $script:plan.action -in @('install','install-player','update','recover')
+        $script:primaryMode=if(-not $hasSelection){if($script:portablePackage){'directory'}else{'browse'}}elseif($script:resultState -in @('current','completed','completed-check-failed')){'finish'}elseif(-not $script:plan -and $script:resultState -eq 'blocked'){'check'}elseif($canApply){'apply'}else{'none'}
         $script:playerBrowse.Enabled = $available
-        $script:playerBrowse.Text=if($hasPlayer){'更换(&B)'}else{'选择…(&B)'}
-        $targetHost.Visible=$hasPlayer
-        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasPlayer){64}else{0})
-        $script:recheckButton.Enabled = $available -and $hasPlayer
-        $script:recheckButton.Visible=$hasPlayer -and ($script:primaryMode -notin @('check','finish') -or $script:resultState -eq 'completed-check-failed')
+        $script:playerBrowse.Text=if($script:portablePackage){'已有…(&B)'}elseif($hasSelection){'更换(&B)'}else{'选择…(&B)'}
+        $script:directoryBrowse.Enabled = $available -and $script:portablePackage
+        $script:directoryBrowse.Visible = $script:portablePackage
+        $script:directoryBrowse.Text = if ($script:installDirectory) { '换目录(&N)' } else { '新装…(&N)' }
+        $targetHost.Visible=$hasSelection -or $script:portablePackage
+        $root.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($hasSelection -or $script:portablePackage){64}else{0})
+        $script:recheckButton.Enabled = $available -and $hasSelection
+        $script:recheckButton.Visible=$hasSelection -and ($script:primaryMode -notin @('check','finish') -or $script:resultState -eq 'completed-check-failed')
         $script:installButton.Enabled = $available -and $script:primaryMode -ne 'none'
-        $script:installButton.Text=if($script:busy){'处理中'}else{switch($script:primaryMode){'browse'{'选择播放器(&I)'}'finish'{'完成(&I)'}'check'{'重新检查(&I)'}'apply'{switch($script:plan.action){'install'{'安装(&I)'}'update'{'更新(&I)'}'recover'{'恢复配置(&I)'}}}default{'无法继续'}}}
+        $script:installButton.Text=if($script:busy){'处理中'}else{switch($script:primaryMode){'browse'{'选择播放器(&I)'}'directory'{'新装播放器(&I)'}'finish'{'完成(&I)'}'check'{'重新检查(&I)'}'apply'{switch($script:plan.action){'install'{'安装(&I)'}'install-player'{'安装播放器(&I)'}'update'{'更新(&I)'}'recover'{'恢复配置(&I)'}}}default{'无法继续'}}}
         $script:restoreButton.Enabled = $available -and $null -ne $script:plan -and [bool]$script:plan.canRestore -and [bool]$script:plan.restorePlanToken
         $script:restoreButton.Visible = -not $script:busy -and $script:plan -and [bool]$script:plan.canRestore
-        $script:detailsButton.Visible=$hasPlayer -and -not $script:busy
+        $script:detailsButton.Visible=$hasSelection -and -not $script:busy
         $script:detailsButton.Enabled = $available; $script:form.UseWaitCursor = $script:busy
         $script:resultLayout.RowStyles[1].Height=ConvertTo-InstallerPixels $(if($script:summaryLabel.Text){26}else{0})
         $footer.PerformLayout()
@@ -261,9 +294,13 @@ public static class MpvnetInstallerDpi {
     function Show-Plan($Result) {
         $script:plan = $Result.plan; $script:dependencies = @($Result.tools)
         $plan = $script:plan
+        $newPlayer = $plan -and $plan.action -eq 'install-player'
         if ($plan) {
             $script:target = $plan.target; $script:targetSource = $plan.targetSource; $script:targetExists = [bool]$plan.targetExists
-            $script:targetBox.Text = $script:target
+            if ($newPlayer -and $plan.launcherPath) {
+                $script:targetCaption.Text = '启动入口'; $script:targetBox.AccessibleName = '启动入口完整路径'
+                $script:targetBox.Text = $plan.launcherPath
+            } else { $script:targetBox.Text = $script:target }
             $existence = if ($script:targetExists) { '目录已存在' } else { '安装时创建目录' }
             $script:sourceLabel.Text = '来源：' + $plan.targetSourceLabel + '  ·  ' + $existence
         } elseif ($Result.resolution) {
@@ -281,21 +318,23 @@ public static class MpvnetInstallerDpi {
             else { '可选依赖：PATH 已发现 FFmpeg / Python（仅检查路径，未运行）。' }
         if ($Result.error) { Set-Failure '检查未完成，请查看详情' $Result.error; return }
         if (-not $plan) { Set-Failure '检查未完成，请查看详情' '后台检查未返回有效结果。'; return }
-        $version = if ($plan.installedVersion) { $plan.installedVersion } elseif ($plan.action -eq 'install') { '尚未安装' } else { '未能识别' }
-        $script:summaryLabel.Text = "当前配置：$version    安装包版本：$($plan.packageVersion)`r`n文件变更：共 $($plan.changedFiles) 个（新增 $($plan.addedFiles) 个）"
+        $version = if ($plan.installedVersion) { $plan.installedVersion } elseif ($plan.action -in @('install','install-player')) { '尚未安装' } else { '未能识别' }
         $script:restoreLabel = switch ($plan.restoreKind) { 'remove-install' { '撤销本次安装' } 'restore-version' { '还原更新前配置' } default { '还原上次操作' } }
         $script:restoreButton.Text = $script:restoreLabel + '(&U)'
-        $script:installButton.Text = switch ($plan.action) { 'update' { '开始更新(&I)' } 'recover' { '恢复操作前配置(&I)' } 'current' { '无需更新' } 'blocked' { '暂无法继续' } default { '开始安装(&I)' } }
-        $script:resultState = if ($plan.action -eq 'blocked') { 'blocked' } elseif ($plan.action -eq 'current') { 'current' } else { 'ready' }
-        $script:statusLabel.Text = switch ($plan.action) { 'install' { '检查通过，可以安装' } 'update' { '检查通过，可以更新' } 'current' { '无需更新' } 'recover' { '上次操作未完成，需要恢复' } default { '存在问题，暂无法继续' } }
-        $script:reasonLabel.Text = $plan.reason
-        $script:nextLabel.Text = if ($plan.action -eq 'install') { "当前没有旧配置需要备份；安装时将创建可撤销记录。`r`n记录位置：$($plan.backupRoot)" }
+        $blocked = $plan.action -eq 'blocked' -or ($newPlayer -and -not $plan.eligible)
+        $script:resultState = if ($blocked) { 'blocked' } elseif ($plan.action -eq 'current') { 'current' } else { 'ready' }
+        $script:nextLabel.Text = if ($newPlayer -and -not $blocked) { "安装后双击 Play.cmd 启动。`r`n配置安装记录：$($plan.backupRoot)" }
+            elseif ($plan.action -eq 'install') { "当前没有旧配置需要备份；安装时将创建可撤销记录。`r`n记录位置：$($plan.backupRoot)" }
             elseif ($plan.action -eq 'recover') { "将恢复到本次操作前，请先退出 mpv.net。`r`n备份位置：$($plan.backupRoot)" }
-            elseif ($plan.action -eq 'blocked') { '请查看详情并保留已有文件，处理后重新检查。不会自动合并或覆盖冲突。' }
+            elseif ($blocked) { '请查看详情并保留已有文件，处理后重新检查。不会自动合并或覆盖冲突。' }
             else { "更新前自动备份旧配置；快捷键设置、独立路径配置及其他个人文件将保留。`r`n备份位置：$($plan.backupRoot)" }
-        $lines = @("播放器：$($script:playerBox.Text)", "配置目录：$($plan.target)", "来源：$($plan.targetSourceLabel)", "当前配置版本：$version", "安装包版本：$($plan.packageVersion)", "备份位置：$($plan.backupRoot)", '', $plan.reason)
+        $programPath = if ($newPlayer) { $plan.playerPath } else { $script:playerPath }
+        $launchPath = if ($newPlayer) { $plan.launcherPath } else { $script:launcherPath }
+        $lines = @("播放器：$programPath")
+        if ($launchPath) { $lines += "启动入口：$launchPath" }
+        $lines += @("配置目录：$($plan.target)", "来源：$($plan.targetSourceLabel)", "当前配置版本：$version", "安装包版本：$($plan.packageVersion)", "备份位置：$($plan.backupRoot)", '', $plan.reason)
         if ($plan.runningProcesses.Count) { $lines += ''; $lines += '请退出以下播放器实例后重新检查（安装器不会自动关闭）：'; foreach ($process in $plan.runningProcesses) { $lines += "  $($process.name)  PID $($process.pid)" } }
-        $lines += ''; $lines += '文件变更：'
+        if ($plan.files.Count) { $lines += ''; $lines += '文件变更：' }
         foreach ($file in $plan.files) {
             $change = switch ($file.change) { 'added' { '新增' } 'modified' { '修改' } 'unchanged' { '保持' } default { '需检查' } }
             $lines += "  $change  $($file.path)"
@@ -319,12 +358,16 @@ public static class MpvnetInstallerDpi {
         # Compact presentation; the complete plan and dependency report above
         # remain in the selectable details area.
         $script:summaryLabel.Text=if($plan.action -eq 'update' -and $version -ne $plan.packageVersion){"$version  →  $($plan.packageVersion)"}elseif($plan.packageVersion){"版本 $($plan.packageVersion)"}else{''}
-        $script:statusLabel.Text=switch($plan.action){'install'{'可以安装'}'update'{'可以更新'}'current'{'无需更新'}'recover'{'上次操作未完成'}default{'暂时不能继续'}}
-        $script:reasonLabel.Text=switch($plan.action){'install'{'个人设置会保留，安装后可撤销。'}'update'{'更新前自动备份，个人设置保留。'}'current'{'当前配置包已是这个版本。'}'recover'{'先恢复到操作前，再继续安装。'}default{'存在文件或目录问题，请查看详情后重新检查。'}}
+        $script:statusLabel.Text=if($blocked){'暂时不能继续'}else{switch($plan.action){'install'{'可以安装'}'install-player'{'可以新装播放器'}'update'{'可以更新'}'current'{'无需更新'}'recover'{'上次操作未完成'}}}
+        $script:reasonLabel.Text=switch($plan.action){'install'{'个人设置会保留，安装后可撤销。'}'install-player'{'将离线安装播放器和配置。安装后双击 Play.cmd 启动。'}'update'{'更新前自动备份，个人设置保留。'}'current'{'当前配置包已是这个版本。'}'recover'{'先恢复到操作前，再继续安装。'}}
+        if ($blocked) {
+            $brief = ([string]$plan.reason -replace '\r?\n', ' ').Trim()
+            $script:reasonLabel.Text = if ($brief -and $brief.Length -le 64) { $brief } elseif ($script:installDirectory) { '请查看详情，或更换安装目录后继续。' } else { '存在文件或目录问题，请查看详情后重新检查。' }
+        }
         if($plan.runningProcesses.Count){$script:statusLabel.Text='请先关闭播放器';$script:reasonLabel.Text='关闭所有 mpv.net 窗口后，重新检查。'}
         if($script:preserveResult -and $script:lastResult){
             $script:statusLabel.Text=$script:lastResult.title
-            $script:reasonLabel.Text=if($script:lastResult.operation -in @('Restore','Recover')){'已回到操作前的配置。'}else{'重新打开播放器后生效。'}
+            $script:reasonLabel.Text=if($script:lastResult.operation -eq 'InstallPlayer'){'在资源管理器中双击 Play.cmd 启动播放器。'}elseif($script:lastResult.operation -in @('Restore','Recover')){'已回到操作前的配置。'}else{'重新打开播放器后生效。'}
         }
     }
     function Get-ControlSnapshot([Windows.Forms.Control]$Parent) {
@@ -346,8 +389,9 @@ public static class MpvnetInstallerDpi {
             planAction = $(if ($script:plan) { $script:plan.action } else { $null }); canRestore = [bool]($script:plan -and $script:plan.canRestore)
             state = $script:resultState; busy = $script:busy; installed = $script:installed; detailsExpanded = $script:detailsExpanded
             reason = $script:reasonLabel.Text; nextStep = $script:nextLabel.Text; dependencySummary = $script:dependencyLabel.Text
-            buttonsEnabled = [ordered]@{ browse = $script:playerBrowse.Enabled; recheck = $script:recheckButton.Enabled; install = $script:installButton.Enabled; restore = $script:restoreButton.Enabled; details = $script:detailsButton.Enabled }
-            target = $script:target; targetSource = $script:targetSource; targetExists = $script:targetExists; sourceText = $script:sourceLabel.Text; player = $script:playerBox.Text
+            buttonsEnabled = [ordered]@{ browse = $script:playerBrowse.Enabled; newPlayer = $script:directoryBrowse.Enabled; recheck = $script:recheckButton.Enabled; install = $script:installButton.Enabled; restore = $script:restoreButton.Enabled; details = $script:detailsButton.Enabled }
+            target = $script:target; targetSource = $script:targetSource; targetExists = $script:targetExists; sourceText = $script:sourceLabel.Text; player = $script:playerPath
+            installDirectory = $script:installDirectory; launcher = $script:launcherPath
             dependencies = $script:dependencies; onlySelector = 'mpvnet.exe'; logText = $script:logBox.Text; controlsBounds = @(Get-ControlSnapshot $script:form)
             clientSize = [ordered]@{ width = $script:form.ClientSize.Width; height = $script:form.ClientSize.Height } }
         [IO.File]::WriteAllText(($SnapshotPath + '.json'), ($snapshot | ConvertTo-Json -Depth 30), (New-Object Text.UTF8Encoding($false)))
@@ -361,28 +405,63 @@ public static class MpvnetInstallerDpi {
     function Start-Work([string]$Operation) {
         if ($script:busy) { return }
         $token = if ($Operation -eq 'Restore') { $script:plan.restorePlanToken } elseif ($script:plan) { $script:plan.planToken } else { '' }
-        if ($Operation -ne 'check') { $script:preserveResult = $false }
+        if ($Operation -notin @('check','discover')) { $script:preserveResult = $false }
         $script:busy = $true; $script:operation = $Operation; Update-Enabled
-        $script:resultState = if ($Operation -eq 'check') { 'checking' } else { 'working' }
-        $script:statusLabel.Text = switch ($Operation) { 'check' { '正在检查配置…' } 'Restore' { '正在还原配置…' } 'Recover' { '正在恢复操作前配置…' } default { if ($script:plan.action -eq 'install') { '正在安装配置…' } else { '正在备份并更新配置…' } } }
-        $script:reasonLabel.Text = if ($Operation -eq 'check') { '正在检查配置目录。' } else { '完成前请保持窗口打开。' }
+        $script:resultState = if ($Operation -in @('check','discover')) { 'checking' } else { 'working' }
+        $script:statusLabel.Text = switch ($Operation) {
+            'discover' { '正在查找已有播放器…' }
+            'check' { if ($script:installDirectory) { '正在检查安装目录…' } else { '正在检查配置…' } }
+            'InstallPlayer' { '正在安装播放器…' }
+            'Restore' { '正在还原配置…' }
+            'Recover' { '正在恢复操作前配置…' }
+            default { if ($script:plan.action -eq 'install') { '正在安装配置…' } else { '正在备份并更新配置…' } }
+        }
+        $script:reasonLabel.Text = if ($Operation -in @('check','discover')) { '' } else { '完成前请保持窗口打开。' }
         $script:nextLabel.Text = '请等待处理完成。当前不能重复操作或关闭窗口。'
         $script:runspace = [RunspaceFactory]::CreateRunspace(); $script:runspace.Open()
         $script:worker = [PowerShell]::Create(); $script:worker.Runspace = $script:runspace
         $null = $script:worker.AddScript({
-            param($Module, $Operation, $Player, $Package, $Backup, $Token)
+            param($Module, $PortableModule, $Operation, $Player, $Directory, $Package, $Backup, $Token)
             $ErrorActionPreference = 'Stop'
             Import-Module (Join-Path ([IO.Path]::GetDirectoryName($Module)) 'common.psm1') -Force
+            if ($Operation -eq 'discover') {
+                $candidates = @(Get-Command mpvnet.exe -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object Path)
+                $appPath = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mpvnet.exe'
+                foreach ($hive in @('HKEY_CURRENT_USER','HKEY_LOCAL_MACHINE')) {
+                    try { $candidates += [Microsoft.Win32.Registry]::GetValue("$hive\$appPath", '', '') } catch { }
+                }
+                $packagePrefix = (Get-KitRoot $Package).TrimEnd('\') + '\'
+                $players = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+                foreach ($candidate in $candidates) {
+                    if ($candidate -isnot [string]) { continue }
+                    $path = $candidate.Trim().Trim('"')
+                    if ($path -notmatch '^[a-z]:[\\/]') { continue }
+                    try {
+                        $path = Get-KitPlayer $path
+                        if ([IO.Path]::GetFileName($path) -ieq 'mpvnet.exe' -and
+                            -not $path.StartsWith($packagePrefix, [StringComparison]::OrdinalIgnoreCase)) { [void]$players.Add($path) }
+                    } catch { } # Stale and inaccessible registered paths do not block manual selection.
+                }
+                # Avoid guessing between independent installations.
+                return [pscustomobject]@{ playerPath = $(if ($players.Count -eq 1) { $players | Select-Object -First 1 }) }
+            }
             Import-Module $Module -Force
-            $arguments = @{ PlayerPath = $Player; PackageRoot = $Package }
+            $arguments = @{ PackageRoot = $Package }
             if ($Backup) { $arguments.BackupRoot = $Backup }
+            if ($Directory) {
+                Import-Module $PortableModule
+                $arguments.InstallDirectory = $Directory
+            } else { $arguments.PlayerPath = $Player }
             if ($Operation -eq 'check') {
                 $resolved = $null; $plan = $null; $failure = ''
                 try {
-                    $validatedPlayer = Get-KitPlayer $Player
-                    if ([IO.Path]::GetFileName($validatedPlayer) -ine 'mpvnet.exe') { throw '请选择名为 mpvnet.exe 的 mpv.net 播放器程序。' }
-                    $resolved = Get-KitTargetContext -PlayerPath $validatedPlayer
-                    $plan = Get-KitMaintenancePlan @arguments
+                    if ($Directory) { $plan = Get-KitPortablePlan @arguments }
+                    else {
+                        $validatedPlayer = Get-KitPlayer $Player
+                        if ([IO.Path]::GetFileName($validatedPlayer) -ine 'mpvnet.exe') { throw '请选择名为 mpvnet.exe 的 mpv.net 播放器程序。' }
+                        $resolved = Get-KitTargetContext -PlayerPath $validatedPlayer
+                        $plan = Get-KitMaintenancePlan @arguments
+                    }
                 } catch { $failure = $_.Exception.Message }
                 $tools = @()
                 try {
@@ -391,13 +470,16 @@ public static class MpvnetInstallerDpi {
                     $tools = @(& (Get-Module 'clean-install') { @((Get-CleanOptionalTool 'ffmpeg.exe' 'FFmpeg'), (Get-CleanOptionalTool 'python.exe' 'Python')) })
                 } catch { } # Optional PATH discovery never blocks the maintenance plan.
                 [pscustomobject]@{ resolution = $resolved; plan = $plan; tools = @($tools); error = $failure }
-            } else { Invoke-KitMaintenance @arguments -Operation $Operation -ExpectedPlanToken $Token }
-        }).AddArgument($script:modulePath).AddArgument($Operation).AddArgument($script:playerBox.Text).AddArgument($script:packageRoot).AddArgument($script:backupRoot).AddArgument($token)
+            } elseif ($Operation -eq 'InstallPlayer') { Invoke-KitPortableInstall @arguments -ExpectedPlanToken $Token }
+            else { Invoke-KitMaintenance @arguments -Operation $Operation -ExpectedPlanToken $Token }
+        }).AddArgument($script:modulePath).AddArgument($script:portableModulePath).AddArgument($Operation).AddArgument($script:playerPath).
+            AddArgument($script:installDirectory).AddArgument($script:packageRoot).AddArgument($script:backupRoot).AddArgument($token)
         $script:async = $script:worker.BeginInvoke(); $script:timer.Start()
     }
     function Start-AutomaticCheck([bool]$KeepResult = $false) {
-        if ($script:busy -or $script:confirming -or -not $script:playerBox.Text) { return }
+        if ($script:busy -or $script:confirming -or -not ($script:playerPath -or $script:installDirectory)) { return }
         $script:preserveResult = $KeepResult; $script:plan = $null
+        $script:targetCaption.Text = '配置目录'; $script:targetBox.AccessibleName = '配置目录，可选择完整路径'
         if (-not $KeepResult) {
             $script:lastResult = $null; $script:target = ''; $script:targetSource = ''; $script:targetExists = $null; $script:dependencies = @()
             $script:targetBox.Text = '正在判断…'; $script:sourceLabel.Text = '正在识别来源与目录状态…'
@@ -410,28 +492,41 @@ public static class MpvnetInstallerDpi {
     $script:timer.Add_Tick({
         if (-not $script:async.IsCompleted) { return }
         $script:timer.Stop(); $refresh = $false
+        $discovery = $script:operation -eq 'discover'
         try {
             $output = $script:worker.EndInvoke($script:async)
             if ($script:worker.Streams.Error.Count -gt 0) { throw ($script:worker.Streams.Error | Out-String) }
             if (-not $output.Count) { throw '后台操作未返回结果。请重新检查后再试。' }
             $result = $output[$output.Count - 1]
-            if ($script:operation -eq 'check') { Show-Plan $result }
+            if ($discovery) {
+                if ($result.playerPath) { Set-InstallSelection $result.playerPath }
+            } elseif ($script:operation -eq 'check') { Show-Plan $result }
             else {
+                if ($script:operation -eq 'InstallPlayer' -and ($result.mode -ne 'applied' -or -not $result.playerPath -or -not $result.launcherPath)) {
+                    throw '未能确认完整安装结果，请重新检查安装目录。'
+                }
+                $changedFiles = if ($null -ne $result.changedFiles) { $result.changedFiles } else { $script:plan.changedFiles }
                 $script:installed = $true; $script:plan = $null; $script:resultState = 'completed'
-                $title = if ($script:operation -eq 'Restore') { '上次操作已还原' } elseif ($script:operation -eq 'Recover') { '已恢复到本次操作前' } elseif ($script:lastOperation -eq 'install') { '配置安装完成' } else { '配置更新完成' }
-                $description = if ($script:operation -eq 'Restore' -and $script:restoreLabel -eq '撤销本次安装') { '本次安装已撤销，其他个人文件保持不变。' }
+                if ($script:operation -eq 'InstallPlayer') { Set-InstallSelection -Player $result.playerPath -Launcher $result.launcherPath }
+                $title = if ($script:operation -eq 'InstallPlayer') { '播放器安装完成' } elseif ($script:operation -eq 'Restore') { '上次操作已还原' } elseif ($script:operation -eq 'Recover') { '已恢复到本次操作前' } elseif ($script:lastOperation -eq 'install') { '配置安装完成' } else { '配置更新完成' }
+                $description = if ($script:operation -eq 'InstallPlayer') { "双击 Play.cmd 启动播放器：`r`n$($result.launcherPath)" }
+                    elseif ($script:operation -eq 'Restore' -and $script:restoreLabel -eq '撤销本次安装') { '本次安装已撤销，其他个人文件保持不变。' }
                     elseif ($script:operation -eq 'Recover') { '未完成的操作已恢复到操作前状态。请重新检查后继续。' }
-                    else { "已处理 $($result.changedFiles) 个配置文件，个人文件保持不变。请重新启动 mpv.net。" }
+                    else { "已处理 $changedFiles 个配置文件，个人文件保持不变。请重新启动 mpv.net。" }
                 $backupText = if ($result.backupManifest) { '备份或安装记录：' + $result.backupManifest } else { '已有备份仍保留，可重新检查配置状态。' }
-                $script:lastResult = [pscustomobject]@{ state = 'completed'; operation=$script:operation; title = $title; description = $description; backupText = $backupText; changedFiles = $result.changedFiles }
+                $script:lastResult = [pscustomobject]@{ state = 'completed'; operation=$script:operation; title = $title; description = $description; backupText = $backupText; changedFiles = $changedFiles }
                 $script:statusLabel.Text = $title; $script:reasonLabel.Text = $description; $script:nextLabel.Text = $backupText
                 $refresh = $true
             }
         } catch {
-            $failureTitle = if ($script:operation -eq 'check') { '检查未完成，请查看详情' } else { '操作未完成，请查看详情' }
-            Set-Failure $failureTitle $_.Exception.Message
+            if (-not $discovery) {
+                $failureTitle = if ($script:operation -eq 'check') { '检查未完成，请查看详情' } else { '操作未完成，请查看详情' }
+                Set-Failure $failureTitle $_.Exception.Message
+            }
         } finally { Dispose-Worker; $script:busy = $false; Update-Enabled }
         if ($refresh) { Start-AutomaticCheck $true }
+        elseif ($discovery -and $script:playerPath) { Start-AutomaticCheck }
+        elseif ($discovery) { Set-InstallerIdle; if ($SnapshotPath) { Save-InstallerSnapshot } }
         elseif ($SnapshotPath) { Save-InstallerSnapshot }
     })
     $script:detailsButton.Add_Click({ Set-DetailsExpanded (-not $script:detailsExpanded) })
@@ -441,11 +536,22 @@ public static class MpvnetInstallerDpi {
         $dialog = New-Object Windows.Forms.OpenFileDialog
         try {
             $dialog.Title = '选择 mpvnet.exe'; $dialog.Filter = 'mpv.net 播放器 (mpvnet.exe)|mpvnet.exe'; $dialog.CheckFileExists = $true
-            if ($script:playerBox.Text -and [IO.File]::Exists($script:playerBox.Text)) { $dialog.FileName = $script:playerBox.Text }
-            if ($dialog.ShowDialog($script:form) -eq 'OK') { $script:playerBox.Text = $dialog.FileName; Start-AutomaticCheck }
+            if ($script:playerPath -and [IO.File]::Exists($script:playerPath)) { $dialog.FileName = $script:playerPath }
+            if ($dialog.ShowDialog($script:form) -eq 'OK') { Set-InstallSelection $dialog.FileName; Start-AutomaticCheck }
         } finally { $dialog.Dispose() }
     }
+    $selectDirectory = {
+        if ($script:busy -or $script:confirming -or -not $script:portablePackage) { return }
+        $folder = New-Object Windows.Forms.FolderBrowserDialog
+        try {
+            $folder.Description = '请选择或新建一个空目录，用于安装 mpv.net 播放器。'
+            $folder.ShowNewFolderButton = $true
+            if ($script:installDirectory -and [IO.Directory]::Exists($script:installDirectory)) { $folder.SelectedPath = $script:installDirectory }
+            if ($folder.ShowDialog($script:form) -eq 'OK') { Set-InstallSelection -Directory $folder.SelectedPath; Start-AutomaticCheck }
+        } finally { $folder.Dispose() }
+    }
     $script:playerBrowse.Add_Click($selectPlayer)
+    $script:directoryBrowse.Add_Click($selectDirectory)
     function Confirm-Maintenance([string]$Operation) {
         if (-not $script:plan -or $script:busy -or $script:confirming) { return }
         if ($Operation -eq 'Restore') {
@@ -456,9 +562,13 @@ public static class MpvnetInstallerDpi {
             $description=if($removeInstall){'将移除本次安装的配置包文件，个人文件保留。'}else{'将回到更新前的配置，并移除那次更新新增的文件。个人文件保留。'}
             $detailsTitle='还原说明'
         } else {
-            if (-not $script:plan.eligible -or $script:plan.action -notin @('install', 'update', 'recover')) { return }
+            if (-not $script:plan.eligible -or $script:plan.action -notin @('install', 'install-player', 'update', 'recover')) { return }
             $script:lastOperation = $script:plan.action
             if ($script:plan.action -eq 'recover') { $Operation='Recover';$caption='恢复操作前配置？';$actionLabel='恢复';$description='将撤销未完成的更改，使用已有备份恢复。';$detailsTitle='恢复说明' }
+            elseif ($script:plan.action -eq 'install-player') {
+                $Operation = 'InstallPlayer'; $caption = '安装 mpv.net 播放器？'; $actionLabel = '安装播放器'; $detailsTitle = '安装详情'
+                $description = '即将安装播放器和配置。日后撤销安装只移除套件配置，播放器文件会保留。'
+            }
             elseif ($script:plan.action -eq 'install') { $caption='安装配置包？';$actionLabel='安装';$description='个人设置会保留，安装后可撤销。';$detailsTitle="文件变更 · $($script:plan.changedFiles) 项" }
             else { $caption='更新配置包？';$actionLabel='更新';$description='更新前自动备份，个人设置会保留。';$detailsTitle="文件变更 · $($script:plan.changedFiles) 项" }
         }
@@ -467,7 +577,8 @@ public static class MpvnetInstallerDpi {
         if ($Operation -eq 'Apply' -and $script:plan.action -eq 'update' -and $script:plan.releaseNotice) {
             $description += "`r`n`r`n" + $script:plan.releaseNotice
         }
-        $message=$description+"`r`n`r`n配置目录`r`n$($script:plan.target)"
+        $message = if ($Operation -eq 'InstallPlayer') { $description + "`r`n`r`n启动入口`r`n$($script:plan.launcherPath)" }
+            else { $description + "`r`n`r`n配置目录`r`n$($script:plan.target)" }
         $details=$script:logBox.Text
         if($Operation -in @('Restore','Recover')){$details="如果相关文件后来又被修改，会停止恢复，不覆盖后续修改。`r`n`r`n"+$details}
         elseif($script:plan.releaseNotice){$details += "`r`n`r`n更新说明`r`n"+$script:plan.releaseNotice}
@@ -481,13 +592,13 @@ public static class MpvnetInstallerDpi {
     }
     $script:installButton.Add_Click({
         if($script:busy -or $script:confirming){return}
-        switch($script:primaryMode){'browse'{& $selectPlayer}'finish'{$script:form.Close()}'check'{Start-AutomaticCheck}'apply'{Confirm-Maintenance 'Apply'}}
+        switch($script:primaryMode){'browse'{& $selectPlayer}'directory'{& $selectDirectory}'finish'{$script:form.Close()}'check'{Start-AutomaticCheck}'apply'{Confirm-Maintenance 'Apply'}}
     })
     $script:restoreButton.Add_Click({ Confirm-Maintenance 'Restore' })
     $script:form.Add_KeyDown({ param($sender, $eventArgs)
         if ($eventArgs.Alt -and $eventArgs.KeyCode -eq [Windows.Forms.Keys]::D -and $script:detailsButton.Enabled) {
             $eventArgs.Handled=$true; $eventArgs.SuppressKeyPress=$true
-            if($script:playerBox.Text -and -not $script:busy -and -not $script:confirming){Set-DetailsExpanded (-not $script:detailsExpanded)}
+            if(($script:playerPath -or $script:installDirectory) -and -not $script:busy -and -not $script:confirming){Set-DetailsExpanded (-not $script:detailsExpanded)}
         }
         if ($eventArgs.KeyCode -eq [Windows.Forms.Keys]::Escape) {
             $eventArgs.Handled = $true; $eventArgs.SuppressKeyPress = $true
@@ -500,7 +611,7 @@ public static class MpvnetInstallerDpi {
             if ($script:busy) { $script:nextLabel.Text = '正在处理，请等待完成后关闭窗口。' }
         }
     })
-    if ($PlayerPath) { $script:playerBox.Text = $PlayerPath }
+    if ($PlayerPath) { Set-InstallSelection $PlayerPath }
     $workingArea = [Windows.Forms.Screen]::FromControl($script:form).WorkingArea
     $availableHeight = [Math]::Max(1, $workingArea.Height - (ConvertTo-InstallerPixels 16))
     $script:form.MinimumSize = New-Object Drawing.Size([Math]::Min($script:form.MinimumSize.Width, $workingArea.Width), [Math]::Min($script:form.MinimumSize.Height, $availableHeight))
@@ -508,7 +619,11 @@ public static class MpvnetInstallerDpi {
     $script:form.ResumeLayout($true)
     Update-Enabled
     $script:form.Add_Shown({
-        if ($script:playerBox.Text) { Start-AutomaticCheck }
+        if ($script:playerPath) { Start-AutomaticCheck }
+        elseif ($script:portablePackage) {
+            try { Start-Work 'discover' }
+            catch { Dispose-Worker; $script:busy = $false; Set-InstallerIdle; Update-Enabled; if ($SnapshotPath) { Save-InstallerSnapshot } }
+        }
         elseif ($SnapshotPath) { Save-InstallerSnapshot }
     })
     try { [void]$script:form.ShowDialog() } finally { $script:timer.Dispose(); Dispose-Worker; $script:form.Dispose() }

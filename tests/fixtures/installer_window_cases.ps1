@@ -1,6 +1,7 @@
-﻿param([string]$SourceRoot, [string]$PackageRoot, [string]$FixtureRoot, [switch]$NoShow, [string]$UpgradeFrom)
+﻿param([string]$SourceRoot, [string]$PackageRoot, [string]$FixtureRoot, [switch]$NoShow, [string]$UpgradeFrom, [switch]$Portable)
 $ErrorActionPreference = 'Stop'
 if (-not [IO.Path]::IsPathRooted($FixtureRoot) -or (Test-Path -LiteralPath $FixtureRoot)) { throw 'A new absolute fixture directory is required.' }
+if ($Portable -and ($UpgradeFrom -or -not $NoShow)) { throw 'The portable fixture requires -NoShow and its own full package.' }
 [void][IO.Directory]::CreateDirectory($FixtureRoot)
 $script:fixtureRoot = $FixtureRoot
 $script:fixtureTarget = Join-Path $FixtureRoot '配置 空格/长路径用于检查换行与完整选择/portable_config'
@@ -8,6 +9,18 @@ $script:fixtureTarget = Join-Path $FixtureRoot '配置 空格/长路径用于检
 $script:fixturePlayer = Join-Path $FixtureRoot 'mpvnet.exe'
 [IO.File]::WriteAllText($script:fixturePlayer, 'Fixture only; never execute.')
 $env:MPVNET_HOME = $script:fixtureTarget
+if ($Portable) {
+    $script:fixtureConflict = Join-Path $FixtureRoot '已占用'
+    [void][IO.Directory]::CreateDirectory($script:fixtureConflict)
+    [IO.File]::WriteAllText((Join-Path $script:fixtureConflict '保留.txt'), 'Keep original contents.')
+    $script:fixtureInstall = Join-Path $FixtureRoot '全新 便携播放器'
+    $script:fixtureFolderChoice = $script:fixtureConflict
+    $script:fixtureLauncher = Join-Path $script:fixtureInstall 'Play.cmd'
+    $script:fixtureInstalledPlayer = Join-Path $script:fixtureInstall 'player\mpvnet.exe'
+    $script:fixtureOtherPlayer = Join-Path $FixtureRoot 'other-player'
+    [void][IO.Directory]::CreateDirectory($script:fixtureOtherPlayer)
+    [IO.File]::Copy($script:fixturePlayer, (Join-Path $script:fixtureOtherPlayer 'mpvnet.exe'))
+}
 function Get-FixtureFingerprint([string]$Root = $script:fixtureTarget) {
     if (-not (Test-Path -LiteralPath $Root)) { return '' }
     $items=Get-ChildItem -LiteralPath $Root -File -Recurse -Force | Sort-Object FullName
@@ -79,6 +92,16 @@ function Invoke-FixtureClick([Windows.Forms.Button]$Button) {
     $method=[Windows.Forms.Button].GetMethod('OnClick',[Reflection.BindingFlags]'Instance,NonPublic')
     [void]$method.Invoke($Button,@([EventArgs]::Empty))
 }
+function Show-FixtureFolder([Windows.Forms.FolderBrowserDialog]$Dialog) {
+    Assert-Fixture $Dialog.ShowNewFolderButton 'Folder picker cannot create a new folder'
+    $Dialog.SelectedPath = $script:fixtureFolderChoice
+    return [Windows.Forms.DialogResult]::OK
+}
+function Show-FixturePlayer([Windows.Forms.OpenFileDialog]$Dialog) {
+    Assert-Fixture ($Dialog.CheckFileExists -and $Dialog.Filter.EndsWith('|mpvnet.exe')) 'Existing player picker does not constrain the selection'
+    $Dialog.FileName = $script:fixturePlayer
+    return [Windows.Forms.DialogResult]::OK
+}
 $script:visibleState=[Windows.Forms.Control].GetMethod('GetState',[Reflection.BindingFlags]'Instance,NonPublic')
 function Paint-FixtureControl($Control,$Bitmap,$Window,[Drawing.Rectangle]$Clip) {
     if($Control -ne $Window -and -not $script:visibleState.Invoke($Control,@(2))){return}
@@ -132,6 +155,14 @@ if($parseErrors.Count){throw ('Installer file cannot be parsed: '+($parseErrors.
 $source = [IO.File]::ReadAllText($sourcePath)
 $source = $source.Replace('[Windows.Forms.MessageBox]::Show', '[FixtureMessageBox]::Show')
 $source = $source.Replace('$confirmation.ShowDialog($script:form)', '(Show-FixtureConfirmation $confirmation $script:form)')
+if ($Portable) {
+    $source = $source.Replace('$folder.ShowDialog($script:form)', '(Show-FixtureFolder $folder)')
+    $source = $source.Replace('$dialog.ShowDialog($script:form)', '(Show-FixturePlayer $dialog)')
+    # Only use the process-local synthetic PATH for automatic discovery.
+    $discoveryRegistry = '                    try { $candidates += [Microsoft.Win32.Registry]::GetValue("$hive\$appPath", '''', '''') } catch { }'
+    if (-not $source.Contains($discoveryRegistry)) { throw 'Installer registry discovery fixture hook missing.' }
+    $source = $source.Replace($discoveryRegistry, '                    continue')
+}
 if($NoShow) {
     $source=$source.Replace('$script:form.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, $script:form.Width, $script:form.Height)))','Paint-FixtureWindow $script:form $bitmap')
 }
@@ -158,9 +189,68 @@ $hook = @'
             }
             $SnapshotPath = Join-Path $script:fixtureRoot ("stage-$($script:fixtureStage).png")
             $script:snapshotTaken = $false
+            if ($Portable) {
+                switch ($script:fixtureStage) {
+                    0 {
+                        Assert-Fixture ($script:portablePackage -and $script:primaryMode -eq 'directory' -and $script:directoryBrowse.Enabled -and $script:playerBrowse.Enabled) 'Full package did not offer both entry points'
+                        Save-InstallerSnapshot
+                        $script:fixtureOriginalPath = $env:PATH
+                        $env:PATH = "$script:fixtureRoot;$script:fixtureOtherPlayer"
+                        Start-Work 'discover'
+                    }
+                    1 {
+                        Assert-Fixture ($script:resultState -eq 'idle' -and -not $script:playerPath) 'Ambiguous PATH discovery selected a player'
+                        $env:PATH = $script:fixtureOtherPlayer
+                        Start-Work 'discover'
+                    }
+                    2 {
+                        Assert-Fixture ($script:playerPath -eq (Join-Path $script:fixtureOtherPlayer 'mpvnet.exe') -and $script:resultState -eq 'blocked') 'Unique PATH discovery did not check the existing player'
+                        $env:PATH = $script:fixtureOriginalPath
+                        Invoke-FixtureClick $script:playerBrowse
+                    }
+                    3 {
+                        Assert-Fixture ($script:resultState -eq 'blocked' -and $script:playerPath -eq $script:fixturePlayer -and -not $script:installButton.Enabled) 'Incompatible existing player was accepted'
+                        Assert-Fixture (-not (Get-FixtureFingerprint)) 'Existing player check changed its configuration'
+                        Invoke-FixtureClick $script:directoryBrowse
+                    }
+                    4 {
+                        Assert-Fixture ($script:resultState -eq 'blocked' -and $script:installDirectory -eq $script:fixtureConflict -and $script:directoryBrowse.Enabled) 'Occupied directory did not permit choosing another location'
+                        Assert-Fixture ($script:logBox.Text.Contains('保留.txt')) 'Occupied file missing from diagnostics'
+                        $script:fixtureFolderChoice = $script:fixtureInstall
+                        Invoke-FixtureClick $script:directoryBrowse
+                    }
+                    5 {
+                        Assert-Fixture ($script:plan.action -eq 'install-player' -and $script:installButton.Enabled -and $script:targetBox.Text -eq $script:fixtureLauncher) 'New player plan or visible launcher preview missing'
+                        Save-InstallerSnapshot
+                        [FixtureMessageBox]::Answer = [Windows.Forms.DialogResult]::No
+                        Invoke-FixtureClick $script:installButton
+                        Assert-Fixture (-not $script:busy -and -not [IO.Directory]::Exists($script:fixtureInstall)) 'Canceled full install created its destination'
+                        Assert-Fixture ([FixtureMessageBox]::DefaultCancel -and [FixtureMessageBox]::LastMessage.Contains($script:fixtureLauncher) -and [FixtureMessageBox]::LastMessage.Contains('播放器文件会保留')) 'Confirmation lost launcher path, restore scope or default cancel'
+                        $script:fixtureChecks.Add('unique and ambiguous PATH discovery, both selectors, incompatible existing player, occupied directory, second selection and cancel without writes')
+                        [FixtureMessageBox]::Answer = [Windows.Forms.DialogResult]::Yes
+                        Invoke-FixtureClick $script:installButton
+                    }
+                    6 {
+                        Assert-Fixture ($script:resultState -eq 'completed' -and $script:plan.action -eq 'current' -and $script:plan.canRestore -and $script:restoreButton.Enabled) 'Full install did not refresh standard kit maintenance'
+                        Assert-Fixture ($script:playerPath -eq $script:fixtureInstalledPlayer -and $script:playerBox.Text -eq $script:fixtureLauncher -and [IO.File]::Exists($script:fixtureLauncher) -and [IO.File]::Exists($script:fixtureInstalledPlayer)) 'Full install paths are missing'
+                        Save-InstallerSnapshot
+                        $script:fixtureChecks.Add('full install through real confirmation and worker, visible launcher and ordinary kit recheck')
+                        Invoke-FixtureClick $script:restoreButton
+                    }
+                    7 {
+                        Assert-Fixture ($script:plan.action -eq 'install' -and -not $script:plan.canRestore) 'Kit configuration was not restored'
+                        Assert-Fixture ([IO.File]::Exists($script:fixtureLauncher) -and [IO.File]::Exists($script:fixtureInstalledPlayer)) 'Configuration restore removed the launcher or player'
+                        Assert-Fixture ([IO.File]::ReadAllText((Join-Path $script:fixtureConflict '保留.txt')) -eq 'Keep original contents.') 'Occupied directory changed'
+                        $script:fixtureChecks.Add('configuration restore preserves full player, launcher and conflicting directory')
+                        $script:fixtureTimer.Stop(); $script:form.Close()
+                    }
+                }
+                $script:fixtureStage++
+                return
+            }
             if($UpgradeFrom) {
                 switch($script:fixtureStage) {
-                    0 {$script:playerBox.Text=$script:fixturePlayer;Start-AutomaticCheck;$script:fixtureStage++}
+                    0 {Set-InstallSelection $script:fixturePlayer;Start-AutomaticCheck;$script:fixtureStage++}
                     1 {
                         Assert-Fixture ($script:plan.action -eq 'update' -and $script:installButton.Enabled) 'Upgrade state missing'
                         Save-InstallerSnapshot
@@ -209,7 +299,7 @@ $hook = @'
                     Assert-Fixture ($script:resultState -eq 'idle' -and $script:primaryMode -eq 'browse' -and $script:installButton.Enabled -and -not $script:recheckButton.Enabled) 'Initial primary action is not player selection'
                     Save-InstallerSnapshot
                     $script:fixtureChecks.Add('initial DPI awareness and scaled metrics, player selection primary action, disabled recheck, native form snapshot')
-                    $script:playerBox.Text = $script:fixturePlayer
+                    Set-InstallSelection $script:fixturePlayer
                     Start-AutomaticCheck; $script:fixtureStage++
                 }
                 1 {

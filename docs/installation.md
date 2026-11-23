@@ -1,22 +1,20 @@
 # 安装与个人配置维护
 
-mpvnet-kit 是面向 Windows mpv.net 的配置与脚本包，不包含播放器。功能操作见[功能指南](features.md)，参数调整见[配置说明](configuration.md)。
-
-**版本说明：**本指南适用于 v0.6.0。安装时以该包随附指南和更新确认内容为准；v0.2.0 的图形安装器仅支持首次安装。
+M6 离线候选包随附 mpv.net 官方 Windows x64 portable ZIP 和 mpvnet-kit。已有播放器和首次安装共用一个安装器。公开版 v0.6.0 只提供 kit，需要自行准备播放器。功能操作见[功能指南](features.md)，参数调整见[配置说明](configuration.md)。
 
 ## 1. 环境与依赖
 
-准备 Windows mpv.net 和系统自带的 Windows PowerShell。播放器可从 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)获取。当前已验证的播放器基线为 mpv.net 7.1.2 / libmpv 0.41；其他版本尚未完成验证。
+M6 候选使用 Windows 自带的 Windows PowerShell 和随包的官方 mpv.net 7.1.2.0 x64。两种安装方式都可以离线完成。已有播放器的程序与播放核心须匹配本候选已验证的官方文件。公开版 v0.6.0 的用户可从 [mpv.net 发布页](https://github.com/mpvnet-player/mpv.net/releases)获取播放器。
 
 FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者均为可选依赖，缺少时不影响基本安装和本地播放。
 
 ## 2. 下载与安装前准备
 
-1. 从 [Releases](https://github.com/takkoury/mpvnet-kit/releases) 下载本版完整安装包 `mpvnet-kit-0.6.0.zip`。源码检出目录不能直接作为安装包。
+1. 准备完整的安装 ZIP。M6 试用请使用收到的离线候选。公开版 `mpvnet-kit-0.6.0.zip` 可从 [Releases](https://github.com/takkoury/mpvnet-kit/releases) 下载。
 2. 完整解压到独立目录。不要直接从 ZIP 中运行，也不要将安装包解压到播放器的配置目录内。
 3. 退出所有 mpv.net 实例。已有配置无需预先清空；不要为通过检查直接删除文件。
 
-安装器只需选择 `mpvnet.exe`，随后按以下顺序确定配置目录：
+已有播放器沿用实际使用的配置目录。M6 新装的播放器通过 `Play.cmd` 使用同一安装位置内的 `player\portable_config`。对其他已有播放器，安装器按以下顺序判断目录。
 
 | 条件 | 使用的目录 |
 | --- | --- |
@@ -28,7 +26,13 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 ## 3. 图形安装
 
-双击安装包中的 `Install.cmd`，点击“选择播放器”选择 `mpvnet.exe`。窗口显示配置目录和检查结果；文件变更、备份位置及完整原因可在“查看详情”中展开。
+双击完整解压目录中的 `Install.cmd`。
+
+- **已有播放器**　核对窗口识别的路径，或点“已有…”选择平时使用的 `mpvnet.exe`。选择“安装”或“更新”前，核对配置目录和备份位置。此路径只写 kit，播放器和播放核心继续使用原文件。公开版 v0.6.0 的对应按钮为“选择播放器”。
+- **新装播放器**　点“新装…”选择空文件夹，可在选择窗口中新建文件夹。核对启动入口，再点“安装播放器”并确认。安装器校验并解压随包的官方 ZIP，再安装同一份 kit。完成后双击所选目录中的 `Play.cmd`，它会为本次启动指定便携配置。以后更新或还原时，选择其中的 `player\mpvnet.exe`。
+- **遇到冲突**　查看具体原因。版本或核心未匹配时，可改选其他已有播放器，或另选空目录新装。目录已有内容时，可点“换目录”。原文件和已有备份均保留。
+
+“查看详情”中可核对文件变更、备份位置和完整原因。新装后的“撤销本次安装”只撤销最近安装的 kit，保留官方播放器、启动入口和个人文件。
 
 | 检查结果 | 可执行的操作 |
 | --- | --- |
@@ -97,6 +101,8 @@ v0.5.0 更新播放列表、安装器、关于、媒体信息、右键菜单和�
 ```powershell
 .\tools\maintain.ps1 -PlayerPath 'C:\Players\mpv.net\mpvnet.exe' -OutputFormat Text
 ```
+
+完整离线包的新装路径使用 `-InstallDirectory 'C:\Players\MyPlayer'` 替代 `-PlayerPath`。先预览，再用同一目录、`-Operation Apply` 和本次 `-ExpectedPlanToken` 执行。成功后按输出的 `launcherPath` 启动，后续维护使用输出的 `playerPath`。
 
 所有写入操作都需要本次检查返回的校验值：安装或更新使用 `Apply` 和 `planToken`；还原使用 `Restore` 和 `restorePlanToken`；恢复未完成操作使用 `Recover` 和该恢复计划的 `planToken`。执行时保持检查所用的目录和安装包参数不变；环境或文件发生变化后，请重新检查。
 

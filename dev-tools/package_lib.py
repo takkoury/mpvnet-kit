@@ -228,14 +228,8 @@ def _markdown_links(files):
                 raise ValueError('missing local Markdown heading: ' + name + ' -> ' + target)
 
 
-def stage_package(source, destination, spec, *, apply=False) -> dict:
-    """Validate an allowlist and stage managed files only when apply is true."""
-    source, destination, spec = _clean_root(source), _clean_root(destination), Path(spec)
-    if destination == source or source in destination.parents or destination in source.parents:
-        raise ValueError('source and destination must be separate trees')
-    if (destination / '.git').exists():
-        raise ValueError('destination must be a package directory, not a Git checkout')
-    mapping = json.loads(spec.read_text(encoding='utf-8'))
+def read_source_contents(source, mapping):
+    """Read the explicit source allowlist and verify precompiled assets."""
     contents, entries, folded = {}, [], {}
     version = _schema_version(mapping, 'export map')
     for item in _file_entries(mapping, 'export map'):
@@ -256,9 +250,27 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
         _check_update_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
-    entries.sort(key=lambda x: x['path'])
-    manifest = {'schema': 1, 'version': version, 'status': 'generated-distribution', 'files': entries}
-    manifest_data = (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + '\n').encode()
+    return version, contents, entries
+
+
+def manifest_bytes(version, entries):
+    manifest = {
+        'schema': 1, 'version': version, 'status': 'generated-distribution',
+        'files': sorted(entries, key=lambda entry: entry['path']),
+    }
+    return (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + '\n').encode()
+
+
+def stage_package(source, destination, spec, *, apply=False) -> dict:
+    """Validate an allowlist and stage managed files only when apply is true."""
+    source, destination, spec = _clean_root(source), _clean_root(destination), Path(spec)
+    if destination == source or source in destination.parents or destination in source.parents:
+        raise ValueError('source and destination must be separate trees')
+    if (destination / '.git').exists():
+        raise ValueError('destination must be a package directory, not a Git checkout')
+    mapping = json.loads(spec.read_text(encoding='utf-8'))
+    version, contents, entries = read_source_contents(source, mapping)
+    manifest_data = manifest_bytes(version, entries)
     package_contents = {**contents, 'manifest.json': manifest_data}
     _inspect_contents(package_contents)
     _markdown_links(package_contents)
@@ -299,7 +311,7 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
                 break
             if parent.exists() and not parent.is_dir():
                 raise ValueError('destination parent collision: ' + name)
-    report = {'version': manifest['version'], 'file_count': len(entries), 'manifest_sha256': _digest(manifest_data), 'dry_run': not apply}
+    report = {'version': version, 'file_count': len(entries), 'manifest_sha256': _digest(manifest_data), 'dry_run': not apply}
     if not apply:
         return report
     destination.mkdir(parents=True, exist_ok=True)
@@ -362,28 +374,10 @@ def package_zip(source, output, *, apply=False) -> dict:
             raise ValueError('SHA256 mismatch: ' + name)
         contents[name] = data
     contents['manifest.json'] = manifest_data
-    _inspect_contents(contents)
-    _markdown_links(contents)
-    blockers = []
-    if 'LICENSE' not in contents or not contents['LICENSE'].strip():
-        blockers.append('manifest must include a nonempty top-level LICENSE')
-    licenses = contents.get('LICENSES.md', b'').decode('utf-8')
-    if not licenses.strip():
-        blockers.append('manifest must include LICENSES.md')
-    pending = r'license\s+pending|licen[cs]ing\s+pending|许可待|待选定|须决定|没有统一的项目许可证|未对.*新增授权'
-    if re.search(pending, licenses, re.I):
-        blockers.append('LICENSES.md contains unresolved licensing notice')
-    if any(re.search(pending, str(entry.get('origin', '')), re.I) for entry in entries):
-        blockers.append('manifest origin contains unresolved licensing notice')
+    blockers = release_blockers(contents, entries)
     buffer = io.BytesIO()
     prefix = 'mpvnet-kit-' + version
-    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
-        for name in sorted(contents):
-            info = zipfile.ZipInfo(prefix + '/' + name, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            info.compress_type = zipfile.ZIP_STORED
-            archive.writestr(info, contents[name])
+    write_package_zip(buffer, contents, root=prefix)
     data = buffer.getvalue()
     checksum = (_digest(data) + '  ' + output.name + '\n').encode('utf-8')
     sidecar = _clean_root(Path(str(output) + '.sha256'))
@@ -406,3 +400,33 @@ def package_zip(source, output, *, apply=False) -> dict:
                     raise ValueError('output changed during creation: ' + str(path))
         report['result'] = 'created-or-identical'
     return report
+
+
+def release_blockers(contents, entries):
+    """Validate packaged content and report missing or unresolved license materials."""
+    _inspect_contents(contents)
+    _markdown_links(contents)
+    blockers = []
+    if 'LICENSE' not in contents or not contents['LICENSE'].strip():
+        blockers.append('manifest must include a nonempty top-level LICENSE')
+    licenses = contents.get('LICENSES.md', b'').decode('utf-8')
+    if not licenses.strip():
+        blockers.append('manifest must include LICENSES.md')
+    pending = r'license\s+pending|licen[cs]ing\s+pending|许可待|待选定|须决定|没有统一的项目许可证|未对.*新增授权'
+    if re.search(pending, licenses, re.I):
+        blockers.append('LICENSES.md contains unresolved licensing notice')
+    if any(re.search(pending, str(entry.get('origin', '')), re.I) for entry in entries):
+        blockers.append('manifest origin contains unresolved licensing notice')
+    return blockers
+
+
+def write_package_zip(handle, contents, *, root=''):
+    """Write deterministic file records, optionally under a single directory."""
+    prefix = root + '/' if root else ''
+    with zipfile.ZipFile(handle, 'w', compression=zipfile.ZIP_STORED) as archive:
+        for name in sorted(contents):
+            info = zipfile.ZipInfo(prefix + name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.compress_type = zipfile.ZIP_STORED
+            archive.writestr(info, contents[name])

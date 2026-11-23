@@ -15,7 +15,7 @@
 | 右键菜单示意 `assets/screenshots/context-menu.png` | 从真实宿主已打开的菜单控件离屏绘制，按实际屏幕坐标保留级联重叠；不含影视画面，采用本项目 MIT 许可 |
 | 下列独立自有文件 | [MIT](LICENSE)；第三方文件与派生修改排除 |
 
-外部播放器、Python、FFmpeg、网页插件由各自项目分发，本包不打包这些程序。
+M6 离线候选随附 [mpv.net 官方 x64 portable ZIP](https://github.com/mpvnet-player/mpv.net/releases/tag/v7.1.2.0)。播放器及其内置组件由上游维护，原归属和适用许可保留。上游附件的位置与摘要记录在完整候选的 `tools/portable-release.json`。Python、用于导出的 FFmpeg 命令行程序及网页插件仍由各自项目分发。
 
 ## MIT 适用文件
 
@@ -111,6 +111,8 @@
 - `tools/clean-install.psm1`
 - `tools/common.psm1`
 - `tools/install.ps1`
+- `tools/portable-install.psm1`
+- `tools/portable-release.json`
 - `tools/installer.ps1`
 - `tools/installer-ui.cs`
 - `tools/restore.ps1`

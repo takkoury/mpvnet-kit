@@ -245,6 +245,7 @@ function Get-MaintenanceState {
         $backup = Get-KitRoot $BackupRoot; $view.backupRoot = $backup
         $state.backupContext = Get-MaintenanceDirectoryContext $backup
         $package = Get-KitPackage $PackageRoot; $state.package = $package; $view.packageVersion = $package.version
+        & $script:MaintenanceCommon { param($Player,$Release) Assert-KitCompatiblePlayer $Player $Release } (Get-KitPlayer $PlayerPath) $package.portableRelease
         $view.releaseNotice = $package.releaseNotice
         $state.packageContext = Get-MaintenanceDirectoryContext $package.root
         & $script:MaintenanceCommon { param($Roots) Assert-KitSeparate $Roots } @($context.target, $package.root, $backup)
@@ -606,9 +607,10 @@ function Write-KitMaintenanceResult($Value, [ValidateSet('Json', 'Text')][string
         return
     }
     $lines = New-Object 'System.Collections.Generic.List[string]'
-    $labels = @{ install = '首次安装'; update = '更新配置'; current = '无需更新'; blocked = '暂时无法继续'; recover = '恢复未完成的操作'; restore = '还原上一步配置' }
+    $labels = @{ 'install-player' = '安装播放器与配置'; install = '首次安装'; update = '更新配置'; current = '无需更新'; blocked = '暂时无法继续'; recover = '恢复未完成的操作'; restore = '还原上一步配置' }
     $lines.Add([string]$labels[$data['action']] + $(if ($data['mode'] -eq 'applied') { ' · 已完成' } else { ' · 检查结果' }))
     $lines.Add('配置目录：' + [string]$data['target'])
+    if ($data['launcherPath']) { $lines.Add('播放器启动入口：' + [string]$data['launcherPath']) }
     foreach ($pair in @(@('targetSourceLabel', '识别来源'), @('packageVersion', '配置包版本'), @('installedVersion', '当前版本'), @('reason', '说明'), @('backupRoot', '备份目录'), @('backupManifest', '备份清单'))) {
         if ($data[$pair[0]]) { $lines.Add($pair[1] + '：' + [string]$data[$pair[0]]) }
     }

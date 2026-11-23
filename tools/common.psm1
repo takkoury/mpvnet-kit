@@ -12,7 +12,12 @@ function Get-KitHashBytes([byte[]]$Bytes) {
 }
 function Get-KitHash([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return $null }
-    return Get-KitHashBytes ([IO.File]::ReadAllBytes($Path))
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+    } finally { $stream.Dispose() }
 }
 function Get-KitBytes($Value) {
     return ,$script:KitUtf8.GetBytes(($Value | ConvertTo-Json -Depth 20) + "`n")
@@ -120,14 +125,21 @@ function Get-KitPackage([string]$PackageRoot) {
     $manifest = $script:KitUtf8.GetString($manifestBytes).TrimStart([char]0xfeff) | ConvertFrom-Json
     Assert-KitFields $manifest @('schema', 'version', 'files')
     if ($manifest.schema -ne 1 -or $manifest.version -isnot [string] -or -not $manifest.version -or @($manifest.files).Count -eq 0) { throw 'Unsupported package manifest.' }
-    $seen = @{}; $runtime = @(); $releaseNotice = ''
+    $seen = @{}; $runtime = @(); $releaseNotice = ''; $portableRelease = $null
     foreach ($file in $manifest.files) {
         Assert-KitFields $file @('path', 'sha256')
         if ($file.path -isnot [string] -or $file.sha256 -notmatch '^[0-9a-f]{64}$' -or $seen.ContainsKey($file.path)) { throw 'Invalid or case-colliding package entry.' }
-        $seen[$file.path] = $true
+        $seen[$file.path] = $file.sha256
         $path = Get-KitPath $root $file.path
+        if ($file.path.StartsWith('upstream/', [StringComparison]::OrdinalIgnoreCase)) {
+            if ((Get-KitHash $path) -cne $file.sha256) { throw "随包播放器附件校验失败，请重新解压完整安装包。文件：$($file.path)" }
+            continue
+        }
         $bytes = [IO.File]::ReadAllBytes($path)
         if ((Get-KitHashBytes $bytes) -cne $file.sha256) { throw "Package checksum mismatch: $($file.path)" }
+        if ($file.path -ceq 'tools/portable-release.json') {
+            $portableRelease = $script:KitUtf8.GetString($bytes).TrimStart([char]0xfeff) | ConvertFrom-Json
+        }
         if ($file.path -ceq 'docs/upgrade-notice.txt') {
             if ($bytes.Length -gt 4096) { throw 'Package upgrade notice is too long.' }
             $releaseNotice = $script:KitUtf8.GetString($bytes).TrimStart([char]0xfeff).Trim()
@@ -139,7 +151,33 @@ function Get-KitPackage([string]$PackageRoot) {
         }
     }
     if ($runtime.Count -eq 0) { throw 'The package has no runtime payload.' }
-    return [pscustomobject]@{ root = $root; version = $manifest.version; manifestSha256 = (Get-KitHashBytes $manifestBytes); runtime = $runtime; verifiedFileCount = @($manifest.files).Count; releaseNotice = $releaseNotice }
+    if ($portableRelease -or $seen.ContainsKey('tools/portable-release.json') -or [IO.Directory]::Exists((Join-Path $root 'upstream')) -or ($seen.Keys -like 'upstream/*') -or [IO.File]::Exists((Join-Path $root 'tools/portable-release.json'))) {
+        Assert-KitFields $portableRelease @('schema','version','architecture','archive','runtime')
+        Assert-KitFields $portableRelease.archive @('path','sha256','source')
+        Assert-KitFields $portableRelease.runtime @('executable','executableSha256','core','coreSha256')
+        if ($portableRelease.schema -ne 1 -or $portableRelease.architecture -cne 'x64' -or $portableRelease.version -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+            $portableRelease.archive.path -cnotmatch '^upstream/[^/]+\.zip$' -or $seen[$portableRelease.archive.path] -cne $portableRelease.archive.sha256 -or
+            $portableRelease.archive.sha256 -cnotmatch '^[0-9a-f]{64}$' -or $portableRelease.runtime.executable -cne 'mpvnet.exe' -or
+            $portableRelease.runtime.core -cne 'libmpv-2.dll' -or $portableRelease.runtime.executableSha256 -cnotmatch '^[0-9a-f]{64}$' -or
+            $portableRelease.runtime.coreSha256 -cnotmatch '^[0-9a-f]{64}$') { throw '播放器版本记录与随包附件不匹配，请重新解压完整安装包。' }
+    }
+    return [pscustomobject]@{ root = $root; version = $manifest.version; manifestSha256 = (Get-KitHashBytes $manifestBytes); runtime = $runtime; verifiedFileCount = @($manifest.files).Count; releaseNotice = $releaseNotice; portableRelease = $portableRelease }
+}
+function Assert-KitCompatiblePlayer([string]$Player, $Release) {
+    if (-not $Release) { return }
+    $runtime = $Release.runtime
+    $core = Get-KitPath ([IO.Path]::GetDirectoryName($Player)) $runtime.core
+    if ([IO.Path]::GetFileName($Player) -ine $runtime.executable -or (Get-KitHash $Player) -cne $runtime.executableSha256 -or (Get-KitHash $core) -cne $runtime.coreSha256) {
+        $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Player).FileVersion
+        if (-not $version) { $version = '未知' }
+        throw "所选播放器版本为 $version。此候选已验证 mpv.net $($Release.version) x64 的官方程序和播放核心，当前文件未匹配。请保留原安装，选择兼容播放器或另选空目录新装。"
+    }
+}
+
+# The fresh-install launcher scopes MPVNET_HOME to its child process. Maintenance
+# of this layout must select the same config even if the ambient home points elsewhere.
+function Get-KitLauncherBytes {
+    return ,([Text.Encoding]::ASCII.GetBytes(('@echo off','setlocal DisableDelayedExpansion','set "MPVNET_HOME=%~dp0player\portable_config"','start "" "%~dp0player\mpvnet.exe" %*','' -join "`r`n")))
 }
 function Get-KitRecordData($Record) {
     return [ordered]@{ schema = $Record.schema; owner = $Record.owner; kind = $Record.kind; id = $Record.id;
@@ -357,6 +395,9 @@ function Get-KitTargetContext {
     $portableExists = Test-KitEntryExists $portable
     if ($ConfigDirectory) {
         $target = $ConfigDirectory; $source = 'explicit'; $label = '显式指定的配置目录'
+    } elseif ([IO.Path]::GetFileName([IO.Path]::GetDirectoryName($player)) -ieq 'player' -and
+        (Get-KitHash (Get-KitPath ([IO.Directory]::GetParent([IO.Path]::GetDirectoryName($player)).FullName) 'Play.cmd')) -ceq (Get-KitHashBytes (Get-KitLauncherBytes))) {
+        $target = $portable; $source = 'portable'; $label = 'Play.cmd 使用的便携配置目录'
     } elseif ($home -and (Test-KitEntryExists $home)) {
         $target = $home; $source = 'environment'; $label = '当前进程的 MPVNET_HOME'
     } elseif ($portableExists) {
@@ -399,6 +440,7 @@ function Get-KitInstallPlan([string]$PlayerPath, [string]$ConfigDirectory, [stri
     $player = Get-KitPlayer $PlayerPath
     $context = Get-KitTargetContext -PlayerPath $player -ConfigDirectory $ConfigDirectory
     $package = Get-KitPackage $PackageRoot
+    Assert-KitCompatiblePlayer $player $package.portableRelease
     if (-not $BackupRoot) { $BackupRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'mpvnet-kit/backups' }
     $target = $context.target; $backup = Get-KitRoot $BackupRoot
     Assert-KitNoReparse $target; Assert-KitNoReparse $backup

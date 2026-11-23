@@ -1,6 +1,17 @@
 {
   "schema": 1,
   "version": "0.6.0",
+  "portable": {
+    "version": "0.7.0-m6",
+    "files": [
+      {
+        "source": "tools/portable-release.json",
+        "destination": "tools/portable-release.json",
+        "component": "author",
+        "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+      }
+    ]
+  },
   "files": [
     {
       "source": "config/scripts/audio-controls.lua",
@@ -575,6 +586,12 @@
     {
       "source": "tools/clean-install.psm1",
       "destination": "tools/clean-install.psm1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
+      "source": "tools/portable-install.psm1",
+      "destination": "tools/portable-install.psm1",
       "component": "author",
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },

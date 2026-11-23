@@ -10,6 +10,7 @@ import unittest
 import zipfile
 
 from support.dev_imports import package_zip, stage_package
+from portable_release import DESCRIPTOR, build_portable_release
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / 'dev-tools/build-package.py'
@@ -95,6 +96,8 @@ class PackageBuild(unittest.TestCase):
             spec = json.loads((ROOT / 'dev-tools/package-map.json').read_text(encoding='utf-8'))
             self.assertEqual(names, {f['destination'] for f in spec['files']})
             self.assertFalse(any(n.startswith(('tests/', 'dev-tools/', '.git/', '.notes/')) for n in names))
+            self.assertNotIn(DESCRIPTOR, names)
+            self.assertFalse(any(n.startswith('upstream/') for n in names))
             self.assertFalse(names & {'AGENTS.md', 'AGENTS.local.md', 'CONTRIBUTING.md', 'docs/roadmap.md'})
             for f in manifest['files']:
                 self.assertEqual(hashlib.sha256((directory / f['path']).read_bytes()).hexdigest(), f['sha256'])
@@ -108,6 +111,93 @@ class PackageBuild(unittest.TestCase):
                 self.assertEqual(set(archive.namelist()), {
                     'mpvnet-kit-' + manifest['version'] + '/' + n for n in names | {'manifest.json'}
                 })
+
+    def portable_fixture(self, root):
+        source, _, mapping = self.fixture(root, {
+            'Install.cmd': b'@echo off\r\n',
+            'LICENSE': b'Test license\n',
+            'LICENSES.md': b'# Licenses\n',
+            'config/mpv.conf': b'volume=20\n',
+        })
+        upstream = root / 'fixture.zip'
+        executable, core = b'fixture executable', b'fixture core'
+        with zipfile.ZipFile(upstream, 'w') as archive:
+            archive.writestr('mpvnet.exe', executable)
+            archive.writestr('libmpv-2.dll', core)
+        description = json.loads((ROOT / DESCRIPTOR).read_text(encoding='utf-8'))
+        description['archive']['sha256'] = hashlib.sha256(upstream.read_bytes()).hexdigest()
+        description['runtime']['executableSha256'] = hashlib.sha256(executable).hexdigest()
+        description['runtime']['coreSha256'] = hashlib.sha256(core).hexdigest()
+        portable = json.loads((ROOT / 'dev-tools/package-map.json').read_text(encoding='utf-8'))['portable']
+        for name, data in ((DESCRIPTOR, description), ('dev-tools/package-map.json', {**mapping, 'portable': portable})):
+            path = source / name
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(data), encoding='utf-8')
+        return source, upstream, description
+
+    def test_offline_candidate_preserves_official_archive_and_uses_zip_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, upstream, description = self.portable_fixture(root)
+            destination, output = root / 'package', root / 'offline.zip'
+            preview = build_portable_release(source, upstream, destination, output)
+            self.assertTrue(preview['dry_run'])
+            self.assertFalse(destination.exists())
+            self.assertFalse(output.exists())
+            applied = build_portable_release(source, upstream, destination, output, apply=True)
+            self.assertEqual({**preview, 'dry_run': False, 'zip_sha256': applied['zip_sha256']}, applied)
+            archive_path = description['archive']['path']
+            manifest = json.loads((destination / 'manifest.json').read_bytes())
+            self.assertEqual(manifest['version'], '0.7.0-m6')
+            entries = {entry['path']: entry['sha256'] for entry in manifest['files']}
+            self.assertEqual(entries.keys(), self.snapshot(destination).keys() - {'manifest.json'})
+            self.assertEqual(entries[archive_path], description['archive']['sha256'])
+            self.assertEqual((destination / archive_path).read_bytes(), upstream.read_bytes())
+            self.assertEqual((root / 'offline.zip.sha256').read_text(encoding='utf-8'),
+                             applied['zip_sha256'] + '  offline.zip\n')
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn('Install.cmd', archive.namelist())
+                self.assertEqual({name: archive.read(name) for name in archive.namelist()}, self.snapshot(destination))
+            second = build_portable_release(source, upstream, root / 'another-package', root / 'another.zip',
+                                            apply=True)
+            self.assertEqual(applied['zip_sha256'], second['zip_sha256'])
+            self.assertEqual(output.read_bytes(), (root / 'another.zip').read_bytes())
+
+    def test_offline_candidate_rejects_changed_archive_and_mismatched_runtime_digest(self):
+        for change in ('archive', 'runtime'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, upstream, description = self.portable_fixture(root)
+                if change == 'archive':
+                    upstream.write_bytes(upstream.read_bytes() + b'changed')
+                else:
+                    description['runtime']['coreSha256'] = '0' * 64
+                    (source / DESCRIPTOR).write_text(json.dumps(description), encoding='utf-8')
+                destination, output = root / 'package', root / 'offline.zip'
+                before = self.snapshot(root)
+                with self.assertRaisesRegex(ValueError, 'upstream ' + change + ' SHA256 mismatch'):
+                    build_portable_release(source, upstream, destination, output, apply=True)
+                self.assertEqual(before, self.snapshot(root))
+                self.assertFalse(destination.exists())
+
+    def test_offline_candidate_requires_all_outputs_to_be_new_and_separate(self):
+        for occupied in ('destination', 'zip', 'sidecar', 'nested'):
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, upstream, _ = self.portable_fixture(root)
+                destination, output = root / 'package', root / 'offline.zip'
+                if occupied == 'destination':
+                    destination.mkdir()
+                    (destination / 'keep.txt').write_bytes(b'preserve this directory')
+                elif occupied == 'nested':
+                    output = destination / output.name
+                else:
+                    path = output if occupied == 'zip' else root / 'offline.zip.sha256'
+                    path.write_bytes(b'preserve this file')
+                before = self.snapshot(root)
+                with self.assertRaisesRegex(ValueError, 'must be separate' if occupied == 'nested' else 'already exists'):
+                    build_portable_release(source, upstream, destination, output, apply=True)
+                self.assertEqual(before, self.snapshot(root))
 
     def test_paths_are_canonicalized_before_isolation_checks(self):
         with tempfile.TemporaryDirectory() as temp:

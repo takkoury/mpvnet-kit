@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "version": "7.1.2.0",
+  "architecture": "x64",
+  "archive": {
+    "path": "upstream/mpv.net-v7.1.2.0-portable-x64.zip",
+    "source": "https://github.com/mpvnet-player/mpv.net/releases/download/v7.1.2.0/mpv.net-v7.1.2.0-portable-x64.zip",
+    "sha256": "33cba35bc6a8ebbb441a68cb9f3d26c366a2457f6a969ce50b95b0e7dd163431"
+  },
+  "runtime": {
+    "executable": "mpvnet.exe",
+    "executableSha256": "22f18cea247d01cc27ed13951b3c5610ab7dca9dd3fdf3cf78bbe0a69e0e13db",
+    "core": "libmpv-2.dll",
+    "coreSha256": "44af8b7f5ff45cf50db49b9866fe9238e84c4d935122576c4c6f7ce859226e8a"
+  }
+}
