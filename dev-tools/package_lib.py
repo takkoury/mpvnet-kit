@@ -102,7 +102,7 @@ def _check_exportable_name(name):
 def _register_path(name, folded):
     parts = _relative(name).parts
     _check_exportable_name(name)
-    if name.casefold() == 'manifest.json' or any(p.casefold() == '.git' for p in parts):
+    if parts[0].casefold() == 'manifest.json' or any(p.casefold() == '.git' for p in parts):
         raise ValueError('reserved manifest entry: ' + name)
     if name.startswith('config/') and not name.casefold().endswith('.example'):
         # These runtime paths are also refused by the unified maintenance plan.
@@ -113,9 +113,12 @@ def _register_path(name, folded):
     # Check every prefix, including directory names, for Windows collisions.
     for length in range(1, len(parts) + 1):
         prefix = '/'.join(parts[:length])
-        prior = folded.setdefault(prefix.casefold(), prefix)
+        is_file = length == len(parts)
+        prior, was_file = folded.setdefault(prefix.casefold(), (prefix, is_file))
         if prior != prefix:
             raise ValueError('case-insensitive path collision: ' + name)
+        if was_file != is_file:
+            raise ValueError('file/directory collision: ' + name)
 
 
 def _schema_version(document, kind):

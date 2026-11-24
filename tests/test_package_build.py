@@ -364,6 +364,7 @@ class PackageBuild(unittest.TestCase):
             ('config/trailing ', 'nonportable Windows path'),
             ('config/bad?.txt', 'nonportable Windows path'),
             ('MANIFEST.JSON', 'reserved manifest entry'),
+            ('manifest.json/entry', 'reserved manifest entry'),
             ('.GIT/config', 'reserved manifest entry'),
             ('config/script-opts/MPVNET-LOCAL.CONF', 'private or state file'),
             ('config/.mpvnet-kit-install.json', 'private or state file'),
@@ -425,6 +426,20 @@ class PackageBuild(unittest.TestCase):
                 package_zip(source, output, apply=True)
             self.assertFalse(output.exists())
             self.assertFalse((root / 'trial.zip.sha256').exists())
+
+    def test_file_and_directory_cannot_share_a_package_path(self):
+        for targets in (('docs', 'docs/guide.md'), ('docs/guide.md', 'docs')):
+            with self.subTest(targets=targets), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, spec, mapping = self.fixture(root, {'one': b'one', 'two': b'two'})
+                for entry, name in zip(mapping['files'], targets):
+                    entry['destination'] = name
+                spec.write_text(json.dumps(mapping), encoding='utf-8')
+                destination = root / 'package'
+                for apply in (False, True):
+                    with self.assertRaisesRegex(ValueError, 'file/directory collision'):
+                        stage_package(source, destination, spec, apply=apply)
+                    self.assertFalse(destination.exists())
 
     def test_directory_case_collisions_are_rejected_by_both_operations(self):
         with tempfile.TemporaryDirectory() as temp:
