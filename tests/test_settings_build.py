@@ -80,7 +80,8 @@ class SettingsBuild(unittest.TestCase):
             (player / 'portable_config').mkdir(parents=True)
             roaming, local, home = root / 'roaming', root / 'local', root / 'mpvnet-home'
             validate = BUILD['validate_output']
-            with patch.dict(os.environ, {'APPDATA': str(roaming), 'LOCALAPPDATA': str(local), 'MPVNET_HOME': str(home)}):
+            env = dict(os.environ, APPDATA=str(roaming), LOCALAPPDATA=str(local), MPVNET_HOME=str(home))
+            with patch.object(os, 'environ', env):
                 for parent in (source, player, roaming / 'mpv.net', local / 'mpv.net', home):
                     output = parent / 'fresh'
                     with self.subTest(parent=parent.name), self.assertRaisesRegex(ValueError, 'outside'):

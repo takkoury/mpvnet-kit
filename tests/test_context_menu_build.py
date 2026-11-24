@@ -83,7 +83,8 @@ class ContextMenuBuild(unittest.TestCase):
             (portable_player / 'portable_config').mkdir(parents=True)
             roaming = root / 'appdata'
             explicit_home = root / 'mpvnet-home'
-            with patch.dict(os.environ, {'APPDATA': str(roaming), 'MPVNET_HOME': str(explicit_home)}):
+            env = dict(os.environ, APPDATA=str(roaming), MPVNET_HOME=str(explicit_home))
+            with patch.object(os, 'environ', env):
                 for parent in (source, host.parent, portable_player, roaming / 'mpv.net', explicit_home):
                     output = parent / 'fresh'
                     with self.subTest(parent=parent.name), self.assertRaisesRegex(ValueError, 'outside'):

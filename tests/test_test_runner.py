@@ -22,7 +22,7 @@ class RunnerContract(unittest.TestCase):
                 runner.inventory()
 
     def test_missing_dependency_prevents_all_selected_groups(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(runner, 'run') as execute:
+        with patch.object(os, 'environ', {}), patch.object(runner, 'run') as execute:
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(runner.main(['--profile', 'core', '--profile', 'lua']), 2)
             execute.assert_not_called()
@@ -30,7 +30,7 @@ class RunnerContract(unittest.TestCase):
     def test_missing_install_package_does_not_create_fixture_root(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'must-stay-absent'
-            with patch.dict(os.environ, {'MPVNET_INSTALL_TARGET_ROOT': str(root)}, clear=True), \
+            with patch.object(os, 'environ', {'MPVNET_INSTALL_TARGET_ROOT': str(root)}), \
                  patch.object(runner, 'powershell_path', return_value=Path('powershell.exe')), \
                  patch.object(runner.shutil, 'which', return_value='git'), \
                  patch('support.install_fixtures.source_worktrees', return_value=[runner.ROOT]):
@@ -62,12 +62,12 @@ class RunnerContract(unittest.TestCase):
             with patch.object(runner, 'powershell_path'), patch.object(runner.shutil, 'which', return_value='available'), \
                  patch('support.install_fixtures.source_worktrees', return_value=[runner.ROOT]):
                 for name in (*names, 'MPVNET_TEST_PLAYLIST_ARTIFACTS'):
-                    with self.subTest(name=name), patch.dict(os.environ, dict(env, **{name: str(package / 'output')}), clear=True):
+                    with self.subTest(name=name), patch.object(os, 'environ', {**env, name: str(package / 'output')}):
                         with self.assertRaisesRegex(RuntimeError, 'separate'):
                             runner.preflight(['helpers', 'install'])
                         self.assertFalse((package / 'output').exists())
                 nested = str(root / names[0] / 'helpers')
-                with patch.dict(os.environ, dict(env, MPVNET_TEST_PLAYLIST_ARTIFACTS=nested), clear=True):
+                with patch.object(os, 'environ', dict(env, MPVNET_TEST_PLAYLIST_ARTIFACTS=nested)):
                     with self.assertRaisesRegex(RuntimeError, 'helpers'):
                         runner.preflight(['helpers', 'install'])
                 self.assertTrue(all(not Path(env[name]).exists() for name in names))
@@ -85,11 +85,11 @@ class RunnerContract(unittest.TestCase):
         test = unittest.FunctionTestCase(lambda: None)
         optional = next(iter(runner.OPTIONAL_SKIPS))
         result = unittest.TestResult()
-        with patch.object(test, 'id', return_value=optional), patch.dict(os.environ, {}, clear=True):
+        with patch.object(test, 'id', return_value=optional), patch.object(os, 'environ', {}):
             result.addSkip(test, 'optional input absent')
             self.assertEqual(runner.unexpected_skips(result), [])
-            with patch.dict(os.environ, {runner.OPTIONAL_SKIPS[optional]: 'configured'}):
-                self.assertEqual(len(runner.unexpected_skips(result)), 1)
+            os.environ[runner.OPTIONAL_SKIPS[optional]] = 'configured'
+            self.assertEqual(len(runner.unexpected_skips(result)), 1)
         with patch.object(test, 'id', return_value='unregistered.skip'):
             self.assertEqual(len(runner.unexpected_skips(result)), 1)
 
