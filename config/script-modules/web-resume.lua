@@ -35,9 +35,11 @@ function M.bind(mp, utils, feedback, source, open_address)
 
     mp.add_key_binding(nil, 'resume-webpage', function()
         if pending then return end
-        local page, from_cdn = source()
-        local bvid = page and page:match('^https://www%.bilibili%.com/video/(BV%w+)/')
-        if not bvid then feedback.show('当前媒体没有可接续的 B 站投稿页', 'error'); return end
+        local page, id, from_cdn = source()
+        if not page then feedback.show('当前媒体没有可接续的 B 站来源页', 'error'); return end
+        if id:sub(1, 2) == 'ss' then
+            feedback.show('无法确认当前集数\n请从番剧的具体分集页打开视频', 'error'); return
+        end
         local time = mp.get_property_number('time-pos')
         if not time or not (time >= 0 and time < math.huge) then
             feedback.show('暂时无法取得播放位置', 'error'); return
@@ -56,7 +58,7 @@ function M.bind(mp, utils, feedback, source, open_address)
                 end
             end)
         end
-        if not from_cdn or page:find('?p=', 1, true) then launch(page); return end
+        if id:sub(1, 2) == 'ep' or not from_cdn or page:find('?p=', 1, true) then launch(page); return end
 
         -- External Player can supply a BV Referer without ?p=. Only the published
         -- part list for this BV may map the current CID to a part number.
@@ -72,7 +74,7 @@ function M.bind(mp, utils, feedback, source, open_address)
         job.handle = mp.command_native_async({name='subprocess', playback_only=true, capture_stdout=true,
             capture_size=2097152, args={utils.join_path(windows, 'System32/curl.exe'), '--disable',
                 '--silent', '--fail', '--max-time', '4', '--max-filesize', '2097152',
-                'https://api.bilibili.com/x/player/pagelist?bvid=' .. bvid}}, function(ok, result)
+                'https://api.bilibili.com/x/player/pagelist?bvid=' .. id}}, function(ok, result)
             if not current(job) then return end
             local data = ok and result and result.status == 0 and utils.parse_json(result.stdout or '')
             local part = type(data) == 'table' and data.code == 0 and part_for_cid(data.data, cid)

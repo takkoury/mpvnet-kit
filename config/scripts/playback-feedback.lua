@@ -59,10 +59,10 @@ local function bilibili_page(value, short_url)
             local time = query_number(short_url, 't', '%d+%.?%d*') or query_number(rest, 't', '%d+%.?%d*')
             if time then page = page .. (part and '&t=' or '?t=') .. time end
         end
-        return page
+        return page, bvid
     end
     local episode = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
-    if episode then return 'https://www.bilibili.com/bangumi/play/' .. episode end
+    if episode then return 'https://www.bilibili.com/bangumi/play/' .. episode, episode end
 end
 
 local function capture_media_origin(loaded)
@@ -309,9 +309,10 @@ local web_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/w
 web_resume.bind(mp, utils, feedback_client, function()
     local _, host = web_address(mp.get_property('path'))
     if not host then return end
-    if host == 'b23.tv' then return bilibili_page(expanded_short_page) end
-    local address = media_address()
-    return bilibili_page(address), site_host(host, 'bilivideo.com')
+    local address
+    if host == 'b23.tv' then address = expanded_short_page else address = media_address() end
+    local page, id = bilibili_page(address)
+    return page, id, site_host(host, 'bilivideo.com')
 end, open_address)
 mp.add_key_binding(nil, "clipboard-url", function()
     mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")

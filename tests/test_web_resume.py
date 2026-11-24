@@ -2,6 +2,7 @@ from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import fragment
 
 MODULE = Path(__file__).resolve().parents[1] / 'config/script-modules/web-resume.lua'
 
@@ -11,6 +12,8 @@ class WebResume(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = MODULE.read_text(encoding='utf-8')
+        playback = (MODULE.parents[1] / 'scripts/playback-feedback.lua').read_text(encoding='utf-8')
+        cls.page_reader = fragment(playback, 'local function web_address(value)', 'local function capture_media_origin(')
 
     def run_case(self, case):
         fixture = r'''
@@ -30,7 +33,11 @@ local os = {getenv=function()return 'windows' end}
 local api=(function()
 ''' + self.source + r'''
 end)()
-api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()return src,cdn end,
+''' + self.page_reader + r'''
+api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()
+    local canonical, id = bilibili_page(src)
+    return canonical, id, cdn
+end,
     function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end)
 '''
         self.lua.execute(fixture + case, 'web-resume')
@@ -51,6 +58,25 @@ assert(#fetched==1 and #opened==0 and fetched[1][1].args[#fetched[1][1].args]=='
 props['time-pos']=48;rows={code=0,data={{cid=11,page=1},{cid=22,page=2},{cid=33,page=3}}}
 fetched[1][2](true,{status=0,stdout='fixture'})
 assert(opened[1][1]==page..'?p=3&t=42');opened[1][2](true);assert(props.pause)
+""")
+
+    def test_episode_returns_to_exact_episode_and_replaces_old_time(self):
+        self.run_case("""
+local episode = 'https://www.bilibili.com/bangumi/play/ep2687640'
+for i,from_cdn in ipairs({false,true}) do
+    src=episode..'/?t=8&from=share';cdn=from_cdn;cid='33';props.pause=false
+    bind();assert(#fetched==0 and #opened==i and not props.pause)
+    assert(opened[i][1]==episode..'?t=42')
+    opened[i][2](true);assert(props.pause)
+end
+""")
+
+    def test_season_is_not_an_episode_even_with_a_cid(self):
+        self.run_case("""
+src='https://www.bilibili.com/bangumi/play/ss129142';cdn=true;cid='33'
+bind();assert(#opened==0 and #fetched==0 and not props.pause)
+assert(messages[1]:find('具体分集页',1,true))
+src=page;cdn=false;bind();assert(opened[1][1]==page..'?t=42')
 """)
 
     def test_unknown_part_stays_in_player_and_single_part_without_cid_works(self):
