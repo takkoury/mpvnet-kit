@@ -17,7 +17,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 | 画面增强 | [enhancement-controls.lua](../config/scripts/enhancement-controls.lua)接收 `set-preset`，发布 `user-data/mpvnet/enhancement` | 实例保留选择，每个媒体重新捕获基准；写入受控属性失败时尝试回滚；[增强回归](../tests/test_enhancement_controls.py) |
 | 外部组件与本机路径 | [mpvnet-paths.lua](../config/script-modules/mpvnet-paths.lua)读取可选路径；[thumbfast.lua](../config/scripts/thumbfast.lua)管理缩略图子进程；[弹幕入口](../config/scripts/bilibiliAssert/main.lua)调用随包转换器 | 本机路径文件属于用户；缩略图及弹幕任务由各自组件清理，弹幕使用独立副字幕轨；[弹幕转换](../tests/test_danmaku.py)，第三方边界见 [LICENSES](../LICENSES.md) |
 | 安装与恢复 | [installer.ps1](../tools/installer.ps1)和 [maintain.ps1](../tools/maintain.ps1)共用 [maintenance.psm1](../tools/maintenance.psm1)，复用目录识别、安装、旧版备份与恢复模块 | 安装包 manifest、目标 receipt、备份和未完成操作日志分别保存包内容、安装身份与恢复状态；[目标识别](../tests/test_install_targets.py)、[旧版备份](../tests/test_legacy_backup.py)、[维护事务](../tests/test_maintenance.py)、[用户状态保留](../tests/test_user_settings_upgrade.py) |
-| 构建与发行准备 | [build-package.py](../dev-tools/build-package.py)按 [package-map.json](../dev-tools/package-map.json)生成包及 manifest；[prepare-release.py](../dev-tools/prepare-release.py)检查并生成 ZIP | 两入口共用 [package_lib.py](../dev-tools/package_lib.py) 的 `stage_package`／`package_zip`，分别负责目录写入和 ZIP 创建；显式清单决定交付范围，开发文档与测试不入包；[构建回归](../tests/test_package_build.py) |
+| 构建与发行准备 | [build-portable-release.py](../dev-tools/build-portable-release.py) 生成完整离线 EXE。[build-package.py](../dev-tools/build-package.py) 和 [prepare-release.py](../dev-tools/prepare-release.py) 生成配置包及测试 ZIP | [package-map.json](../dev-tools/package-map.json) 列出随包文件，[package_lib.py](../dev-tools/package_lib.py) 校验路径、预编译资产和文档。上游附件另按固定摘要校验，见[安装与恢复](#安装与恢复)和[构建回归](../tests/test_package_build.py) |
 
 ## 配置与状态所有权
 
@@ -195,9 +195,11 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 画面页的`enhancement.default-preset`复用schema 1用户设置，只有现有五档稳定ID。增强模块通过`initialize_on_ready`消费设置控制层不可变的首次读取快照，持有本实例启动选择；保存、修复首次失败的配置和其他实例同步均只影响后续实例。启动快照晚于首媒体时可应用一次，但不覆盖已经成功的手动选择。设置的有效值表示本实例启动选择，播放中的实际效果仍由`user-data/mpvnet/enhancement`的desired、applied与available表示；HDR禁用、媒体基准和错误恢复沿既有实现。
 
+## 安装与恢复
+
 安装计划绑定目标目录、包内容、受管文件和恢复记录。统一维护入口的 `Apply`、`Restore`、`Recover` 都要求本次预览的校验值，持锁后再次核对。写入前保存真实备份与日志；恢复只接受日志中记录的操作前后字节，额外修改会阻止恢复。哈希用于一致性检查，不提供对恶意重写整套本地记录的认证。
 
-[完整候选构包入口](../dev-tools/build-portable-release.py)将 kit 白名单、[上游版本记录](../tools/portable-release.json)和原版 ZIP 纳入同一 manifest。配置收据只管理 `config/` 的运行文件。已有播放器走统一维护流程，完整包在计划阶段和执行复检时核对宿主与核心。
+[完整离线包构建入口](../dev-tools/build-portable-release.py)将 kit 白名单、[上游版本记录](../tools/portable-release.json)和原版 ZIP 纳入同一 manifest。配置收据只管理 `config/` 的运行文件。已有播放器走统一维护流程，完整包在计划阶段和执行复检时核对宿主与核心。
 
 [离线安装 EXE](../src/offline-installer/Program.cs)内嵌完整包和其 SHA-256。它验证内嵌数据，在本次调用独有的临时目录展开内容，直接启动系统 Windows PowerShell 运行包内的图形安装器，并等待窗口退出。临时内容只服务本次运行，播放器、个人配置及备份由原有维护模块在各自的目标目录管理。高级入口 `--extract` 将同一份内容保存在用户指定的新目录，供命令行维护和离线核验使用。
 

@@ -73,6 +73,7 @@ python -B dev-tools/test-context-menu.py --assembly config/extensions/KitContext
 ```powershell
 # 使用本机已有的 Lua 5.1 库，不由测试下载或安装。
 $env:MPVNET_TEST_LUA51 = 'C:/path/to/lua51.dll'
+$env:MPVNET_TEST_LIBMPV = 'C:/path/to/libmpv-2.dll'
 # 可以是已有仓外证据根；每轮自动建立新的唯一子目录。
 $env:MPVNET_TEST_PLAYLIST_ARTIFACTS = 'C:/Temp/mpvnet-kit-checks/playlist'
 python -B dev-tools/run-tests.py --profile lua --profile helpers
@@ -80,10 +81,11 @@ python -B dev-tools/run-tests.py --profile lua --profile helpers
 
 helpers 组还需 PATH 中的 Git 和 `powershell.exe`，与现有 helper 用例的实际调用一致。Lua 路径无效或库不兼容会在夹具创建前报错。
 
-只有以下四个既有用例允许在未配置条件时跳过，实际结果仍会列出：
+下表列出允许跳过的用例及其可选条件。运行结果会列出实际跳过的项目。
 
 | 可选条件 | 用例／作用 |
 | --- | --- |
+| `MPVNET_TEST_MEDIAINFO` | `MediaInfoDataTests.test_native_report_matches_default_mediainfo_inform` 使用已有的 MediaInfo.dll 对照原生报告 |
 | `MPVNET_NATIVE_INPUT_HELP` | `UserShortcuts.test_native_snapshot_matches_cached_upstream_getdefaults`；指定已有上游 `InputHelp.cs`，对照固定命令快照 |
 | `MPVNET_TEST_FFMPEG` | `CaptureOutputs.test_real_encoders_save_only_selected_file_and_remove_intermediate`、`test_commit_and_clipboard_failure_leave_existing_files_untouched`；指定已有 FFmpeg，执行短合成视频编码，使用 NoClipboard |
 | `MPVNET_TEST_PLAYLIST_WINDOWS=1` | `PlaylistWindow.test_owned_window_visible_edges`；短暂显示自有窗口，检查跟随和边缘位置 |
