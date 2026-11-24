@@ -36,9 +36,9 @@ end)()
 ''' + self.page_reader + r'''
 api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()
     local canonical, id = bilibili_page(src)
-    return canonical, id, cdn
+    return canonical, id, cdn, cdn and cid or nil
 end,
-    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end)
+    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, bilibili_page)
 '''
         self.lua.execute(fixture + case, 'web-resume')
 
@@ -71,12 +71,51 @@ for i,from_cdn in ipairs({false,true}) do
 end
 """)
 
-    def test_season_is_not_an_episode_even_with_a_cid(self):
+    def test_season_needs_a_cdn_source_and_a_media_bound_cid(self):
         self.run_case("""
-src='https://www.bilibili.com/bangumi/play/ss129142';cdn=true;cid='33'
+src='https://www.bilibili.com/bangumi/play/ss129142?ep_id=123';cdn=false;cid='33'
+bind();assert(#opened==0 and #fetched==0 and not props.pause)
+cdn=true;cid=nil
 bind();assert(#opened==0 and #fetched==0 and not props.pause)
 assert(messages[1]:find('具体分集页',1,true))
 src=page;cdn=false;bind();assert(opened[1][1]==page..'?t=42')
+""")
+
+    def test_resolve_main_episode_and_extras_by_cid(self):
+        self.run_case("""
+src='https://www.bilibili.com/bangumi/play/ss129142';cdn=true
+local ep='https://www.bilibili.com/bangumi/play/ep'
+local main={cid=36640326717,id=3270467,share_url=ep..'3270467'}
+local pv={cid=34976106609,id=2683199,share_url=ep..'2683199'}
+local extra={cid=36422878528,id=3253428,share_url=ep..'3253428'}
+rows={code=0,result={main_section={episodes={main}},section={{episodes={pv,main}},{episodes={extra}}}}}
+for i,row in ipairs({main,pv,extra}) do
+    cid=tostring(row.cid);props.pause=false;bind()
+    local args=fetched[i][1].args
+    assert(args[#args]=='https://api.bilibili.com/pgc/web/season/section?season_id=129142')
+    fetched[i][2](true,{status=0,stdout='fixture'})
+    assert(opened[i][1]==row.share_url..'?t=42' and not props.pause)
+    opened[i][2](true);assert(props.pause)
+end
+""")
+
+    def test_season_fails_closed_for_missing_ambiguous_and_inconsistent_matches(self):
+        self.run_case("""
+src='https://www.bilibili.com/bangumi/play/ss1';cdn=true;cid='33'
+local a={cid=33,id=123}
+for i,data in ipairs({
+    {code=0,result={main_section={episodes={{cid=55,id=123}}}}},
+    {code=0,result={main_section={episodes={a}},section={{episodes={{cid=33,id=456}}}}}},
+    {code=0,result={section={{episodes={{cid=33,id=123,share_url='https://www.bilibili.com/bangumi/play/ep456'}}}}}},
+    {code=0,result={main_section={episodes={a}},section={'bad'}}},
+    {code=-404}
+}) do
+    rows=data;bind();fetched[i][2](true,{status=0,stdout='fixture'})
+    assert(#opened==0 and not props.pause and messages[#messages]:find('无法确认当前集数',1,true))
+end
+rows={code=0,result={main_section={episodes={a}}}}
+bind();events['end-file']();fetched[#fetched][2](true,{status=0,stdout='late'})
+assert(#opened==0 and not props.pause)
 """)
 
     def test_unknown_part_stays_in_player_and_single_part_without_cid_works(self):

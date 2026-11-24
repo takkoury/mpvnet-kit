@@ -15,7 +15,38 @@ local function part_for_cid(pages, cid)
     return part
 end
 
-function M.bind(mp, utils, feedback, source, open_address)
+local function episode_for_cid(index, cid, parse_page)
+    if type(index) ~= 'table' or not cid then return end
+    local found
+    local function scan(section)
+        if type(section) ~= 'table' or type(section.episodes) ~= 'table' then return false end
+        for _, row in ipairs(section.episodes) do
+            if type(row) ~= 'table' then return false end
+            if row.cid == cid then
+                local id = row.id
+                if type(id) ~= 'number' or id < 1 or id >= 2^53 or id ~= math.floor(id) then return false end
+                local episode = 'ep' .. string.format('%.0f', id)
+                if found and episode ~= found then return false end
+                if row.share_url then
+                    local _, linked = parse_page(row.share_url)
+                    if linked ~= episode then return false end
+                end
+                found = episode
+            end
+        end
+        return true
+    end
+    if index.main_section and not scan(index.main_section) then return end
+    if index.section ~= nil then
+        if type(index.section) ~= 'table' then return end
+        for _, section in ipairs(index.section) do
+            if not scan(section) then return end
+        end
+    end
+    if found then return 'https://www.bilibili.com/bangumi/play/' .. found end
+end
+
+function M.bind(mp, utils, feedback, source, open_address, parse_page)
     local pending
     local function retire()
         local old = pending
@@ -35,11 +66,9 @@ function M.bind(mp, utils, feedback, source, open_address)
 
     mp.add_key_binding(nil, 'resume-webpage', function()
         if pending then return end
-        local page, id, from_cdn = source()
+        local page, id, from_cdn, raw = source()
         if not page then feedback.show('当前媒体没有可接续的 B 站来源页', 'error'); return end
-        if id:sub(1, 2) == 'ss' then
-            feedback.show('无法确认当前集数\n请从番剧的具体分集页打开视频', 'error'); return
-        end
+        local season = id:sub(1, 2) == 'ss'
         local time = mp.get_property_number('time-pos')
         if not time or not (time >= 0 and time < math.huge) then
             feedback.show('暂时无法取得播放位置', 'error'); return
@@ -58,26 +87,37 @@ function M.bind(mp, utils, feedback, source, open_address)
                 end
             end)
         end
-        if id:sub(1, 2) == 'ep' or not from_cdn or page:find('?p=', 1, true) then launch(page); return end
+        if not season and (id:sub(1, 2) == 'ep' or not from_cdn or page:find('?p=', 1, true)) then
+            launch(page); return
+        end
 
-        -- External Player can supply a BV Referer without ?p=. Only the published
-        -- part list for this BV may map the current CID to a part number.
+        -- Resolve only within the index for the confirmed source, at click time.
         local function unresolved()
             pending = nil
-            feedback.show('无法确认当前分 P\n请从原网页选择分集', 'error')
+            feedback.show(season and '无法确认当前集数\n请从番剧的具体分集页打开视频'
+                or '无法确认当前分 P\n请从原网页选择分集', 'error')
         end
-        local raw = mp.get_opt('cid')
-        local cid = raw and tostring(raw):match('^[1-9]%d*$') and tonumber(raw)
         local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
-        if (raw ~= nil and not cid) or not windows then unresolved(); return end
-        feedback.show('正在确认当前分 P…', 'action')
+        local cid = raw and tostring(raw):match('^[1-9]%d*$') and tonumber(raw)
+        if not windows or (raw ~= nil and (not cid or cid >= 2^53)) or (season and (not from_cdn or not cid)) then
+            unresolved(); return
+        end
+        local endpoint = season and ('https://api.bilibili.com/pgc/web/season/section?season_id=' .. id:sub(3))
+            or ('https://api.bilibili.com/x/player/pagelist?bvid=' .. id)
+        feedback.show(season and '正在确认番剧分集…' or '正在确认当前分 P…', 'action')
         job.handle = mp.command_native_async({name='subprocess', playback_only=true, capture_stdout=true,
             capture_size=2097152, args={utils.join_path(windows, 'System32/curl.exe'), '--disable',
                 '--silent', '--fail', '--max-time', '4', '--max-filesize', '2097152',
-                'https://api.bilibili.com/x/player/pagelist?bvid=' .. id}}, function(ok, result)
+                endpoint}}, function(ok, result)
             if not current(job) then return end
             local data = ok and result and result.status == 0 and utils.parse_json(result.stdout or '')
-            local part = type(data) == 'table' and data.code == 0 and part_for_cid(data.data, cid)
+            if type(data) ~= 'table' or data.code ~= 0 then unresolved(); return end
+            if season then
+                local target = episode_for_cid(data.result, cid, parse_page)
+                if target then launch(target) else unresolved() end
+                return
+            end
+            local part = part_for_cid(data.data, cid)
             if not part then unresolved(); return end
             launch(page .. '?p=' .. part)
         end)

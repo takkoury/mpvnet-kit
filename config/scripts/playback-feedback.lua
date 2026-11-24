@@ -21,7 +21,8 @@ local window_scale_timer
 local path_requests = {}
 local path_sequence = 0
 -- One in-memory association only; never retain request headers or infer a page from CID/CDN.
-local origin_path, origin_page, origin_active
+local origin_path, origin_page, origin_active, origin_cid
+local initial_media, inherited_cid = true, nil
 local playback_entry_id, failure_source
 local expanded_short_page
 
@@ -74,18 +75,29 @@ local function capture_media_origin(loaded)
     if not site_host(host, 'bilivideo.com') then
         return bilibili_page(path) and 'page' or 'url'
     end
-    local page = bilibili_page(mp.get_property('file-local-options/referrer'))
+    local option = 'referrer'
+    local page, id = bilibili_page(mp.get_property('file-local-options/referrer'))
     if not page then
+        option = 'http-header-fields'
         local headers = mp.get_property_native('file-local-options/http-header-fields', {})
         for _, header in ipairs(type(headers) == 'table' and headers or {}) do
             if type(header) == 'string' and (header:match('^%s*([^:]+):') or ''):lower() == 'referer' then
-                page = bilibili_page(header:match('^[^:]+:%s*(.-)%s*$'))
+                page, id = bilibili_page(header:match('^[^:]+:%s*(.-)%s*$'))
                 if page then break end
             end
         end
     end
-    -- The same unchanged global Referer on a different CDN input is not evidence of that media's page.
-    if page and (not origin_page or page ~= origin_page or path == origin_path) then
+    if not page then return 'url' end
+    local cid = mp.get_opt('cid')
+    local local_cid = cid ~= nil and cid ~= inherited_cid
+        and mp.get_property_bool('option-info/script-opts/set-locally', false)
+    -- A second episode can legitimately carry the same season Referer when
+    -- both it and a new CID were supplied for that file.
+    local explicit_season = id:sub(1, 2) == 'ss' and local_cid
+        and mp.get_property_bool('option-info/' .. option .. '/set-locally', false)
+    if not origin_page or page ~= origin_page or path == origin_path or explicit_season then
+        local same = path == origin_path and page == origin_page and cid == origin_cid
+        origin_cid = (initial_media or local_cid or same) and cid or nil
         origin_path, origin_page, origin_active = path, page, loaded
         return 'page'
     end
@@ -312,8 +324,9 @@ web_resume.bind(mp, utils, feedback_client, function()
     local address
     if host == 'b23.tv' then address = expanded_short_page else address = media_address() end
     local page, id = bilibili_page(address)
-    return page, id, site_host(host, 'bilivideo.com')
-end, open_address)
+    local from_cdn = site_host(host, 'bilivideo.com')
+    return page, id, from_cdn, from_cdn and origin_active and origin_cid or nil
+end, open_address, bilibili_page)
 mp.add_key_binding(nil, "clipboard-url", function()
     mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")
 end)
@@ -415,6 +428,11 @@ mp.register_event("playback-restart", function()
     if seek_pending then seek_pending = false; seek_timer:kill(); show_time() end
 end)
 mp.register_event("seek", function() frame_pending = false end)
+mp.add_hook('on_before_start_file', 50, function()
+    -- Per-file options have not been applied yet. A process-wide CID belongs
+    -- to the launching input, not to every later item in the same instance.
+    inherited_cid = mp.get_opt('cid')
+end)
 mp.register_event("start-file", function(event)
     playback_entry_id, failure_source = event.playlist_entry_id, nil
     expanded_short_page = nil
@@ -454,6 +472,7 @@ mp.add_hook('on_load', 50, function()
     failure_source = capture_media_origin(false)
 end)
 mp.register_event("end-file", function(event)
+    initial_media = false
     origin_active = false
     frame_pending = false
     release_hold()

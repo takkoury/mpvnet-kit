@@ -29,7 +29,7 @@ class PlaybackEndFeedback(unittest.TestCase):
                               'mp.register_event("file-loaded", function()')
         cls.origin = fragment(playback, 'local origin_path, origin_page, origin_active',
                               'local function media_address()')
-        cls.start = fragment(playback, 'mp.register_event("start-file", function(event)',
+        cls.start = fragment(playback, "mp.add_hook('on_before_start_file', 50, function()",
                              'mp.register_event("end-file", function(event)')
 
     def check_event(self, event, expected):
@@ -107,12 +107,53 @@ open(short,true);jobs[4].done(false,nil);assert(props['stream-open-filename']==s
 '''
         self.lua.execute(lua + self.origin + self.start + cases, 'playback/short-link')
 
+    def test_cdn_cid_belongs_to_its_input_not_a_later_queue_entry(self):
+        prelude = '''
+local props, hooks, events = {}, {}, {}
+local mp = {
+    register_event=function(k,f) events[k]=f end,
+    add_hook=function(k,priority,f) hooks[k]=f end,
+    get_opt=function(k) return props[k] end,
+    get_property=function(k) return props[k] end,
+    get_property_native=function(k,default) return props[k] or default end,
+    get_property_bool=function(k,default) return props[k] or default end,
+    commandv=function() end,
+}
+local seek_timer={kill=function() end}
+local function release_hold() end
+'''
+        cases = '''
+local season='https://www.bilibili.com/bangumi/play/ss129142'
+local cdn='https://v.bilivideo.com/'
+local function start(i,file,referer,local_cid)
+    props={cid='111'}
+    hooks.on_before_start_file()
+    events['start-file']({playlist_entry_id=i})
+    props.path=cdn..file
+    props['file-local-options/referrer']=referer
+    if local_cid then
+        props.cid=local_cid
+        props['option-info/script-opts/set-locally']=true
+        props['option-info/referrer/set-locally']=true
+    end
+    hooks.on_load();capture_media_origin(true)
+end
+local function stop(i) events['end-file']({reason='stop',playlist_entry_id=i}) end
+start(1,'a',season);assert(origin_active and origin_cid=='111');stop(1)
+start(2,'b',season);assert(not origin_active);stop(2)
+start(3,'c',season,'222');assert(origin_active and origin_cid=='222');stop(3)
+start(4,'d','https://www.bilibili.com/bangumi/play/ss55')
+assert(origin_active and origin_cid==nil)
+'''
+        self.lua.execute(prelude + self.origin + self.start + self.source + cases, 'playback/cid-association')
+
     def test_network_failure_uses_only_the_failed_entry_and_its_source(self):
         prelude = '''
 local events, hooks, props, messages = {}, {}, {}, {}
 local mp = {
     register_event=function(name, fn) events[name]=fn end,
     add_hook=function(name, priority, fn) hooks[name]=fn end,
+    get_opt=function() return nil end,
     get_property=function(key) return props[key] end,
     get_property_native=function(key, fallback) return props[key] or fallback end,
     commandv=function() end,
