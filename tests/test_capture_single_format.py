@@ -26,7 +26,7 @@ local reply, callback, payload, state, time = nil, nil, nil, nil, 1
 local payload_failure, on_parse_reply = nil, nil
 local native = {vid=1, aid=2, ['video-out-params']={}}
 local tracks = {{type='video',id=1,['ff-index']=0}}
-local temp, screenshot_calls = 'TEMP', 0
+local temp_dirs, screenshot_calls, payload_path = {TEMP='TEMP'}, 0, nil
 local mp = {
     get_property_number=function(name, default)
         if name=='time-pos' then return time end
@@ -69,8 +69,9 @@ local dofile=function(path)
     assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
     return {powershell=function() return 'powershell' end, capture_payload=function() end}
 end
-local os={getenv=function() return temp end,remove=function(path) removed[#removed+1]=path end}
-local io={open=function()
+local os={getenv=function(name) return temp_dirs[name] end,remove=function(path) removed[#removed+1]=path end}
+local io={open=function(path)
+    payload_path=path
     if payload_failure=='open' then return nil end
     return {write=function() return payload_failure~='write' end,
             close=function() return payload_failure~='close' end}
@@ -163,6 +164,17 @@ payload_failure=nil;clip('mp4');eq(#calls,2);eq(state.busy,true)
 finish('mp4','new.mp4');eq(state.pending_clip,nil)
 ''' % failure)
 
+    def test_payload_and_screenshot_use_windows_temp_order(self):
+        self.run_case('''
+temp_dirs.TMP='X:/tmp';temp_dirs.TEMP='X:/other'
+bindings['screenshot']()
+eq(payload_path:match('^(.*)/[^/]+$'),'X:/tmp')
+eq(calls[1].temp_png:match('^(.*)/[^/]+$'),'X:/tmp')
+reply={ok=true};callback(true,{status=0,stdout='reply'})
+temp_dirs.TMP='';clip('mp4')
+eq(payload_path:match('^(.*)/[^/]+$'),'X:/other')
+''')
+
     def test_screenshot_without_video_or_temp_has_actionable_reason(self):
         self.run_case('''
 native['video-out-params']=nil
@@ -170,10 +182,10 @@ bindings['screenshot']()
 eq(messages[#messages],'无法截图\\n请先打开视频')
 eq(#calls,0);eq(screenshot_calls,0);eq(state.busy,false)
 native['video-out-params']={}
-temp=nil;bindings['screenshot']()
+temp_dirs.TEMP=nil;bindings['screenshot']()
 eq(messages[#messages],'无法截图\\n请检查临时文件夹')
 eq(#calls,0);eq(screenshot_calls,0);eq(state.busy,false)
-temp='TEMP';bindings['screenshot']()
+temp_dirs.TEMP='TEMP';bindings['screenshot']()
 eq(screenshot_calls,1);eq(#calls,1);eq(state.busy,true)
 reply={ok=true};callback(true,{status=0,stdout='reply'})
 eq(messages[#messages],'截图已保存');eq(state.busy,false)

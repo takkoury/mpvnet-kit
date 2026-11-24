@@ -83,9 +83,17 @@ local function title()
     return value
 end
 
+local function temp_directory()
+    -- The Windows helper checks payloads and screenshots against .NET's GetTempPath().
+    for _, name in ipairs({'TMP', 'TEMP'}) do
+        local dir = os.getenv(name)
+        if dir and dir ~= '' then return dir end
+    end
+end
+
 local function write_payload(payload)
     paths.capture_payload(payload)
-    local temp = os.getenv('TEMP') or os.getenv('TMP')
+    local temp = temp_directory()
     if not temp then return nil end
     local path = utils.join_path(temp, 'mpvnet-capture-payload-' .. token() .. '.json')
     local file = io.open(path, 'wb')
@@ -163,7 +171,7 @@ local function screenshot()
     if mp.get_property_native('idle-active') or not mp.get_property_native('video-out-params') then
         report_failure('无法截图', {reason = 'no-video'}); return
     end
-    local temp = os.getenv('TEMP') or os.getenv('TMP')
+    local temp = temp_directory()
     if not temp then
         report_failure('无法截图', {reason = 'temporary-file'}); return
     end
