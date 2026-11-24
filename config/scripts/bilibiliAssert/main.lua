@@ -30,7 +30,7 @@ local o = {
 	fps_vf = false,
 	--是否在osd显示日志
 	log_osd = false,
-	--是否使用Danmu2Ass.py，为false时使用Danmu2Ass.exe
+	-- 使用随包的 Python 转换器；关闭后不加载弹幕
 	use_python = true,
 	-- python可执行文件路径，默认为环境变量的python，若无法运行请指定 python[.exe] 的路径
 	python_path = "python",
@@ -79,16 +79,13 @@ local function cancel_request()
 end
 
 local function get_cid()
-	local cid, danmaku_id = nil, nil
-	local tracks = mp.get_property_native("track-list")
-	for _, track in ipairs(tracks) do
-		if track["lang"] == "danmaku" then
-			cid = track["external-filename"]:match("/(%d-)%.xml$")
-			danmaku_id = track["id"]
-			break
+	for _, track in ipairs(mp.get_property_native("track-list") or {}) do
+		local file = track["external-filename"]
+		if track.type == "sub" and track.lang == "danmaku" and type(file) == "string" then
+			local cid = file:match("/(%d+)%.xml$")
+			if cid then return cid, track.id end
 		end
 	end
-	return cid, danmaku_id
 end
 
 local function get_sub_ids()
@@ -115,7 +112,8 @@ end
 
 -- load function
 local function load_danmu(file)
-	if not file_exists(file) then feedback("弹幕加载失败", 'error') return end
+	local metadata = utils.file_info(file)
+	if not metadata or not metadata.is_file then feedback("弹幕加载失败", 'error') return end
 	local secondary_sid = mp.get_property("secondary-sid", "no")
 	if secondary_id() then feedback("次字幕已占用，无法加载弹幕", 'error') return end
 	local primary_sid = mp.get_property("sid", "no")
@@ -130,24 +128,27 @@ local function load_danmu(file)
 			and track["title"] == "Bilibili Danmaku" then added_sid = track["id"] break end
 	end
 	if not added_sid then feedback("弹幕加载失败", 'error') return end
-	secondary_state = {
+	local previous_state = {
 		sid = secondary_sid,
 		visibility = mp.get_property_native("secondary-sub-visibility"),
 		ass_override = mp.get_property_native("secondary-sub-ass-override"),
 	}
-	danmu_sid = added_sid
+	mp.set_property_native("secondary-sid", added_sid)
+	if secondary_id() ~= added_sid then
+		mp.commandv("sub-remove", added_sid)
+		feedback("弹幕加载失败", 'error')
+		return
+	end
+	danmu_file, danmu_sid, secondary_state = file, added_sid, previous_state
 	mp.set_property_native("secondary-sub-visibility", false)
 	mp.set_property_native("secondary-sub-ass-override", false)
-	mp.set_property_native("secondary-sid", danmu_sid)
-	if secondary_id() ~= danmu_sid then feedback("弹幕加载失败", 'error'); return end
-	local approximatedDanmukuCount = math.floor((utils.file_info(file)["size"] - 850) / 120)
-	log(file ..
-		' [' .. utils.file_info(file)["size"] ..
-		'][' .. approximatedDanmukuCount .. ']')
+	local approximatedDanmukuCount = math.floor((metadata.size - 850) / 120)
+	log(file .. ' [' .. metadata.size .. '][' .. approximatedDanmukuCount .. ']')
 	if o.autoplay and approximatedDanmukuCount >= o.mincount then
 		Danmaku_show(true)
 	end
 	feedback('弹幕已加载', 'success')
+	return true
 end
 
 -- check if danmaku exists, load if true
@@ -171,7 +172,7 @@ local function Danmaku_check()
 	Danmaku_process(cid)
 end
 
--- call Danmu2Ass executable
+-- Convert comments using the bundled Python script.
 function Danmaku_process(cid)
 	if cid == nil then return end
 	if not o.use_python then feedback("弹幕加载失败", 'error') return end
@@ -191,9 +192,6 @@ function Danmaku_process(cid)
 	-- get script directory
 	local directory = mp.get_script_directory()
 	local py_path = utils.join_path(directory, 'Danmu2Ass.py')
-	local exe_path = utils.join_path(directory, 'Danmu2Ass.exe')
-
-	-- no need to convert forwardslashes and backslashes
 
 	local dw = 1920
 	local dh = 1080
@@ -203,38 +201,20 @@ function Danmaku_process(cid)
 	elseif aspect < dw / dh then
 		dw = math.floor(dh * aspect)
 	end
-	-- choose to use python or .exe
-	local arg = nil
-	if o.use_python then
-		arg = {
-			o.python_path, py_path,
-			'-d', danmaku_dir,
-			'-o', output_path,
-			'-s', '' .. dw .. 'x' .. dh,
-			'-fn', o.fontname,
-			'-fs', o.fontsize,
-			'-a', o.opacity,
-			'-dm', o.duration_marquee,
-			'-ds', o.duration_still,
-			'-flf', mp.command_native({ "expand-path", o.filter_file }),
-			'-p', tostring(math.floor(o.percent * dh)),
-			'-r', cid,
-		}
-	else
-		arg = {
-			exe_path,
-			'-d', danmaku_dir,
-			'-s', '' .. dw .. 'x' .. dh,
-			'-fn', o.fontname,
-			'-fs', o.fontsize,
-			'-a', o.opacity,
-			'-dm', o.duration_marquee,
-			'-ds', o.duration_still,
-			'-flf', mp.command_native({ "expand-path", o.filter_file }),
-			'-p', tostring(math.floor(o.percent * dh)),
-			'-r', cid,
-		}
-	end
+	local arg = {
+		o.python_path, py_path,
+		'-d', danmaku_dir,
+		'-o', output_path,
+		'-s', '' .. dw .. 'x' .. dh,
+		'-fn', o.fontname,
+		'-fs', o.fontsize,
+		'-a', o.opacity,
+		'-dm', o.duration_marquee,
+		'-ds', o.duration_still,
+		'-flf', mp.command_native({ "expand-path", o.filter_file }),
+		'-p', tostring(math.floor(o.percent * dh)),
+		'-r', cid,
+	}
 
 	-- run python to get comments
 	pending_request = mp.command_native_async({
@@ -248,8 +228,7 @@ function Danmaku_process(cid)
 			os.remove(output_path) return -- This callback owns only its unique output file.
 		end
 		if res and val and val.status == 0 then
-			danmu_file = output_path
-			load_danmu(danmu_file)
+			if not load_danmu(output_path) then os.remove(output_path) end
 		else
 			os.remove(output_path)
 			-- Only mpv's explicit spawn failure identifies an unavailable Python

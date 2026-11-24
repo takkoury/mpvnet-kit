@@ -306,6 +306,7 @@ local mp = {
     set_property=function(name,value) properties[name]=value;return true end,
     set_property_native=function(name,value) properties[name]=value;return true end,
     commandv=function(...) local args={...};commands[#commands+1]=args;if args[1]=='sub-add' then tracks[#tracks+1]={type='sub',id=7,title='Bilibili Danmaku'} end;return true end,
+    get_opt=function() return nil end,
     get_time=function() return 1 end,
     get_script_directory=function() return 'private-script-path' end,
     command_native=function(args) assert(args[1]=='expand-path'); return args[2] end,
@@ -424,14 +425,30 @@ eq(properties['secondary-sub-visibility'],true);eq(properties['secondary-sub-ass
 eq(messages[#messages],'次字幕已占用，无法加载弹幕');eq(durations[#durations],4)
 """)
 
+    def test_detection_skips_incomplete_and_non_subtitle_track_metadata(self):
+        self.run_case("""
+file_meta={is_file=true,size=2400}
+local source='https://example.test/123.xml'
+tracks={{type='audio',id=1,lang='danmaku',['external-filename']=source},
+        {type='sub',id=2,lang='danmaku'},
+        {type='sub',id=3,lang='danmaku',['external-filename']='unrelated'},
+        {type='sub',id=4,lang='danmaku',['external-filename']=source}}
+events['file-loaded']()
+eq(#calls,1);eq(calls[1].args[#calls[1].args],'123')
+eq(commands[1][1],'sub-remove');eq(commands[1][2],4)
+""")
+
     def test_rejected_subtitle_assignment_does_not_report_success(self):
         self.run_case("""
 file_meta={is_file=true,size=2400};properties['secondary-sid']='no'
+properties['secondary-sub-visibility']=true;properties['secondary-sub-ass-override']='force'
 local set=mp.set_property_native
 mp.set_property_native=function(name,value) if name=='secondary-sid' then return false end;return set(name,value) end
 Danmaku_process('123');callback(true,{status=0})
 eq(messages[#messages],'弹幕加载失败');eq(durations[#durations],4)
 eq(properties['user-data/mpvnet/feedback/danmaku'],'')
+eq(properties['secondary-sub-visibility'],true);eq(properties['secondary-sub-ass-override'],'force')
+eq(commands[#commands][1],'sub-remove');eq(commands[#commands][2],7);eq(#removed,1)
 for _,text in ipairs(messages) do assert(text~='弹幕已加载') end
 """)
 
