@@ -1,6 +1,13 @@
 -- Returning to a webpage is an explicit handoff for the current media only.
 local M = {}
 
+-- Accept a canonical page, which may already select a part with ?p=.
+function M.url_at_time(page, seconds)
+    if not seconds then return page end
+    local separator = page:find('?', 1, true) and '&' or '?'
+    return page .. separator .. 't=' .. seconds
+end
+
 local function part_for_cid(pages, cid)
     if type(pages) ~= 'table' then return end
     local part
@@ -76,7 +83,7 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page)
         local job = {path=mp.get_property('path'), id=playing_id()}
         pending = job
         local function launch(target)
-            local address = target .. (target:find('?', 1, true) and '&t=' or '?t=') .. math.floor(time)
+            local address = M.url_at_time(target, math.floor(time))
             job.handle = open_address(address, 'URL', function(ok)
                 if not current(job) then return end
                 pending = nil

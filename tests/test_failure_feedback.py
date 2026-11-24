@@ -69,66 +69,117 @@ local mp = {
             with self.subTest(reason=reason):
                 self.check_event("{reason='%s'}" % reason, None)
 
-    def test_bilibili_short_link_handoff_changes_only_the_current_playback_source(self):
-        lua = '''
-local props, hooks, jobs = {}, {}, {}
+    def check_share_link(self, cases):
+        web_resume = (ROOT / 'config/script-modules/web-resume.lua').read_text(encoding='utf-8')
+        fixture = '''
+local props, hooks = {}, {}
+local pending, deferred, continued
 local mp = {
-    get_property=function(k,d) return props[k] or d end,
-    get_property_native=function(k) return props[k] end,
-    set_property=function(k,v) props[k]=v; return true end,
+    get_property=function(name, default) return props[name] or default end,
+    get_property_native=function(name) return props[name] end,
+    set_property=function(name, value) props[name]=value; return true end,
     register_event=function() end,
-    add_hook=function(name,priority,f) hooks[priority]=f end,
-    command_native_async=function(command,done) jobs[#jobs+1]={command=command,done=done} end,
+    add_hook=function(name, priority, callback) hooks[priority]=callback end,
+    command_native_async=function(command, callback) pending={command=command, done=callback} end,
 }
 local os = {getenv=function() return 'Windows' end}
 local utils = {join_path=function(a,b) return a..'/'..b end}
 '''
-        cases = '''
-local deferred, continued = 0,0
-local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
+        setup = '''
+local start = 'file-local-options/start'
+local stream = 'stream-open-filename'
+local short = 'https://b23.tv/Short12'
+local page = 'https://www.bilibili.com/video/BV1Qgyfz1ERa/'
+local episode = 'https://www.bilibili.com/bangumi/play/ep2687638'
+local season = 'https://www.bilibili.com/bangumi/play/ss129142'
+
 local function open(url, enabled, options)
     props = options or {} -- mpv restores per-file options when a file ends.
-    props['stream-open-filename'], props['options/ytdl'] = url,enabled
-    hooks[5](hook)
+    props[stream], props['options/ytdl'] = url, enabled
+    pending, deferred, continued = nil, 0, 0
+    hooks[5]({
+        defer=function() deferred=deferred+1 end,
+        cont=function() continued=continued+1 end,
+    })
+    assert(deferred == (pending and 1 or 0) and continued == 0)
 end
-local short='https://b23.tv/Short12'
-local page='https://www.bilibili.com/video/BV1Qgyfz1ERa/'
-local international='https://www.bilibili.com/zh-Hans/video/BV1Qgyfz1ERa?p=1&share_tag=test'
-open(page,true);open(short,false);open('https://other.test/Short12',true);assert(#jobs==0)
-open(short..'?p=3&t=42',true)
-assert(deferred==1 and jobs[1].command.playback_only)
-assert(jobs[1].command.args[#jobs[1].command.args]==short)
-jobs[1].done(true,{status=0,stdout=international})
-assert(props['stream-open-filename']==page..'?p=3&t=42' and continued==1)
-assert(props['file-local-options/start']=='42' and expanded_short_page==page..'?p=3')
-open(short,true);jobs[2].done(true,{status=0,stdout='https://other.test/video/BV1Qgyfz1ERa/'})
-assert(props['stream-open-filename']==short and continued==2)
-open(short,true);props['stream-open-filename']='next.mp4'
-jobs[3].done(true,{status=0,stdout=page});assert(props['stream-open-filename']=='next.mp4' and continued==3 and not props['file-local-options/start'])
-open(short,true);jobs[4].done(false,nil);assert(props['stream-open-filename']==short and continued==4)
-local ep='https://www.bilibili.com/bangumi/play/ep2687638'
-local ss='https://www.bilibili.com/bangumi/play/ss129142'
-local start='file-local-options/start'
-open(ep..'?t=90',true);assert(props[start]=='90')
-open(page..'?p=3&t=4.25',true);assert(props[start]=='4.25')
-open(short..'?t=90',true);jobs[5].done(true,{status=0,stdout=ep..'?t=11'})
-assert(props[start]=='90' and props['stream-open-filename']==ep..'?t=90' and expanded_short_page==ep)
-open(short,true);jobs[6].done(true,{status=0,stdout=ep..'?t=6.5'})
-assert(props[start]=='6.5')
-open(short..'?t=90',true);jobs[7].done(true,{status=0,stdout=ss..'?t=17'})
-assert(not props[start] and props['stream-open-filename']==ss)
-for _,url in ipairs({ss..'?t=90',ep,ep..'?t=-3',ep..'#?t=90','https://other.test/video?t=3'}) do
-    open(url,true);assert(not props[start])
-end
-open(ep..'?t=90',false);assert(not props[start])
-open(ep..'?t=0',true);assert(props[start]=='0')
-open(ep..'?t=90',true,{[start]='12'});assert(props[start]=='12')
-for _,flag in ipairs({'set-locally','set-from-commandline'}) do
-    open(ep..'?t=90',true,{['option-info/start/'..flag]=true})
-    assert(not props[start])
+
+local function finish(redirect)
+    assert(pending.command.playback_only)
+    assert(pending.command.args[#pending.command.args] == short)
+    pending.done(redirect ~= nil, redirect and {status=0, stdout=redirect})
+    assert(continued == 1)
 end
 '''
-        self.lua.execute(lua + self.origin + self.start + cases, 'playback/short-link')
+        module = 'local web_resume = (function()\n' + web_resume + '\nend)()\n'
+        self.lua.execute(fixture + module + self.origin + self.start + setup + cases, 'playback/share-link')
+
+    def test_share_time_applies_only_to_an_eligible_page_without_an_explicit_start(self):
+        self.check_share_link('''
+open(episode..'?t=90', true)
+assert(props[start]=='90' and not pending)
+open(page..'?p=3&t=4.25', true)
+assert(props[start]=='4.25' and not pending)
+open(episode..'?t=0', true)
+assert(props[start]=='0')
+for _,url in ipairs({season..'?t=90', episode, episode..'?t=-3', episode..'#?t=90',
+                     'https://other.test/video?t=3'}) do
+    open(url, true)
+    assert(not props[start] and not pending, url)
+end
+open(episode..'?t=90', false)
+assert(not props[start] and not pending)
+open(episode..'?t=90', true, {[start]='12'})
+assert(props[start]=='12')
+for _,flag in ipairs({'set-locally','set-from-commandline'}) do
+    open(episode..'?t=90', true, {['option-info/start/'..flag]=true})
+    assert(not props[start], flag)
+end
+''')
+
+    def test_short_link_resolves_part_and_time_independently(self):
+        self.check_share_link('''
+local redirect = 'https://www.bilibili.com/zh-Hans/video/BV1Qgyfz1ERa?p=1&t=11&share_tag=test'
+open(short..'?p=3&t=42', true)
+finish(redirect)
+assert(props[stream]==page..'?p=3&t=42' and props[start]=='42')
+assert(expanded_short_page==page..'?p=3')
+
+open(short..'?p=3', true)
+finish(redirect)
+assert(props[stream]==page..'?p=3&t=11' and props[start]=='11')
+open(short..'?t=42', true)
+finish(redirect)
+assert(props[stream]==page..'?p=1&t=42' and props[start]=='42')
+
+open(short..'?t=90', true)
+finish(episode..'?t=11')
+assert(props[stream]==episode..'?t=90' and props[start]=='90' and expanded_short_page==episode)
+open(short, true)
+finish(episode..'?t=6.5')
+assert(props[start]=='6.5')
+open(short..'?t=90', true)
+finish(season..'?t=17')
+assert(props[stream]==season and not props[start])
+''')
+
+    def test_unavailable_or_stale_redirect_keeps_the_current_input_and_start(self):
+        self.check_share_link('''
+local url = short..'?t=90'
+open(url, false)
+assert(not pending and not props[start])
+open(url, true)
+finish('https://other.test/video/BV1Qgyfz1ERa/')
+assert(props[stream]==url and not props[start])
+open(url, true)
+finish(nil)
+assert(props[stream]==url and not props[start])
+
+open(url, true)
+props[stream] = 'next.mp4'
+finish(episode..'?t=11')
+assert(props[stream]=='next.mp4' and not props[start])
+''')
 
     def test_cdn_cid_belongs_to_its_input_not_a_later_queue_entry(self):
         prelude = '''

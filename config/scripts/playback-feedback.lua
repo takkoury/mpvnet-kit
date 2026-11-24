@@ -38,33 +38,36 @@ local function site_host(host, domain)
     return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
 end
 
-local function query_number(address, key, pattern)
-    for item in (address:match('^[^?#]*%?([^#]*)') or ''):gmatch('[^&]+') do
-        local number = item:match('^' .. key .. '=(' .. pattern .. ')$')
-        if number then return number end
+local function share_parameters(short_url, target_url)
+    local part, start_time
+    -- The first valid value for each parameter wins, including across the redirect.
+    for _, url in ipairs({short_url or '', target_url}) do
+        local query = url:match('^[^?#]*%?([^#]*)') or ''
+        for field in query:gmatch('[^&]+') do
+            part = part or field:match('^p=([1-9]%d*)$')
+            start_time = start_time or field:match('^t=(%d+)$') or field:match('^t=(%d+%.%d*)$')
+        end
     end
+    return part, start_time
 end
 
 local function bilibili_page(value, short_url)
     local address, host, rest = web_address(value)
     if not address or not site_host(host, 'bilibili.com') then return end
-    local path = rest:match('^([^?#]*)')
-    path = path:gsub('^/zh%-Han[st]/', '/')
+    local path = rest:match('^([^?#]*)'):gsub('^/zh%-Han[st]/', '/')
+    local part, start_time = share_parameters(short_url, rest)
     local bvid = path:match('^/video/(BV%w+)/?$')
-    local page, id
     if bvid and #bvid == 12 then
-        page, id = 'https://www.bilibili.com/video/' .. bvid .. '/', bvid
-        -- External Player 1.2.7 strips query parameters; only preserve P if metadata actually supplied it.
-        local part = query_number(short_url or '', 'p', '[1-9]%d*') or query_number(rest, 'p', '[1-9]%d*')
+        local page = 'https://www.bilibili.com/video/' .. bvid .. '/'
         if part then page = page .. '?p=' .. part end
-    else
-        id = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
-        if not id then return end
-        page = 'https://www.bilibili.com/bangumi/play/' .. id
-        if id:sub(1, 2) == 'ss' then return page, id end
+        return page, bvid, start_time
     end
-    local time = query_number(short_url or '', 't', '%d+%.?%d*') or query_number(rest, 't', '%d+%.?%d*')
-    return page, id, time
+    local id = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
+    if id then
+        local page = 'https://www.bilibili.com/bangumi/play/' .. id
+        -- A season alone does not identify the episode to start at this time.
+        return page, id, id:sub(1, 2) == 'ep' and start_time or nil
+    end
 end
 
 local function capture_media_origin(loaded)
@@ -447,22 +450,23 @@ mp.register_event("start-file", function(event)
     seek_pending = false
     seek_timer:kill()
 end)
-local function apply_share_start(time)
-    if not time or mp.get_property('file-local-options/start', 'none') ~= 'none'
+
+local function apply_share_start(start_time)
+    if not start_time or mp.get_property('file-local-options/start', 'none') ~= 'none'
         or mp.get_property_native('option-info/start/set-from-commandline')
         or mp.get_property_native('option-info/start/set-locally') then return end
-    mp.set_property('file-local-options/start', time)
+    mp.set_property('file-local-options/start', start_time)
 end
 
 -- Apply the shared position before mpv's ytdl_hook (priority 10).
 -- The queue keeps the supplied link. Only this playback attempt changes source.
 mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
-    local _, host, rest = web_address(input)
     if not mp.get_property_native('options/ytdl') then return end
+    local _, host, rest = web_address(input)
     if host ~= 'b23.tv' then
-        local _, _, time = bilibili_page(input)
-        apply_share_start(time)
+        local _, _, start_time = bilibili_page(input)
+        apply_share_start(start_time)
         return
     end
     local code = rest:match('^([^?#]*)'):match('^/([A-Za-z0-9]+)/?$')
@@ -474,14 +478,10 @@ mp.add_hook('on_load', 5, function(hook)
             '--output', 'NUL', '--max-time', '4', '--write-out', '%{redirect_url}', 'https://b23.tv/' .. code}},
         function(ok, result)
             if ok and result and result.status == 0 and mp.get_property('stream-open-filename') == input then
-                local page, _, time = bilibili_page(result.stdout, input)
-                if page then
-                    local target = page
-                    if time then target = page .. (page:find('?', 1, true) and '&t=' or '?t=') .. time end
-                    if mp.set_property('stream-open-filename', target) then
-                        expanded_short_page = page
-                        apply_share_start(time)
-                    end
+                local page, _, start_time = bilibili_page(result.stdout, input)
+                if page and mp.set_property('stream-open-filename', web_resume.url_at_time(page, start_time)) then
+                    expanded_short_page = page
+                    apply_share_start(start_time)
                 end
             end
             hook:cont()
