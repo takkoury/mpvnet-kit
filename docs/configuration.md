@@ -134,7 +134,7 @@
 
 缩略图的回退顺序是：本机 `mpv_path` → thumbfast 非空且非 `mpv` 的显式路径 → frontend 提供的进程路径 → 当前播放器自身 PID 的可执行文件 → portable 配置父目录的 `mpvnet.exe` → 原值。发现发生在初始化阶段，不会持续扫描其他播放器进程。
 
-PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有对应的本机可调字段。片段导出和字幕行选择按需调用 FFmpeg。源 PNG 和打开 Capture 目录不依赖 FFmpeg。弹幕需要 Python 能运行随包转换脚本，并能访问对应弹幕数据；网页入口由用户自己的浏览器和外部调用组件提供，本包没有 Cookie 配置入口。
+PowerShell 从 `SystemRoot` / `WINDIR` 定位系统 Windows PowerShell，没有对应的本机可调字段。片段导出和字幕行选择按需调用 FFmpeg。源 PNG 和打开 Capture 目录不依赖 FFmpeg。弹幕需要 Python 能运行随包转换脚本，并能访问对应弹幕数据。直接粘贴公开投稿网址可按[安装指南](installation.md#在播放器中打开公开投稿网址)准备 yt-dlp。从浏览器调起播放器则使用浏览器脚本和 Handler，本包没有 Cookie 配置入口。
 
 弹幕转换使用 Python，请保留 `use_python=yes`。设为 `no` 会提示“弹幕加载失败”并停止本次转换。
 

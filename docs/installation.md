@@ -57,9 +57,21 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 随包弹幕组件的使用条件见[弹幕说明](features.md#bilibili-弹幕)。
 
+### 在播放器中打开公开投稿网址
+
+如果拿到的是媒体直链，复制后在播放器按 Ctrl+Shift+V 即可播放。如果拿到的是 B 站公开投稿的网页地址，可以自行添加 `yt-dlp.exe`，让播放器从网页找到音视频。
+
+1. 在播放器右键菜单选择“工具与设置 > 常用设置…”，进入“高级”，点击“打开配置目录”。用本安装包新装播放器时，这个目录通常是安装目录下的 `player\portable_config`。
+2. 从 [yt-dlp 官方发布页](https://github.com/yt-dlp/yt-dlp/releases/latest)下载 Windows x64 独立程序 `yt-dlp.exe`。把它放在刚打开的目录里，与 `mpv.conf` 放在同一层，然后重新启动播放器。无需修改系统 PATH。
+3. 复制浏览器地址栏里的完整投稿网址。如果网址带有指定分 P 的参数（如 `?p=1`），请一并复制。在播放器按 Ctrl+Shift+V，或选择“文件 > 打开剪贴板中的网址”。加载成功后，投稿将替换当前播放内容。
+
+本版用 yt-dlp 2026.11.23 验证过一个无需登录的 B 站投稿。若网页打不开，可以先核对复制的内容是否只有网址，并检查 yt-dlp 官方发布页是否有新版。已经在浏览器里选好视频，或观看需要浏览器登录状态的内容时，可以[从网页打开播放器](#从网页打开播放器)。
+
+更新这个组件时，退出播放器，用上游新版替换自己放入的 `yt-dlp.exe`。要撤回这次添加，退出播放器后移走该文件即可。如果系统 PATH 中另有解析器，播放器仍可能找到它。使用新装包时，可在安装目录的 PowerShell 中运行 `.\Play.cmd --ytdl=no`，让本次启动停用网页解析；媒体直链仍可播放。
+
 ### 从网页打开播放器
 
-手里已有媒体直链时，可直接在播放器按 Ctrl+Shift+V 打开剪贴板中的网址。要从 B 站视频页面调用播放器，请按 [External Player 的安装说明](https://github.com/LuckyPuppy514/external-player)准备 Tampermonkey 并安装脚本，再按 [URL Scheme Handler 的说明](https://github.com/LuckyPuppy514/url-scheme-handler)注册协议。kit 安装器不代为注册。
+要从 B 站视频页面调用播放器，请按 [External Player 的安装说明](https://github.com/LuckyPuppy514/external-player)准备 Tampermonkey 并安装脚本，再按 [URL Scheme Handler 的说明](https://github.com/LuckyPuppy514/url-scheme-handler)注册协议。kit 安装器不代为注册。
 
 1. 在 Handler 中添加名为 `MPVNET` 的应用。用本安装包新装播放器时，选择安装目录中的 `player\mpvnet.exe`；给已有播放器安装 kit 时，选择当时安装 kit 的那份 `mpvnet.exe`。
 2. 打开 B 站投稿页或番剧的具体分集，在 External Player 中选择 `MPVNET` 播放。浏览器首次询问是否打开外部应用时，确认打开。点击后没有播放器窗口，可先核对协议是否已注册，以及 Handler 里的程序路径是否仍然有效。
