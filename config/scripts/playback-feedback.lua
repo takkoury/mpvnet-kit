@@ -273,30 +273,46 @@ mp.add_key_binding(nil, "copy-media-path", function()
     local ok = address and mp.set_property("clipboard/text", address)
     feedback_client.show((kind == "URL" and "网址" or "路径") .. (ok and "已复制" or "复制失败"), ok and 'success' or 'error')
 end)
-mp.add_key_binding(nil, "open-media-path", function()
-    local address, kind = media_address()
-    if not address then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
+local function open_address(address, kind, done)
+    local function finish(ok)
+        if done then done(ok)
+        elseif not ok then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error') end
+    end
+    if not address then finish(false); return end
     -- Windows mpv subprocess stdin_data is unreliable; transport data in one owned UTF-8 JSON file.
     path_sequence = path_sequence + 1
     local directory = os.getenv("TEMP") or os.getenv("TMP")
     local absolute = directory and (directory:match("^%a:[\\/]") or directory:match("^\\\\"))
     local metadata = absolute and utils.file_info(directory)
-    if not metadata or not metadata.is_dir then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
+    if not metadata or not metadata.is_dir then finish(false); return end
     local request_path = utils.join_path(directory, "mpvnet-path-" .. tostring(mp.get_property_number("pid")) .. "-" .. tostring(mp.get_time()):gsub("%W", "") .. "-" .. path_sequence .. ".json")
     local file = io.open(request_path, "wb")
-    if not file then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
+    if not file then finish(false); return end
     local written = file:write(utils.format_json({operation = kind == "URL" and "url" or "reveal", address = address}))
     local closed = file:close()
-    if not written or not closed then os.remove(request_path); feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error'); return end
+    if not written or not closed then os.remove(request_path); finish(false); return end
     local helper = mp.command_native({"expand-path", "~~/helpers/media-path-action.ps1"})
     path_requests[request_path] = mp.command_native_async({name = "subprocess", args = {
         paths.powershell(), "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-File", helper, "-RequestPath", request_path,
-    }, capture_stderr = true, playback_only = false}, function(success, result)
+    }, capture_stderr = true, playback_only = done ~= nil}, function(success, result)
         path_requests[request_path] = nil
         os.remove(request_path)
-        if not success or not result or result.status ~= 0 then feedback_client.show(kind == "URL" and "网址打开失败" or "文件定位失败", 'error') end
+        finish(success and result and result.status == 0)
     end)
+    return path_requests[request_path]
+end
+mp.add_key_binding(nil, "open-media-path", function()
+    open_address(media_address())
 end)
+
+local web_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/web-resume.lua'}))
+web_resume.bind(mp, utils, feedback_client, function()
+    local _, host = web_address(mp.get_property('path'))
+    if not host then return end
+    if host == 'b23.tv' then return bilibili_page(expanded_short_page) end
+    local address = media_address()
+    return bilibili_page(address), site_host(host, 'bilivideo.com')
+end, open_address)
 mp.add_key_binding(nil, "clipboard-url", function()
     mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")
 end)

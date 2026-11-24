@@ -43,6 +43,7 @@ PROFILES = {
         'test_motion_controls.MotionControls',
         'test_audio_controls.AudioControls',
         'test_feedback_client.FeedbackClient', 'test_feedback_osd.FeedbackOSD',
+        'test_web_resume.WebResume',
         'test_failure_feedback.PlaybackEndFeedback', 'test_failure_feedback.FailureFeedback',
         'test_failure_feedback.VideoRestore',
         'test_failure_feedback.DanmakuFailureFeedback', 'test_failure_feedback.ThumbnailFeedback',

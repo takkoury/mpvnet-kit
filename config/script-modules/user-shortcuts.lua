@@ -53,6 +53,7 @@ local additions = {
     {'file.append-clipboard', '文件', '从剪贴板追加文件或网址', 'script-binding playlist_controls/append-clipboard', true},
     {'file.save-playlist', '文件', '保存播放列表…', 'script-binding playlist_controls/save-playlist', true},
     {'file.open-location', '文件', '打开文件所在位置／来源网页', 'script-binding playback_feedback/open-media-path', true},
+    {'file.resume-webpage', '文件', '回到网页继续播放', 'script-binding playback_feedback/resume-webpage'},
     {'file.copy-location', '文件', '复制文件路径／来源网址', 'script-binding playback_feedback/copy-media-path'},
     {'file.history', '文件', '播放历史…', 'script-binding track_selection/select-history', true},
     {'file.watch-later', '文件', '稍后继续播放…', 'script-binding track_selection/select-watch-later', true},
