@@ -86,7 +86,8 @@ local utils = {join_path=function(a,b) return a..'/'..b end}
         cases = '''
 local deferred, continued = 0,0
 local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
-local function open(url, enabled)
+local function open(url, enabled, options)
+    props = options or {} -- mpv restores per-file options when a file ends.
     props['stream-open-filename'], props['options/ytdl'] = url,enabled
     hooks[5](hook)
 end
@@ -99,11 +100,33 @@ assert(deferred==1 and jobs[1].command.playback_only)
 assert(jobs[1].command.args[#jobs[1].command.args]==short)
 jobs[1].done(true,{status=0,stdout=international})
 assert(props['stream-open-filename']==page..'?p=3&t=42' and continued==1)
+assert(props['file-local-options/start']=='42' and expanded_short_page==page..'?p=3')
 open(short,true);jobs[2].done(true,{status=0,stdout='https://other.test/video/BV1Qgyfz1ERa/'})
 assert(props['stream-open-filename']==short and continued==2)
 open(short,true);props['stream-open-filename']='next.mp4'
-jobs[3].done(true,{status=0,stdout=page});assert(props['stream-open-filename']=='next.mp4' and continued==3)
+jobs[3].done(true,{status=0,stdout=page});assert(props['stream-open-filename']=='next.mp4' and continued==3 and not props['file-local-options/start'])
 open(short,true);jobs[4].done(false,nil);assert(props['stream-open-filename']==short and continued==4)
+local ep='https://www.bilibili.com/bangumi/play/ep2687638'
+local ss='https://www.bilibili.com/bangumi/play/ss129142'
+local start='file-local-options/start'
+open(ep..'?t=90',true);assert(props[start]=='90')
+open(page..'?p=3&t=4.25',true);assert(props[start]=='4.25')
+open(short..'?t=90',true);jobs[5].done(true,{status=0,stdout=ep..'?t=11'})
+assert(props[start]=='90' and props['stream-open-filename']==ep..'?t=90' and expanded_short_page==ep)
+open(short,true);jobs[6].done(true,{status=0,stdout=ep..'?t=6.5'})
+assert(props[start]=='6.5')
+open(short..'?t=90',true);jobs[7].done(true,{status=0,stdout=ss..'?t=17'})
+assert(not props[start] and props['stream-open-filename']==ss)
+for _,url in ipairs({ss..'?t=90',ep,ep..'?t=-3',ep..'#?t=90','https://other.test/video?t=3'}) do
+    open(url,true);assert(not props[start])
+end
+open(ep..'?t=90',false);assert(not props[start])
+open(ep..'?t=0',true);assert(props[start]=='0')
+open(ep..'?t=90',true,{[start]='12'});assert(props[start]=='12')
+for _,flag in ipairs({'set-locally','set-from-commandline'}) do
+    open(ep..'?t=90',true,{['option-info/start/'..flag]=true})
+    assert(not props[start])
+end
 '''
         self.lua.execute(lua + self.origin + self.start + cases, 'playback/short-link')
 

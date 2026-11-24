@@ -39,7 +39,7 @@ local function site_host(host, domain)
 end
 
 local function query_number(address, key, pattern)
-    for item in (address:match('%?([^#]*)') or ''):gmatch('[^&]+') do
+    for item in (address:match('^[^?#]*%?([^#]*)') or ''):gmatch('[^&]+') do
         local number = item:match('^' .. key .. '=(' .. pattern .. ')$')
         if number then return number end
     end
@@ -51,19 +51,20 @@ local function bilibili_page(value, short_url)
     local path = rest:match('^([^?#]*)')
     path = path:gsub('^/zh%-Han[st]/', '/')
     local bvid = path:match('^/video/(BV%w+)/?$')
+    local page, id
     if bvid and #bvid == 12 then
-        local page = 'https://www.bilibili.com/video/' .. bvid .. '/'
+        page, id = 'https://www.bilibili.com/video/' .. bvid .. '/', bvid
         -- External Player 1.2.7 strips query parameters; only preserve P if metadata actually supplied it.
         local part = query_number(short_url or '', 'p', '[1-9]%d*') or query_number(rest, 'p', '[1-9]%d*')
         if part then page = page .. '?p=' .. part end
-        if short_url then
-            local time = query_number(short_url, 't', '%d+%.?%d*') or query_number(rest, 't', '%d+%.?%d*')
-            if time then page = page .. (part and '&t=' or '?t=') .. time end
-        end
-        return page, bvid
+    else
+        id = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
+        if not id then return end
+        page = 'https://www.bilibili.com/bangumi/play/' .. id
+        if id:sub(1, 2) == 'ss' then return page, id end
     end
-    local episode = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
-    if episode then return 'https://www.bilibili.com/bangumi/play/' .. episode, episode end
+    local time = query_number(short_url or '', 't', '%d+%.?%d*') or query_number(rest, 't', '%d+%.?%d*')
+    return page, id, time
 end
 
 local function capture_media_origin(loaded)
@@ -446,12 +447,24 @@ mp.register_event("start-file", function(event)
     seek_pending = false
     seek_timer:kill()
 end)
--- Expand a Bilibili share redirect before mpv's ytdl_hook (priority 10).
+local function apply_share_start(time)
+    if not time or mp.get_property('file-local-options/start', 'none') ~= 'none'
+        or mp.get_property_native('option-info/start/set-from-commandline')
+        or mp.get_property_native('option-info/start/set-locally') then return end
+    mp.set_property('file-local-options/start', time)
+end
+
+-- Apply the shared position before mpv's ytdl_hook (priority 10).
 -- The queue keeps the supplied link. Only this playback attempt changes source.
 mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
     local _, host, rest = web_address(input)
-    if host ~= 'b23.tv' or not mp.get_property_native('options/ytdl') then return end
+    if not mp.get_property_native('options/ytdl') then return end
+    if host ~= 'b23.tv' then
+        local _, _, time = bilibili_page(input)
+        apply_share_start(time)
+        return
+    end
     local code = rest:match('^([^?#]*)'):match('^/([A-Za-z0-9]+)/?$')
     local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
     if not code or #code > 32 or not windows then return end
@@ -461,8 +474,15 @@ mp.add_hook('on_load', 5, function(hook)
             '--output', 'NUL', '--max-time', '4', '--write-out', '%{redirect_url}', 'https://b23.tv/' .. code}},
         function(ok, result)
             if ok and result and result.status == 0 and mp.get_property('stream-open-filename') == input then
-                local page = bilibili_page(result.stdout, input)
-                if page and mp.set_property('stream-open-filename', page) then expanded_short_page = page end
+                local page, _, time = bilibili_page(result.stdout, input)
+                if page then
+                    local target = page
+                    if time then target = page .. (page:find('?', 1, true) and '&t=' or '?t=') .. time end
+                    if mp.set_property('stream-open-filename', target) then
+                        expanded_short_page = page
+                        apply_share_start(time)
+                    end
+                end
             end
             hook:cont()
         end)
