@@ -22,6 +22,7 @@ local path_requests = {}
 local path_sequence = 0
 -- One in-memory association only; never retain request headers or infer a page from CID/CDN.
 local origin_path, origin_page, origin_active
+local playback_entry_id, failure_source
 
 local function web_address(value)
     if type(value) ~= 'string' or value:find('%s') or value:find('%c') then return end
@@ -53,11 +54,14 @@ local function bilibili_page(value)
     if episode then return 'https://www.bilibili.com/bangumi/play/' .. episode end
 end
 
-local function capture_media_origin()
+local function capture_media_origin(loaded)
     origin_active = false
     local path = mp.get_property('path')
     local _, host = web_address(path)
-    if not site_host(host, 'bilivideo.com') then return end
+    if not host then return end
+    if not site_host(host, 'bilivideo.com') then
+        return bilibili_page(path) and 'page' or 'url'
+    end
     local page = bilibili_page(mp.get_property('file-local-options/referrer'))
     if not page then
         local headers = mp.get_property_native('file-local-options/http-header-fields', {})
@@ -70,8 +74,10 @@ local function capture_media_origin()
     end
     -- The same unchanged global Referer on a different CDN input is not evidence of that media's page.
     if page and (not origin_page or page ~= origin_page or path == origin_path) then
-        origin_path, origin_page, origin_active = path, page, true
+        origin_path, origin_page, origin_active = path, page, loaded
+        return 'page'
     end
+    return 'url'
 end
 
 local function media_address()
@@ -387,7 +393,8 @@ mp.register_event("playback-restart", function()
     if seek_pending then seek_pending = false; seek_timer:kill(); show_time() end
 end)
 mp.register_event("seek", function() frame_pending = false end)
-mp.register_event("start-file", function()
+mp.register_event("start-file", function(event)
+    playback_entry_id, failure_source = event.playlist_entry_id, nil
     origin_active = false
     frame_pending = false
     release_hold()
@@ -398,6 +405,10 @@ mp.register_event("start-file", function()
     seek_pending = false
     seek_timer:kill()
 end)
+-- File-local source metadata is available here even if opening the stream fails.
+mp.add_hook('on_load', 50, function()
+    failure_source = capture_media_origin(false)
+end)
 mp.register_event("end-file", function(event)
     origin_active = false
     frame_pending = false
@@ -405,14 +416,23 @@ mp.register_event("end-file", function(event)
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
     if event.reason == "error" then
         -- Never echo backend errors: they may contain private paths or URLs.
-        local message = (event.error or event.file_error) == "unrecognized file format"
-            and "不支持此格式\n请换一个文件"
-            or "播放失败\n请检查文件或网址"
+        local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
+        local message
+        if source == 'page' then
+            message = "播放失败\n请回到原网页，再用外部播放器播放"
+        elseif source == 'url' then
+            message = "无法播放此网址\n请重新获取媒体直链后打开"
+        elseif (event.error or event.file_error) == "unrecognized file format" then
+            message = "不支持此格式\n请换一个文件"
+        else
+            message = "播放失败\n请检查文件或网址"
+        end
         feedback_client.show(message, 'error')
     end
+    playback_entry_id, failure_source = nil, nil
 end)
 mp.register_event("file-loaded", function()
-    capture_media_origin()
+    failure_source = capture_media_origin(true)
     if reload_marks and mp.get_property("path") == reload_marks.path then
         mark = reload_marks.mark
         mp.commandv("no-osd", "set", "ab-loop-count", reload_marks.count)
@@ -430,4 +450,4 @@ mp.register_event("shutdown", function()
     if window_scale_timer then window_scale_timer:kill(); window_scale_timer = nil end
     for path, request in pairs(path_requests) do mp.abort_async_command(request); os.remove(path) end
 end)
-capture_media_origin()
+capture_media_origin(true)

@@ -27,6 +27,10 @@ class PlaybackEndFeedback(unittest.TestCase):
         cls.source = fragment(playback,
                               'mp.register_event("end-file", function(event)',
                               'mp.register_event("file-loaded", function()')
+        cls.origin = fragment(playback, 'local origin_path, origin_page, origin_active',
+                              'local function media_address()')
+        cls.start = fragment(playback, 'mp.register_event("start-file", function(event)',
+                             'mp.register_event("end-file", function(event)')
 
     def check_event(self, event, expected):
         prelude = '''
@@ -64,6 +68,52 @@ local mp = {
         for reason in ('stop', 'eof', 'quit', 'redirect'):
             with self.subTest(reason=reason):
                 self.check_event("{reason='%s'}" % reason, None)
+
+    def test_network_failure_uses_only_the_failed_entry_and_its_source(self):
+        prelude = '''
+local events, hooks, props, messages = {}, {}, {}, {}
+local mp = {
+    register_event=function(name, fn) events[name]=fn end,
+    add_hook=function(name, priority, fn) hooks[name]=fn end,
+    get_property=function(key) return props[key] end,
+    get_property_native=function(key, fallback) return props[key] or fallback end,
+    commandv=function() end,
+}
+local seek_timer = {kill=function() end}
+local function release_hold() end
+local feedback_client = {show=function(text, kind)
+    assert(kind=='error'); messages[#messages+1]=text
+end}
+'''
+        cases = r'''
+local function load(id, path, referrer, headers)
+    props = {path=path, ['file-local-options/referrer']=referrer,
+             ['file-local-options/http-header-fields']=headers}
+    events['start-file']({playlist_entry_id=id})
+    hooks.on_load()
+end
+local function finish(id, expected)
+    local count = #messages
+    props = {} -- Core properties may already be cleared when end-file is delivered.
+    events['end-file']({reason='error', playlist_entry_id=id, file_error='loading failed'})
+    assert(#messages==count+1 and messages[#messages]==expected, messages[#messages])
+end
+local page = 'https://www.bilibili.com/video/BV1234567890/'
+local cdn = 'https://v.bilivideo.com/'
+local webpage = '播放失败\n请回到原网页，再用外部播放器播放'
+local direct = '无法播放此网址\n请重新获取媒体直链后打开'
+local generic = '播放失败\n请检查文件或网址'
+load(1, cdn..'a', nil, {'Referer: '..page}); finish(1, webpage)
+load(2, cdn..'b', page); finish(2, direct) -- Stale per-process Referer.
+load(3, page); finish(3, webpage)
+load(4, 'https://media.test/stream?private=1'); finish(4, direct)
+load(5, 'local.mp4'); finish(5, generic)
+load(6, cdn..'c', 'https://www.bilibili.com.invalid/video/BV1234567890/')
+finish(6, direct)
+load(7, page); finish(8, generic)
+finish(7, generic) -- No saved hint survives end-file.
+'''
+        self.lua.execute(prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
 
 
 class VideoRestore(unittest.TestCase):

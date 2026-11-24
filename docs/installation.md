@@ -55,7 +55,17 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 安装器只检查 FFmpeg 和 Python 是否能从当前 PATH 找到，不执行或下载程序。需要安装时，可参考 [FFmpeg 下载页](https://www.ffmpeg.org/download.html)和 [Python Windows 下载页](https://www.python.org/downloads/windows/)。程序不在 PATH 时，可按[本机路径说明](configuration.md#3-本机路径与外部组件)配置。
 
-网页调起可配合 [External Player](https://greasyfork.org/zh-CN/scripts/518677-external-player) 和 [URL Scheme Handler](https://github.com/LuckyPuppy514/url-scheme-handler) 使用，由用户按各自说明配置，安装器不注册协议。随包弹幕组件的使用条件见[弹幕说明](features.md#bilibili-弹幕)。
+随包弹幕组件的使用条件见[弹幕说明](features.md#bilibili-弹幕)。
+
+### 从网页打开播放器
+
+手里已有媒体直链时，可直接在播放器按 Ctrl+Shift+V 打开剪贴板中的网址。要从 B 站视频页面调用播放器，请按 [External Player 的安装说明](https://github.com/LuckyPuppy514/external-player)准备 Tampermonkey 并安装脚本，再按 [URL Scheme Handler 的说明](https://github.com/LuckyPuppy514/url-scheme-handler)注册协议。kit 安装器不代为注册。
+
+1. 在 Handler 中添加名为 `MPVNET` 的应用。用本安装包新装播放器时，选择安装目录中的 `player\mpvnet.exe`；给已有播放器安装 kit 时，选择当时安装 kit 的那份 `mpvnet.exe`。
+2. 打开 B 站投稿页或番剧的具体分集，在 External Player 中选择 `MPVNET` 播放。浏览器首次询问是否打开外部应用时，确认打开。点击后没有播放器窗口，可先核对协议是否已注册，以及 Handler 里的程序路径是否仍然有效。
+3. 如果播放器打开了，但菜单或设置和平时不同，可在“工具与设置 > 常用设置… > 高级 > 打开配置目录”查看当前目录。若显示的是 mpv.net 原版菜单，可选“打开配置文件夹”（Open Config Folder）。新装播放器应使用安装目录内的 `player\portable_config`；已有播放器应与安装 kit 时确认的配置目录一致。
+
+新装目录里的 `Play.cmd` 会在启动时指定这份便携配置。Handler 直接启动 `mpvnet.exe`，若浏览器继承的 `MPVNET_HOME` 指向另一有效目录，同一个播放器也会读到另一套配置。这时请先核对该变量是否仍用于其他安装，再决定是否调整；调整后需重新启动浏览器才能使用新环境。
 
 ## 5. 首次启动检查
 
