@@ -97,8 +97,8 @@ local function remove_owned(path)
 end
 
 local function request_file(kind, contents)
-    local temp = os.getenv('TEMP') or os.getenv('TMP')
-    if not temp or temp == '' then return nil, '找不到系统临时目录' end
+    local temp = paths.temp_directory()
+    if not temp then return nil, '找不到系统临时目录' end
     sequence = sequence + 1
     local path = utils.join_path(temp, 'mpvnet-shortcuts-' .. token .. '-' .. tostring(sequence) .. '-' .. kind .. '.json')
     local file = io.open(path, 'wb')

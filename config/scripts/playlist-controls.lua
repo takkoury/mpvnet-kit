@@ -189,8 +189,8 @@ local function start_window()
         local ok = mp.set_property('options/input-ipc-server', pipe)
         if not ok then open_failed('ipc'); return end
     end
-    local temp = os.getenv('TEMP') or os.getenv('TMP')
-    if not temp or temp == '' then open_failed('temp'); return end
+    local temp = paths.temp_directory()
+    if not temp then open_failed('temp'); return end
     payload_path = utils.join_path(temp, 'mpvnet-playlist-' .. token .. '.json')
     local file = io.open(payload_path, 'wb')
     if not file then open_failed('payload'); return end

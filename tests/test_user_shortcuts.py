@@ -6,6 +6,7 @@ import re
 import unittest
 
 from lua_runtime import load_lua51
+from support.lua_source import paths_loader
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / 'config/script-modules/user-shortcuts.lua'
@@ -26,6 +27,7 @@ class UserShortcuts(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'tests/lua/user_shortcuts.lua').read_text(encoding='utf-8')
+        cls.source = 'local load_paths = ' + paths_loader() + '\n' + cls.source
         cls.source = cls.source.replace('-- MODEL SOURCE IS INSERTED HERE', MODULE.read_text(encoding='utf-8'))
         cls.source = cls.source.replace('-- SCRIPT SOURCE IS INSERTED HERE', SCRIPT.read_text(encoding='utf-8'))
         cls.source = 'local input_source = [===[\n' + (ROOT / 'config/input.conf').read_text(encoding='utf-8') + '\n]===]\n' + cls.source

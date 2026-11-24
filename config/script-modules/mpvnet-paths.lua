@@ -35,6 +35,14 @@ function paths.capture_root()
     return values and values.capture_root or options.capture_root
 end
 
+function paths.temp_directory()
+    -- Helpers using .NET GetTempPath() expect TMP before TEMP on Windows.
+    for _, name in ipairs({'TMP', 'TEMP'}) do
+        local dir = os.getenv(name)
+        if dir and dir ~= '' then return dir end
+    end
+end
+
 function paths.powershell()
     local root = os.getenv('SystemRoot') or os.getenv('WINDIR')
     return root and utils.join_path(root, 'System32/WindowsPowerShell/v1.0/powershell.exe') or 'powershell.exe'

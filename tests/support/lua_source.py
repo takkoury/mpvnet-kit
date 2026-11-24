@@ -14,6 +14,12 @@ def feedback_module():
     return '(function()\n' + path.read_text(encoding='utf-8') + '\nend)()'
 
 
+def paths_loader():
+    """Load the production path module after the fixture installs its mpv doubles."""
+    path = Path(__file__).resolve().parents[2] / 'config/script-modules/mpvnet-paths.lua'
+    return 'function()\n' + path.read_text(encoding='utf-8') + '\nend'
+
+
 def _options(path):
     for line in Path(path).read_text(encoding='utf-8').splitlines():
         if line.strip() and not line.lstrip().startswith('#'):

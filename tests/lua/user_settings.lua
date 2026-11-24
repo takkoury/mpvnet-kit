@@ -47,7 +47,7 @@ io.open=function(path,mode)
     if write_failure then return nil,'denied',13 end
     return {write=function(_,raw) files[path]=raw;return true end,close=function() return true end}
 end
-os.getenv=function(name) if name=='TEMP' then return 'X:/temp' end end
+os.getenv=function(name) if name=='TMP' then return 'X:/temp' elseif name=='TEMP' then return 'X:/other' end end
 os.remove=function(path) removed[#removed+1]=path;files[path]=nil;return true end
 local function instance(pid,order,startup_options)
     local host={properties={pid=pid,['options/input-ipc-server']='',['sub-scale']=1.25,

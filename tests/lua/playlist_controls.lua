@@ -72,17 +72,19 @@ local utils = {
     file_info=function(file) if file:find('missing',1,true) then return nil end;return {is_file=not file:find('directory',1,true)} end,
 }
 package.loaded['mp']=mp;package.loaded['mp.utils']=utils
+package.loaded['mp.options']={read_options=function() end}
 local original_dofile, original_open, original_getenv, original_remove=dofile,io.open,os.getenv,os.remove
 dofile=function(path)
     if path == '~~/script-modules/feedback.lua' then return feedback_module end
     if path == '~~/script-modules/playlist-input.lua' then return input_module end
     if path == '~~/script-modules/user-settings.lua' then return settings_model end
     assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
-    return {powershell=function() return 'powershell.exe' end}
+    return load_paths()
 end
-os.getenv=function(name) if name=='TEMP' or name=='TMP' then return temp end;return nil end
+os.getenv=function(name) if name=='TMP' then return temp end;if name=='TEMP' and temp then return 'X:/other' end end
 os.remove=function(path) removed[#removed+1]=path;return true end
-io.open=function(_, _)
+io.open=function(path, _)
+    assert(path:find(temp..'/mpvnet-playlist-',1,true)==1,'unexpected playlist request directory')
     if failure=='open' then return nil end
     return {write=function() if failure=='write' then return nil end;return true end,
         close=function() if failure=='close' then return nil end;return true end}

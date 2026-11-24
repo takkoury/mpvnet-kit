@@ -86,11 +86,12 @@ local mp = {
     add_periodic_timer=function(period,callback) eq(period,1); timers[#timers+1]=callback end,
 }
 package.loaded['mp'],package.loaded['mp.utils']=mp,utils
+package.loaded['mp.options']={read_options=function() end}
 dofile=function(path)
     if path == config..'script-modules/user-shortcuts.lua' then return model end
-    return {powershell=function() return 'powershell.exe' end}
+    eq(path,config..'script-modules/mpvnet-paths.lua');return load_paths()
 end
-os.getenv=function(name) if name=='TEMP' then return 'X:/temp' end end
+os.getenv=function(name) if name=='TMP' then return 'X:/temp' elseif name=='TEMP' then return 'X:/other' end end
 os.remove=function(path) removed[#removed+1]=path; files[path]=nil; return true end
 io.open=function(path,mode)
     if mode=='rb' then

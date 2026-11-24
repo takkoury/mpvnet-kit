@@ -207,6 +207,8 @@ JSON 请求校验、路径检查及原子写入由 [user-preferences-storage.cs]
 
 ## 辅助进程与生命周期
 
+截图、播放列表侧窗、设置和快捷键控制层通过共享的 `mpvnet-paths.lua` 选择请求目录。它先取非空的 `TMP`，再取 `TEMP`，与 Windows helper 对请求文件的目录校验一致。请求文件的命名、读写和清理仍由各自的会话负责。
+
 ### 更新检查
 
 [update-check.lua](../config/scripts/update-check.lua)在设置快照就绪后安排本实例的一次启动检查，并持有`KitUpdate.exe -RequestPath`子进程、不可变请求和独立唤回序号文件。自动序号从0开始，手动从1开始；同实例显式打开只递增序号，将正在检查的自动会话转为手动窗口。退出中止子进程并清理本会话文件，迟到的显式打开按helper返回的`last_seen_serial`重放；媒体切换和全屏不触发或延迟检查。`updates.auto-check`属于用户设置，关闭会停止未完成的纯自动任务，重新开启用于下次启动。

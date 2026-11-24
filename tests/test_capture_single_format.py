@@ -8,7 +8,7 @@ import unittest
 import uuid
 
 from lua_runtime import load_lua51
-from support.lua_source import feedback_module
+from support.lua_source import feedback_module, paths_loader
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / 'config/helpers/capture-media.ps1'
@@ -19,7 +19,7 @@ class CaptureRouting(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         cls.source = (ROOT / 'config/scripts/capture-controls.lua').read_text(encoding='utf-8')
-        cls.prelude = 'local feedback_module = ' + feedback_module() + r'''
+        cls.prelude = 'local load_paths = ' + paths_loader() + '\nlocal feedback_module = ' + feedback_module() + r'''
 local bindings, messages, events, calls, removed, states = {}, {}, {}, {}, {}, {}
 local durations = {}
 local reply, callback, payload, state, time = nil, nil, nil, nil, 1
@@ -64,12 +64,16 @@ package.loaded['mp.utils']={
         return reply
     end,
 }
+package.loaded['mp.options']={read_options=function() end}
+os.getenv=function(name) return temp_dirs[name] end
 local dofile=function(path)
     if path == '~~/script-modules/feedback.lua' then return feedback_module end
     assert(path == '~~/script-modules/mpvnet-paths.lua', 'unexpected dofile '..path)
-    return {powershell=function() return 'powershell' end, capture_payload=function() end}
+    local paths=load_paths()
+    paths.capture_payload=function() end
+    return paths
 end
-local os={getenv=function(name) return temp_dirs[name] end,remove=function(path) removed[#removed+1]=path end}
+os.remove=function(path) removed[#removed+1]=path end
 local io={open=function(path)
     payload_path=path
     if payload_failure=='open' then return nil end

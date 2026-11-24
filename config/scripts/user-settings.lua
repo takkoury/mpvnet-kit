@@ -112,8 +112,8 @@ local function remove_owned(path)
     if path and owned[path] then os.remove(path);owned[path]=nil end
 end
 local function request_file(kind,text)
-    local temp=os.getenv('TEMP') or os.getenv('TMP')
-    if not temp or temp=='' then return nil,'找不到系统临时目录' end
+    local temp=paths.temp_directory()
+    if not temp then return nil,'找不到系统临时目录' end
     sequence=sequence+1
     local path=utils.join_path(temp,'mpvnet-settings-'..instance..'-'..sequence..'-'..kind..'.json')
     local file=io.open(path,'wb');if not file then return nil,'无法创建设置请求文件' end

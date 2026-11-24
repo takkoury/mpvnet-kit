@@ -4,7 +4,7 @@ import json
 import unittest
 
 from lua_runtime import load_lua51
-from support.lua_source import feedback_module
+from support.lua_source import feedback_module, paths_loader
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'config/scripts/playlist-controls.lua'
@@ -16,6 +16,7 @@ class PlaylistControls(unittest.TestCase):
         cls.lua = load_lua51()
         cls.script = SCRIPT.read_text(encoding='utf-8')
         cls.fixture = ('local settings_model = dofile(' + json.dumps((ROOT / 'config/script-modules/user-settings.lua').as_posix()) + ')\n'
+                       + 'local load_paths = ' + paths_loader() + '\n'
                        + 'local feedback_module = ' + feedback_module() + '\n'
                        + (ROOT / 'tests/lua/playlist_controls.lua').read_text(encoding='utf-8'))
 
