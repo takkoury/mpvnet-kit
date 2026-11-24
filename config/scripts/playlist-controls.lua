@@ -263,6 +263,7 @@ mp.add_key_binding(nil, 'append-folder', function() input.request('append', 'fol
 mp.add_key_binding(nil, 'save-playlist', input.save)
 mp.add_key_binding(nil, 'open-clipboard', function() input.request('open', 'clipboard') end)
 mp.add_key_binding(nil, 'append-clipboard', function() input.request('append', 'clipboard') end)
+mp.register_script_message('open-clipboard-url', function() input.request('open', 'clipboard-url') end)
 mp.register_script_message('action', action)
 mp.register_script_message('key', key)
 mp.observe_property('user-data/mpvnet/shortcuts', 'native', function(_, state)

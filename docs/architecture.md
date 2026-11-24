@@ -21,6 +21,10 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
+剪贴板文本由 `KitPlaylistInput.exe` 读取，`InputProcessor.ParseClipboardText` 统一识别分享网址和完整 BV 号。原快捷键动作 `playback_feedback/clipboard-url` 转交播放列表输入控制层，以 `operation=clipboard-url` 请求单一网址；通用打开与追加继续使用 `clipboard`，优先处理 Windows 文件列表。识别过程保留网址原文；控制层在提交前复核队列快照。仅网址入口沿用原有的暂停处理，追加不打断当前项。
+
+播放 `b23.tv` 投稿短链时，`playback-feedback.lua` 的 `on_load` 在 mpv 内置 ytdl_hook 之前运行。启用网页解析时才调用 Windows 系统目录下的 curl，限时读取一次短链响应的跳转地址。确认 B 站投稿来源后，把这次播放的 `stream-open-filename` 指向规范投稿页，保留分 P 和时间参数；队列仍持有原短链。工具不可用、请求失败或响应无法确认时，把原地址留给播放器。解码、画质和站点取流沿用上游实现。
+
 网络播放失败提示由 `playback-feedback.lua` 负责。它在 `on_load` 按当前输入辨认媒体网址和可确认的 B 站来源页，加载成功时更新判断。只有 `end-file` 的条目 ID 与本次 `start-file` 一致，才采用该条目的网络提示；结束时清除分类。复制或打开 CDN 来源页继续使用已加载媒体的来源关联。
 
 ### 显式文件输入

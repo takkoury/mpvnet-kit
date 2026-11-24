@@ -448,6 +448,51 @@ class PlaylistInput(unittest.TestCase):
         self.assertEqual(response['status'], 'ok')
         self.assertEqual(response['entries'], [])
 
+    def test_share_text_preserves_the_original_url_in_all_clipboard_modes(self):
+        short = 'https://b23.tv/AbCdE12'
+        page = 'https://www.bilibili.com/video/BV1234567890/?p=3&t=42&share=A%2Bb'
+        for operation, mode in [('clipboard-url', 'open'), ('clipboard', 'open'), ('clipboard', 'append')]:
+            for text, url in [('【视频标题】 '+short, short), ('配套视频教程：'+page+'，见第三节。', page),
+                              ('分享链接 ('+page+')', page), (page, page)]:
+                with self.subTest(operation=operation, mode=mode, text=text):
+                    r = self.invoke(operation=operation, mode=mode, clipboard=text)
+                    self.assertEqual(r['status'], 'ok')
+                    self.assertEqual([(e['kind'], e['path']) for e in r['entries']], [('native', url)])
+
+    def test_url_only_handles_multiline_share_and_rejects_ambiguous_or_invalid_text(self):
+        url = 'https://example.test/video?p=3'
+        r = self.invoke(operation='clipboard-url', clipboard='视频分享\r\n'+url+'\r\n复制到播放器')
+        self.assertEqual([e['path'] for e in r['entries']], [url])
+        for text, code in [('', 'clipboard_url_empty'), ('  \r\n', 'clipboard_url_empty'),
+                           (str(self.video), 'clipboard_url_invalid'), ('没有网址', 'clipboard_url_invalid'),
+                           ('file:///C:/local.mp4', 'clipboard_url_invalid'),
+                           (url+'\nhttps://b23.tv/Short', 'clipboard_url_multiple')]:
+            self.assertEqual(self.invoke(operation='clipboard-url', clipboard=text)['error_code'], code)
+        for operation in ('clipboard-url', 'clipboard'):
+            r = self.invoke(operation=operation, clipboard='原片 '+url+' 备用 https://b23.tv/Short')
+            self.assertEqual(r['error_code'], 'clipboard_url_multiple')
+
+    def test_bilibili_id_is_a_complete_input_and_preserves_case(self):
+        bvid = 'BV1Qgyfz1ERa'
+        for operation, mode in [('clipboard-url', 'open'), ('clipboard', 'open'), ('clipboard', 'append')]:
+            for value in (bvid, 'bv'+bvid[2:]):
+                r = self.invoke(operation=operation, mode=mode, clipboard=' '+value+' ')
+                self.assertEqual([e['path'] for e in r['entries']], ['https://www.bilibili.com/video/'+bvid+'/'])
+        for value in (bvid[:-1], bvid+'x', bvid+'.mp4', 'my'+bvid):
+            self.assertEqual(self.invoke(operation='clipboard-url',clipboard=value)['error_code'], 'clipboard_url_invalid')
+        local = self.root / bvid
+        local.write_bytes(b'fixture')
+        r = self.invoke(operation='clipboard', clipboard=bvid)
+        self.assertEqual([e['path'] for e in r['entries']], [str(local)])
+
+    def test_mixed_clipboard_batch_keeps_native_order_and_rejects_ambiguous_lines_as_a_unit(self):
+        url = 'https://example.test/a?next=https://example.test/b'
+        text = str(self.video)+'\n'+url+'\n【标题】 https://b23.tv/AbCdE12'
+        r = self.invoke(operation='clipboard', mode='append', clipboard=text)
+        self.assertEqual([e['path'] for e in r['entries']], [str(self.video), url, 'https://b23.tv/AbCdE12'])
+        r = self.invoke(operation='clipboard', mode='append', clipboard=text+' https://example.test/other')
+        self.assertEqual(r['error_code'], 'clipboard_url_multiple')
+
     def test_invalid_schema_mode_control_characters_and_limits_are_rejected(self):
         for changes in (dict(schema=2), dict(schema=True), dict(mode='replace'), dict(operation='folders'),
                         dict(request_id='bad\nrequest'), dict(working_directory='relative'),

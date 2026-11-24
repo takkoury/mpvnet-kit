@@ -69,6 +69,44 @@ local mp = {
             with self.subTest(reason=reason):
                 self.check_event("{reason='%s'}" % reason, None)
 
+    def test_bilibili_short_link_handoff_changes_only_the_current_playback_source(self):
+        lua = '''
+local props, hooks, jobs = {}, {}, {}
+local mp = {
+    get_property=function(k,d) return props[k] or d end,
+    get_property_native=function(k) return props[k] end,
+    set_property=function(k,v) props[k]=v; return true end,
+    register_event=function() end,
+    add_hook=function(name,priority,f) hooks[priority]=f end,
+    command_native_async=function(command,done) jobs[#jobs+1]={command=command,done=done} end,
+}
+local os = {getenv=function() return 'Windows' end}
+local utils = {join_path=function(a,b) return a..'/'..b end}
+'''
+        cases = '''
+local deferred, continued = 0,0
+local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
+local function open(url, enabled)
+    props['stream-open-filename'], props['options/ytdl'] = url,enabled
+    hooks[5](hook)
+end
+local short='https://b23.tv/Short12'
+local page='https://www.bilibili.com/video/BV1Qgyfz1ERa/'
+local international='https://www.bilibili.com/zh-Hans/video/BV1Qgyfz1ERa?p=1&share_tag=test'
+open(page,true);open(short,false);open('https://other.test/Short12',true);assert(#jobs==0)
+open(short..'?p=3&t=42',true)
+assert(deferred==1 and jobs[1].command.playback_only)
+assert(jobs[1].command.args[#jobs[1].command.args]==short)
+jobs[1].done(true,{status=0,stdout=international})
+assert(props['stream-open-filename']==page..'?p=3&t=42' and continued==1)
+open(short,true);jobs[2].done(true,{status=0,stdout='https://other.test/video/BV1Qgyfz1ERa/'})
+assert(props['stream-open-filename']==short and continued==2)
+open(short,true);props['stream-open-filename']='next.mp4'
+jobs[3].done(true,{status=0,stdout=page});assert(props['stream-open-filename']=='next.mp4' and continued==3)
+open(short,true);jobs[4].done(false,nil);assert(props['stream-open-filename']==short and continued==4)
+'''
+        self.lua.execute(lua + self.origin + self.start + cases, 'playback/short-link')
+
     def test_network_failure_uses_only_the_failed_entry_and_its_source(self):
         prelude = '''
 local events, hooks, props, messages = {}, {}, {}, {}
@@ -261,21 +299,11 @@ eq(messages[#messages],'无法打开输出文件夹\\n文件夹不可用')
 eq(busy,true); eq(pending_job,'existing-job')
 ''')
 
-    def test_explicit_clipboard_url_rejection_and_success(self):
-        source = self.prelude + self.clipboard_source
-        for value, message in ((None, '剪贴板中没有网址'), ('   ', '剪贴板中没有网址'),
-                               ('file:///private/video.mkv', '剪贴板网址无效'),
-                               ('https://example.test/a\nhttps://example.test/b', '剪贴板网址无效'),
-                               ('not a URL', '剪贴板网址无效')):
-            with self.subTest(value=value):
-                self.lua.execute(source + '''
-clipboard=%s; bindings['clipboard-url']()
-eq(messages[#messages],%s); eq(#commands,0)
-''' % ('nil' if value is None else json.dumps(value), json.dumps(message, ensure_ascii=False)))
-        self.lua.execute(source + '''
-clipboard='  https://example.test/video?x=1  '; bindings['clipboard-url']()
-eq(#messages,0); eq(#commands,1); eq(commands[1][2],'loadfile')
-eq(commands[1][3],'https://example.test/video?x=1'); eq(commands[1][4],'replace')
+    def test_explicit_clipboard_url_delegates_to_playlist_input(self):
+        self.lua.execute(self.prelude + self.clipboard_source + '''
+bindings['clipboard-url']()
+eq(#commands,1);eq(commands[1][1],'script-message-to')
+eq(commands[1][2],'playlist_controls');eq(commands[1][3],'open-clipboard-url')
 ''')
 
     def test_complete_lua_syntax(self):

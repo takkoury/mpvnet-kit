@@ -173,6 +173,9 @@ function input_bindings_and_shutdown_delegate()
         eq(#input_requests,index);eq(input_requests[index].mode,case[2])
         eq(input_requests[index].operation,case[3]);eq(input_requests[index].files,nil)
     end
+    script_messages['open-clipboard-url']()
+    eq(#input_requests,#cases+1);eq(input_requests[#input_requests].mode,'open')
+    eq(input_requests[#input_requests].operation,'clipboard-url')
     eq(#commands,0);eq(#messages,0);eq(input_shutdowns,0)
     events.shutdown();eq(input_shutdowns,1)
 end

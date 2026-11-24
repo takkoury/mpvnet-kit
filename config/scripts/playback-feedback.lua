@@ -23,6 +23,7 @@ local path_sequence = 0
 -- One in-memory association only; never retain request headers or infer a page from CID/CDN.
 local origin_path, origin_page, origin_active
 local playback_entry_id, failure_source
+local expanded_short_page
 
 local function web_address(value)
     if type(value) ~= 'string' or value:find('%s') or value:find('%c') then return end
@@ -36,17 +37,27 @@ local function site_host(host, domain)
     return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
 end
 
-local function bilibili_page(value)
+local function query_number(address, key, pattern)
+    for item in (address:match('%?([^#]*)') or ''):gmatch('[^&]+') do
+        local number = item:match('^' .. key .. '=(' .. pattern .. ')$')
+        if number then return number end
+    end
+end
+
+local function bilibili_page(value, short_url)
     local address, host, rest = web_address(value)
     if not address or not site_host(host, 'bilibili.com') then return end
     local path = rest:match('^([^?#]*)')
+    path = path:gsub('^/zh%-Han[st]/', '/')
     local bvid = path:match('^/video/(BV%w+)/?$')
     if bvid and #bvid == 12 then
         local page = 'https://www.bilibili.com/video/' .. bvid .. '/'
         -- External Player 1.2.7 strips query parameters; only preserve P if metadata actually supplied it.
-        for item in (rest:match('%?([^#]*)') or ''):gmatch('[^&]+') do
-            local part = item:match('^p=([1-9]%d*)$')
-            if part then return page .. '?p=' .. part end
+        local part = query_number(short_url or '', 'p', '[1-9]%d*') or query_number(rest, 'p', '[1-9]%d*')
+        if part then page = page .. '?p=' .. part end
+        if short_url then
+            local time = query_number(short_url, 't', '%d+%.?%d*') or query_number(rest, 't', '%d+%.?%d*')
+            if time then page = page .. (part and '&t=' or '?t=') .. time end
         end
         return page
     end
@@ -59,6 +70,7 @@ local function capture_media_origin(loaded)
     local path = mp.get_property('path')
     local _, host = web_address(path)
     if not host then return end
+    if host == 'b23.tv' and expanded_short_page then return 'page' end
     if not site_host(host, 'bilivideo.com') then
         return bilibili_page(path) and 'page' or 'url'
     end
@@ -286,14 +298,7 @@ mp.add_key_binding(nil, "open-media-path", function()
     end)
 end)
 mp.add_key_binding(nil, "clipboard-url", function()
-    -- Read only on this explicit action; reject local paths and multiple clipboard lines.
-    local text = mp.get_property("clipboard/text")
-    if not text or text:match("^%s*$") then feedback_client.show("剪贴板中没有网址", 'error'); return end
-    text = text:match("^%s*(.-)%s*$")
-    if text:find("%s") or text:find("%c") then feedback_client.show("剪贴板网址无效", 'error'); return end
-    local scheme, authority = text:match("^([%a][%w+.-]*)://([^/?#]+)")
-    if not scheme or not authority or (scheme:lower() ~= "http" and scheme:lower() ~= "https") then feedback_client.show("剪贴板网址无效", 'error'); return end
-    mp.commandv("no-osd", "loadfile", text, "replace")
+    mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")
 end)
 mp.add_key_binding(nil, "save-mark", function()
     local current = mp.get_property_number("time-pos")
@@ -395,6 +400,7 @@ end)
 mp.register_event("seek", function() frame_pending = false end)
 mp.register_event("start-file", function(event)
     playback_entry_id, failure_source = event.playlist_entry_id, nil
+    expanded_short_page = nil
     origin_active = false
     frame_pending = false
     release_hold()
@@ -404,6 +410,27 @@ mp.register_event("start-file", function(event)
     mp.commandv("no-osd", "set", "ab-loop-b", "no")
     seek_pending = false
     seek_timer:kill()
+end)
+-- Expand a Bilibili share redirect before mpv's ytdl_hook (priority 10).
+-- The queue keeps the supplied link. Only this playback attempt changes source.
+mp.add_hook('on_load', 5, function(hook)
+    local input = mp.get_property('stream-open-filename', '')
+    local _, host, rest = web_address(input)
+    if host ~= 'b23.tv' or not mp.get_property_native('options/ytdl') then return end
+    local code = rest:match('^([^?#]*)'):match('^/([A-Za-z0-9]+)/?$')
+    local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
+    if not code or #code > 32 or not windows then return end
+    hook:defer()
+    mp.command_native_async({name='subprocess', playback_only=true, capture_stdout=true,
+        args={utils.join_path(windows, 'System32/curl.exe'), '--disable', '--silent', '--head',
+            '--output', 'NUL', '--max-time', '4', '--write-out', '%{redirect_url}', 'https://b23.tv/' .. code}},
+        function(ok, result)
+            if ok and result and result.status == 0 and mp.get_property('stream-open-filename') == input then
+                local page = bilibili_page(result.stdout, input)
+                if page and mp.set_property('stream-open-filename', page) then expanded_short_page = page end
+            end
+            hook:cont()
+        end)
 end)
 -- File-local source metadata is available here even if opening the stream fails.
 mp.add_hook('on_load', 50, function()

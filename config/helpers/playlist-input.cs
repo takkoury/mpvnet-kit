@@ -79,7 +79,7 @@ namespace KitPlaylistInput
         string[] SelectFiles(InputRequest request);
         string SelectFolder(InputRequest request);
         string SelectSavePath(InputRequest request);
-        string[] ReadClipboard();
+        string[] ReadClipboard(InputRequest request);
     }
 
     public interface IDirectoryScanner
@@ -179,7 +179,8 @@ namespace KitPlaylistInput
                 request.SuggestedPath = data.ContainsKey("suggested_path") ? StringField(data, "suggested_path") : "";
                 bool save = request.Operation == "save" || request.Operation == "save-dialog";
                 if (!Clean(request.RequestId, 128) || request.ParentPid <= 0 ||
-                    (!save && request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "paths" && request.Operation != "folder") ||
+                    (!save && request.Operation != "files" && request.Operation != "clipboard" && request.Operation != "clipboard-url" && request.Operation != "paths" && request.Operation != "folder") ||
+                    (request.Operation == "clipboard-url" && request.Mode != "open") ||
                     (save ? request.Mode != "save" : request.Mode != "open" && request.Mode != "append") ||
                     (request.MetadataCodepage.Length != 0 && !Clean(request.MetadataCodepage, 128)) ||
                     (request.SuggestedPath.Length != 0 && !Clean(request.SuggestedPath, MaxPathLength)) ||
@@ -246,21 +247,76 @@ namespace KitPlaylistInput
             catch { return null; }
         }
 
-        public static string[] ParseClipboardText(string text)
+        // A share caption can put CJK punctuation directly against the link.
+        // Keep the original spelling (including escapes, part and time parameters).
+        static readonly Regex SharedUrl = new Regex(
+            @"(?<![a-z0-9_./%=+-])https?://[^\s<>""“”‘’【】《》「」『』（）。，！？；、]+",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        static readonly Regex BilibiliId = new Regex(@"\A[Bb][Vv]1[A-Za-z0-9]{9}\z");
+
+        static bool IsWebUrl(string value)
         {
-            if (text == null) return new string[0];
+            if (value.Length > MaxPathLength ||
+                !(value.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                  value.StartsWith("http://", StringComparison.OrdinalIgnoreCase))) return false;
+            foreach (char c in value) if (char.IsWhiteSpace(c) || char.IsControl(c)) return false;
+            Uri uri;
+            return Uri.TryCreate(value, UriKind.Absolute, out uri) && !string.IsNullOrEmpty(uri.Host);
+        }
+
+        static string ShareUrlInLine(string line, InputRequest request)
+        {
+            if (IsFullyQualified(line.Trim('"'))) return null;
+            if (BilibiliId.IsMatch(line))
+            {
+                if (request.Operation == "clipboard")
+                {
+                    string local = Path.Combine(request.WorkingDirectory, line);
+                    if (File.Exists(local) || Directory.Exists(local)) return null;
+                }
+                return "https://www.bilibili.com/video/BV" + line.Substring(2) + "/";
+            }
+            Match match = SharedUrl.Match(line);
+            if (!match.Success) return null;
+            if (match.NextMatch().Success) throw new InputFailure("clipboard_url_multiple");
+            if (IsWebUrl(line)) return line;
+            string url = match.Value;
+            if (match.Index > 0)
+            {
+                char before = line[match.Index - 1];
+                char last = url[url.Length - 1];
+                if ((before == '(' && last == ')') || (before == '[' && last == ']') ||
+                    (before == '\'' && last == '\'')) url = url.Substring(0, url.Length - 1);
+            }
+            return IsWebUrl(url) ? url : null;
+        }
+
+        public static string[] ParseClipboardText(string text, InputRequest request)
+        {
+            bool urlOnly = request.Operation == "clipboard-url";
+            text = text ?? "";
             if (Encoding.UTF8.GetByteCount(text) > MaxBytes) throw new InputFailure("input_unavailable");
             var lines = new List<string>();
+            int count = 0;
             using (var reader = new StringReader(text))
             {
                 string line;
                 while ((line = reader.ReadLine()) != null)
                 {
                     if (String.IsNullOrWhiteSpace(line)) continue;
-                    if (lines.Count == MaxItems) throw new InputFailure("input_unavailable");
-                    lines.Add(line.Trim());
+                    if (++count > MaxItems) throw new InputFailure("input_unavailable");
+                    line = line.Trim();
+                    string url = ShareUrlInLine(line, request);
+                    if (!urlOnly) lines.Add(url ?? line);
+                    else if (url != null)
+                    {
+                        if (lines.Count != 0) throw new InputFailure("clipboard_url_multiple");
+                        lines.Add(url);
+                    }
                 }
             }
+            if (urlOnly && lines.Count == 0)
+                throw new InputFailure(count == 0 ? "clipboard_url_empty" : "clipboard_url_invalid");
             return lines.ToArray();
         }
 
@@ -458,8 +514,9 @@ namespace KitPlaylistInput
                 string folder = source.SelectFolder(request);
                 inputs = folder == null ? null : new[] { folder };
             }
-            else inputs = request.Operation == "files" ? source.SelectFiles(request) :
-                request.Operation == "clipboard" ? source.ReadClipboard() : request.Paths;
+            else if (request.Operation == "clipboard" || request.Operation == "clipboard-url")
+                inputs = source.ReadClipboard(request);
+            else inputs = request.Operation == "files" ? source.SelectFiles(request) : request.Paths;
             if (inputs == null) { response.status = "cancelled"; return response; }
             if (inputs.Length > MaxItems) throw new InputFailure("input_too_large");
             var runner = source as IScanTaskRunner;
@@ -897,11 +954,11 @@ namespace KitPlaylistInput
             }
         }
 
-        public string[] ReadClipboard()
+        public string[] ReadClipboard(InputRequest request)
         {
             try
             {
-                if (Clipboard.ContainsFileDropList())
+                if (request.Operation == "clipboard" && Clipboard.ContainsFileDropList())
                 {
                     var files = Clipboard.GetFileDropList();
                     if (files.Count > InputProcessor.MaxItems) throw new InputFailure("input_unavailable");
@@ -909,7 +966,7 @@ namespace KitPlaylistInput
                     files.CopyTo(result, 0);
                     return result;
                 }
-                return Clipboard.ContainsText() ? InputProcessor.ParseClipboardText(Clipboard.GetText()) : new string[0];
+                return InputProcessor.ParseClipboardText(Clipboard.ContainsText() ? Clipboard.GetText() : "", request);
             }
             catch (InputFailure) { throw; }
             catch { throw new InputFailure("input_unavailable"); }
