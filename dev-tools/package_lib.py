@@ -16,66 +16,36 @@ from urllib.parse import unquote, urlsplit
 import zipfile
 
 from dev_paths import is_link_or_reparse
+from managed_build import matches_source_digest
 
 
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def _check_menu_asset(source, destination, data):
-    """Reject a stale checked-in menu payload; ordinary packaging needs no SDK."""
-    if destination.casefold() != 'config/extensions/kitcontextmenu/kitcontextmenu.dll':
+# Paths are case-folded to match package destinations on Windows. Each builder
+# owns its exact source list and metadata key; verification never runs the SDK.
+_ASSET_BUILDERS = {
+    'config/extensions/kitcontextmenu/kitcontextmenu.dll': ('build-context-menu.py', 'src/context-menu'),
+    'config/helpers/kitsettings.exe': ('build-settings-window.py', '.'),
+    'config/helpers/kitplaylistinput.exe': ('build-playlist-input.py', '.'),
+    'config/helpers/kitplaylistwindow.dll': ('build-playlist-window.py', '.'),
+    'config/helpers/kitupdate.exe': ('build-update-window.py', '.'),
+}
+
+
+def _check_compiled_asset(source, destination, data):
+    entry = _ASSET_BUILDERS.get(destination.casefold())
+    if entry is None:
         return
-    inputs = source / 'src' / 'context-menu'
-    spec = importlib.util.spec_from_file_location('kit_menu_build', Path(__file__).with_name('build-context-menu.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    digest = module.source_digest(inputs)
-    key = module.SOURCE_METADATA_KEY.encode('ascii')
-    # ECMA custom-attribute blob: prolog, two SerStrings, zero named arguments.
-    metadata = b'\x01\x00' + bytes([len(key)]) + key + b'\x40' + digest.encode('ascii') + b'\x00\x00'
-    if metadata not in data:
-        raise ValueError('menu extension does not match its sources; rebuild KitContextMenu.dll')
-
-
-def _check_settings_asset(source, destination, data):
-    if destination.casefold() != 'config/helpers/kitsettings.exe':
-        return
-    spec = importlib.util.spec_from_file_location('kit_settings_build', Path(__file__).with_name('build-settings-window.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not module.matches_source_digest(data, module.source_digest(source)):
-        raise ValueError('settings executable does not match its sources; rebuild KitSettings.exe')
-
-
-def _check_playlist_input_asset(source, destination, data):
-    if destination.casefold() != 'config/helpers/kitplaylistinput.exe':
-        return
-    spec = importlib.util.spec_from_file_location('kit_playlist_input_build', Path(__file__).with_name('build-playlist-input.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not module.matches_source_digest(data, module.source_digest(source)):
-        raise ValueError('playlist input executable does not match its sources; rebuild KitPlaylistInput.exe')
-
-
-def _check_playlist_window_asset(source, destination, data):
-    if destination.casefold() != 'config/helpers/kitplaylistwindow.dll':
-        return
-    spec = importlib.util.spec_from_file_location('kit_playlist_window_build', Path(__file__).with_name('build-playlist-window.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not module.matches_source_digest(data, module.source_digest(source)):
-        raise ValueError('playlist window assembly does not match its sources; rebuild KitPlaylistWindow.dll')
-
-
-def _check_update_asset(source, destination, data):
-    if destination.casefold() != 'config/helpers/kitupdate.exe':
-        return
-    spec = importlib.util.spec_from_file_location('kit_update_build', Path(__file__).with_name('build-update-window.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not module.matches_source_digest(data, module.source_digest(source)):
-        raise ValueError('update executable does not match its sources; rebuild KitUpdate.exe')
+    script, inputs = entry
+    path = Path(__file__).with_name(script)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    digest = builder.source_digest(source / inputs)
+    if not matches_source_digest(data, digest, builder.SOURCE_METADATA_KEY):
+        raise ValueError(f'{destination} does not match its sources; rebuild with {script}')
 
 
 def _relative(value):
@@ -246,11 +216,7 @@ def read_source_contents(source, mapping):
         if not path.is_file():
             raise ValueError('missing source file: ' + src)
         data = path.read_bytes()
-        _check_menu_asset(source, dst, data)
-        _check_settings_asset(source, dst, data)
-        _check_playlist_input_asset(source, dst, data)
-        _check_playlist_window_asset(source, dst, data)
-        _check_update_asset(source, dst, data)
+        _check_compiled_asset(source, dst, data)
         contents[dst] = data
         entries.append({'path': dst, 'sha256': _digest(data), 'component': item['component'], 'origin': item['origin']})
     return version, contents, entries
@@ -322,26 +288,26 @@ def stage_package(source, destination, spec, *, apply=False) -> dict:
         path = _safe_file(destination, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         expected = manifest_old_data if name == 'manifest.json' else old.get(name)
-        if expected is not None:
-            if not path.is_file():
-                raise ValueError('managed target changed during export: ' + name)
-            current = path.read_bytes()
-            if (current != expected if name == 'manifest.json' else _digest(current) != expected):
-                raise ValueError('managed target changed during export: ' + name)
-            if current == data:
-                continue
-        elif path.exists():
-            raise ValueError('unknown target appeared during export: ' + name)
+        if expected is None:
+            if path.exists():
+                raise ValueError('unknown target appeared during export: ' + name)
+            with path.open('xb') as handle:
+                handle.write(data)
+            continue
+
+        if not path.is_file():
+            raise ValueError('managed target changed during export: ' + name)
+        current = path.read_bytes()
+        actual = current if name == 'manifest.json' else _digest(current)
+        if actual != expected:
+            raise ValueError('managed target changed during export: ' + name)
+        if current == data:
+            continue
         fd, temp = tempfile.mkstemp(prefix='.export-', dir=path.parent)
         try:
             with os.fdopen(fd, 'wb') as handle:
                 handle.write(data)
-            if expected is None:
-                # Exclusive creation cannot overwrite an unknown file appearing after preflight.
-                with path.open('xb') as handle:
-                    handle.write(data)
-            else:
-                os.replace(temp, path)
+            os.replace(temp, path)
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
