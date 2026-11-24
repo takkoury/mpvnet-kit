@@ -190,7 +190,11 @@ local function current_id(kind)
         return type(current)=='number' and current>=0 and current==math.floor(current) and
             current<#(edition_snapshot or {}) and current+1 or 0
     end
-    local current = mp.get_property_native(kinds[kind].property)
+    local definition = kinds[kind]
+    local current = mp.get_property_native(definition.property)
+    if current == 'auto' and definition.type then
+        return mp.get_property_native('current-tracks/' .. definition.type .. '/id')
+    end
     if kind == 'device' then
         for _, row in ipairs(device_rows or {}) do if row.device_name == current then return row.id end end
         return 0
@@ -202,12 +206,6 @@ end
 
 -- UI identities are session-local and never shared across native track types.
 local track_kinds={video='video',audio='audio',sub='primary'}
-local function selected_track(kind)
-    if kind=='primary' then return subtitle_slot_id('sid') end
-    local current=mp.get_property_native(kinds[kind].property)
-    if current=='auto' then current=mp.get_property_native('current-tracks/'..kinds[kind].type..'/id') end
-    return tonumber(current) or 0
-end
 local function all_tracks()
     local source=mp.get_property_native('track-list',{})
     local rows,seen={},{}
@@ -227,7 +225,7 @@ local function all_tracks()
                     end
                     local row={};for name,value in pairs(track) do row[name]=value end
                     row.id=track_ids[key];row.number_text=tostring(real_id)
-                    row.display_kind=kind;row.current=real_id==selected_track(kind)
+                    row.display_kind=kind;row.current=real_id==tonumber(current_id(kind))
                     if kind=='primary' and real_id==subtitle_slot_id('secondary-sid') then
                         row.blocked_reason='该轨道已用于次字幕，不能同时用于主字幕。'
                         row.slot_label='已用于次字幕'
@@ -320,9 +318,8 @@ local function close_selector()
 end
 
 local function refresh_selector()
-    if active_kind and active_kind ~= 'history' and active_kind ~= 'watchlater' and active_kind ~= 'lines' and
-        active_kind ~= 'bindings' and active_kind ~= 'properties' and active_kind ~= 'menu' and active_kind ~= 'playlist' and
-        selector and selector.is_open() then
+    local definition = kinds[active_kind]
+    if definition and (definition.property or active_kind == 'all') and selector.is_open() then
         local tracks = tracks_for(active_kind)
         local selected = current_id(active_kind)
         local notice = selection_notice(active_kind,tracks,selected)
@@ -1144,9 +1141,9 @@ local function select_tracks(kind)
                 if target_kind=='primary' and target.id==subtitle_slot_id('secondary-sid') then
                     refresh_selector();return false,'该轨道已用于次字幕，不能同时用于主字幕。'
                 end
-                local value=selected_track(target_kind)==target.id and 'no' or tostring(target.id)
+                local value=tonumber(current_id(target_kind))==target.id and 'no' or tostring(target.id)
                 local ok=mp.set_property(target_definition.property,value)
-                if not ok or selected_track(target_kind)~=(value=='no' and 0 or target.id) then
+                if not ok or (tonumber(current_id(target_kind)) or 0)~=(value=='no' and 0 or target.id) then
                     refresh_selector();return false,'未能应用'..target_definition.label..'，请重试。'
                 end
                 if target_kind=='video' then invalidate_video_restore() end
@@ -1236,7 +1233,7 @@ local function select_tracks(kind)
                 for _, track in ipairs(tracks_for(kind)) do
                     if tostring(track.id) == tostring(id) then
                         target = tostring(track.id) ==
-                            tostring(mp.get_property_native(definition.property)) and 'no' or tostring(track.id)
+                            tostring(current_id(kind)) and 'no' or tostring(track.id)
                         break
                     end
                 end
@@ -1290,7 +1287,13 @@ mp.observe_property('track-list', 'native', function()
     if refresh_subtitle_lines then refresh_subtitle_lines() end
     if refresh_menu then refresh_menu() end
 end)
-mp.observe_property('aid', 'native', function() if active_kind == 'all' or active_kind == 'audio' then refresh_selector() end end)
+for kind, option in pairs({audio='aid', video='vid'}) do
+    local function refresh_track()
+        if active_kind == 'all' or active_kind == kind then refresh_selector() end
+    end
+    mp.observe_property(option, 'native', refresh_track)
+    mp.observe_property('current-tracks/' .. kind .. '/id', 'native', refresh_track)
+end
 mp.observe_property('sid', 'native', function()
     if active_kind == 'all' or active_kind == 'subtitle' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end
     if refresh_subtitle_lines then refresh_subtitle_lines() end
@@ -1299,13 +1302,14 @@ mp.observe_property('current-tracks/sub', 'native', function()
     if refresh_subtitle_lines then refresh_subtitle_lines() end
     if refresh_menu then refresh_menu() end
 end)
-for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub/id','current-tracks/sub2/id'}) do
+for _,property in ipairs({'secondary-sid','sub-visibility','secondary-sub-visibility','current-tracks/sub2/id'}) do
     mp.observe_property(property,'native',function() if active_kind=='all' or active_kind=='primary' or active_kind=='secondary' then refresh_selector() end end)
 end
-for _,property in ipairs({'current-tracks/video/id','current-tracks/audio/id'}) do
-    mp.observe_property(property,'native',function() if active_kind=='all' then refresh_selector() end end)
-end
-mp.observe_property('vid', 'native', function() if active_kind == 'all' or active_kind == 'video' then refresh_selector() end end)
+mp.observe_property('current-tracks/sub/id', 'native', function()
+    if active_kind == 'all' or active_kind == 'subtitle' or active_kind == 'primary' or active_kind == 'secondary' then
+        refresh_selector()
+    end
+end)
 -- Refresh presentation/current markers without accepting a new index mapping.
 -- A changed chapter list is acknowledged only by the rejected submit above.
 for _, property in ipairs({'chapter', 'chapter-list', 'duration'}) do

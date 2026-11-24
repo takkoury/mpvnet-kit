@@ -356,6 +356,17 @@ function current_audio_and_explicit_off_disable_audio()
     renderer.close();bindings['select-audio']();assert(request.submit(0));eq(properties.aid,'no')
     preserve_unrelated();eq(properties.sid,1)
 end
+function basic_track_selectors_resolve_auto_at_open_refresh_and_submit()
+    for _,case in ipairs({{'audio','aid','audio',3}, {'video','vid','video',4}, {'subtitle','sid','sub',1}}) do
+        local kind, option, property, id = case[1], case[2], 'current-tracks/'..case[3]..'/id', case[4]
+        properties[option], properties[property] = 'auto', id
+        bindings['select-'..kind]();eq(request.current_id,id)
+        properties[property]=nil;observers[property]();eq(tonumber(request.current_id) or 0,0)
+        properties[property]=id
+        assert(request.submit(id));eq(properties[option],'no')
+        renderer.close()
+    end
+end
 function subtitle_filter_and_toggle_regression()
     bindings['select-subtitle']();eq(#request.tracks,1);eq(request.tracks[1],subtitle)
     assert(request.submit(1));eq(properties.sid,'no')

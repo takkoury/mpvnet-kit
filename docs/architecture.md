@@ -67,7 +67,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ### 轨道、章节与音频设备选择器
 
-[track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。音轨只读audio轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。
+[track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。独立轨道面板与“全部轨道”共用当前轨道的判断。选轨属性为 `auto` 时，从 `current-tracks` 取实际轨道 ID，显示和提交时使用同一规则。音轨只读 audio 轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。
 
 `track_selection/select-chapter`复用同一面板实例和输入，章节采用38高单行与右对齐起始时间，不显示关闭轨道项。UI条目id为原chapter-list索引+1，提交写0基chapter，重复选择当前章仍写入以回到章首。控制层保留章节time/title顺序快照，列表通知不自动把新条目映射给旧输入；提交发现任何变化时先刷新快照和面板、返回重选提示，下一次明确选择才可提交。chapter观察更新当前标记，duration只改变时间格式，媒体切换使旧回调失效；不改变原上一／下一章或时间轴预览行为。
 

@@ -60,6 +60,7 @@ for _name in (
     'lazy_load_and_named_bindings',
     'audio_metadata_and_filter_are_preserved',
     'current_audio_and_explicit_off_disable_audio',
+    'basic_track_selectors_resolve_auto_at_open_refresh_and_submit',
     'subtitle_filter_and_toggle_regression',
     'invalid_ids_recheck_live_tracks_without_observer_notification',
     'same_id_retyped_or_changed_to_danmaku_is_rejected',
