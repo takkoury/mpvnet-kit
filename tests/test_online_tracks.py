@@ -1,5 +1,6 @@
 """Source-level checks for yt-dlp catalogue identity and per-entry recovery."""
 from pathlib import Path
+import json
 import unittest
 
 from lua_runtime import load_lua51
@@ -14,7 +15,9 @@ class OnlineTracks(unittest.TestCase):
         cls.lua = load_lua51()
         module = (ROOT / 'config/script-modules/online-tracks.lua').read_text(encoding='utf-8')
         cases = (ROOT / 'tests/lua/online_tracks.lua').read_text(encoding='utf-8')
-        cls.source = 'local M = (function()\n' + module + '\nend)()\n' + cases
+        result_path = json.dumps((ROOT / 'config/script-modules/ytdl-result.lua').as_posix())
+        host = 'package.loaded.mp={command_native=function() return ' + result_path + ' end}\n'
+        cls.source = host + 'local M = (function()\n' + module + '\nend)()\n' + cases
 
     def test_groups_and_native_tracks(self):
         self.lua.execute(self.source + '\ncheck_catalog()')

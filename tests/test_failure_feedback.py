@@ -69,6 +69,33 @@ local mp = {
             with self.subTest(reason=reason):
                 self.check_event("{reason='%s'}" % reason, None)
 
+    def test_web_resume_requires_matching_extracted_bilibili_part(self):
+        playback = PLAYBACK.read_text(encoding='utf-8')
+        identify = fragment(playback, 'local function network_resume_source()', 'local network_resume = dofile')
+        module = json.dumps((ROOT / 'config/script-modules/ytdl-result.lua').as_posix())
+        self.lua.execute('local ytdl_result = dofile(' + module + ')\n' + '''
+local url, data
+local mp = {
+    get_property=function(k) assert(k=='path'); return url end,
+    get_property_native=function(k) assert(k=='user-data/mpv/ytdl/json-subprocess-result/stdout'); return 'input' end,
+}
+local utils = {parse_json=function() return data end}
+''' + self.origin + identify + '''
+local bv = 'BV14J4114768'
+local page = 'https://www.bilibili.com/video/'..bv..'/'
+failure_source, url, data = 'page', page..'?p=3&t=8', {extractor_key='BiliBili', id=bv..'_p3'}
+assert(network_resume_source()==bv..'_p3')
+data.id=bv..'_p4'; assert(not network_resume_source())
+url=page; data.id=bv; assert(network_resume_source()==bv..'_p1')
+data.is_live=true; assert(not network_resume_source()); data.is_live=false
+url='https://stream.bilivideo.com/media'; assert(not network_resume_source())
+url='https://www.bilibili.com/bangumi/play/ep1'; assert(not network_resume_source())
+url='https://b23.tv/sample'; expanded_short_page=page..'?p=3'; data.id=bv..'_p3'
+assert(network_resume_source()==bv..'_p3')
+data.extractor_key='Generic'; assert(not network_resume_source())
+data=nil; assert(not network_resume_source())
+''', 'playback/bilibili-resume-source')
+
     def test_network_resume_respects_play_ranges_and_queue_identity(self):
         module = (ROOT / 'config/script-modules/network-resume.lua').as_posix()
         self.lua.execute('local resume = dofile(' + json.dumps(module) + ')\n' + '''
@@ -85,7 +112,9 @@ local mp = {get_property=get, get_property_native=get, get_property_number=get, 
     add_hook=function(k,_,fn) hooks[k]=fn end, register_event=function(k,fn) events[k]=fn end,
     observe_property=function(k,_,fn) observers[k]=fn end}
 local hints = 0
-local control = resume.new(mp,function() return true end,function() hints=hints+1 end)
+local identity, changed = true, 0
+local control = resume.new(mp,function() return identity end,function() hints=hints+1 end,
+    function() changed=changed+1 end)
 for k,v in pairs({['end']='15',length='4',frames='30',['play-direction']='backward',
         seekable=false,['demuxer-via-network']=false,['rebase-start-time']=false,['time-pos']=59.9}) do
     local original=props[k]; props[k]=v
@@ -109,6 +138,15 @@ hooks.on_unload()
 assert(not control.ended({reason='stop',playlist_entry_id=2}))
 props['idle-active']=true
 assert(not control.prepare_reload())
+-- A fresh extraction of the same queue entry must resolve the original part.
+props['idle-active']=false; props['eof-reached']=true
+identity='BV14J4114768_p3'
+assert(control.prepare_reload()==0)
+events['start-file']({playlist_entry_id=2})
+props['file-local-options/start']='8'
+identity='BV14J4114768_p4'
+hooks.on_preloaded()
+assert(props['file-local-options/start']=='8' and changed==1)
 ''', 'playback/network-resume')
 
     def check_share_link(self, cases):

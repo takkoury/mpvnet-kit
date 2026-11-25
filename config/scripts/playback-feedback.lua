@@ -408,8 +408,20 @@ end)
 local function show_resume_position(position)
     feedback_client.show('播放停在 ' .. time_text(position, position >= 3600) .. '\n重新加载当前媒体可从这里继续', 'error')
 end
+local ytdl_result = dofile(mp.command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
+local function network_resume_source()
+    if failure_source == 'url' then return true end
+    if failure_source ~= 'page' then return end
+    -- A browser-supplied CDN stream can have a page Referer, but reloading
+    -- that queue entry would reopen the CDN URL instead of extracting the page.
+    local page, bv = bilibili_page(expanded_short_page or mp.get_property('path'))
+    if not bv or bv:sub(1, 2) ~= 'BV' then return end
+    return ytdl_result.bilibili_part(ytdl_result.read(mp, utils), bv, page:match('%?p=(%d+)$') or '1')
+end
 local network_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/network-resume.lua'})).new(
-    mp, function() return failure_source == 'url' end, show_resume_position)
+    mp, network_resume_source, show_resume_position, function()
+        feedback_client.show('未能确认原分 P，沿用网页起点', 'notice')
+    end)
 
 mp.add_key_binding(nil, "reload", function()
     local path = mp.get_property("path")

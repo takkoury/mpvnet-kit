@@ -158,6 +158,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/script-modules/ytdl-result.lua",
+      "destination": "config/script-modules/ytdl-result.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/online-tracks.lua",
       "destination": "config/script-modules/online-tracks.lua",
       "component": "author",

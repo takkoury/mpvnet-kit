@@ -1,6 +1,7 @@
 -- yt-dlp owns extraction and stream selection. Keep only format descriptions,
 -- never signed media URLs or request headers, in the current item's catalogue.
 local M = {}
+local ytdl_result = dofile(require('mp').command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
 local providers = {Youtube=true, BiliBili=true, BiliBiliBangumi=true}
 local names = {en='英语', ['en-US']='英语（美国）', ja='日语', zh='中文', ['zh-Hans']='简体中文',
     ['zh-Hant']='繁体中文', fr='法语', ['fr-FR']='法语（法国）', de='德语', ['de-DE']='德语（德国）',
@@ -160,9 +161,9 @@ local function episode_formats(c, choices)
 end
 
 function M.read(mp, utils)
-    local raw = mp.get_property_native('user-data/mpv/ytdl/json-subprocess-result/stdout')
-    if type(raw) ~= 'string' or raw == '' or #raw > 24*1024*1024 then return end
-    return M.catalog(utils.parse_json(raw)) or false
+    local data = ytdl_result.read(mp, utils)
+    if data == nil then return end
+    return M.catalog(data) or false
 end
 
 -- An extracted dub can carry the original container language on every version.

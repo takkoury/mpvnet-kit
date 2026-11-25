@@ -1,7 +1,8 @@
--- One in-memory restart point for a prematurely ended HTTP VOD entry.
+-- One in-memory restart point. Direct URLs use queue identity alone (true);
+-- extracted pages also carry the media ID to check again on reload.
 local M = {}
 
-function M.new(mp, direct_source, show_position)
+function M.new(mp, resume_source, show_position, part_changed)
     local pending, unloading
 
     local function matches(index, point)
@@ -12,8 +13,7 @@ function M.new(mp, direct_source, show_position)
     end
 
     local function checkpoint()
-        if not direct_source() or not mp.get_property_bool('demuxer-via-network')
-            or not mp.get_property_bool('seekable') then return end
+        if not mp.get_property_bool('demuxer-via-network') or not mp.get_property_bool('seekable') then return end
         local position = mp.get_property_number('time-pos')
         local duration = mp.get_property_number('duration')
         -- Allow for frame boundaries and imprecise duration metadata.
@@ -23,8 +23,10 @@ function M.new(mp, direct_source, show_position)
             or not mp.get_property_bool('rebase-start-time') then return end
         local index = mp.get_property_number('playlist-playing-pos', -1)
         if index < 0 then return end
+        local source = resume_source()
+        if not source then return end
         local point = {id=mp.get_property_native('playlist/' .. index .. '/id'),
-            path=mp.get_property('path'), position=position}
+            path=mp.get_property('path'), position=position, source=source}
         if point.id and point.path and matches(index, point) then return point end
     end
 
@@ -50,6 +52,11 @@ function M.new(mp, direct_source, show_position)
     mp.add_hook('on_preloaded', 80, function()
         if pending and pending.phase == 'loading' and pending.path == mp.get_property('path')
             and matches(mp.get_property_number('playlist-pos', -1), pending) then
+            if pending.source ~= true and resume_source() ~= pending.source then
+                pending = nil
+                part_changed()
+                return
+            end
             mp.set_property('file-local-options/start', string.format('%.6f', pending.position))
         end
     end)

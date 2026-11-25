@@ -46,6 +46,7 @@
 - `config/script-modules/playlist-input.lua`
 - `config/script-modules/web-resume.lua`
 - `config/script-modules/network-resume.lua`
+- `config/script-modules/ytdl-result.lua`
 - `config/script-modules/bilibili-catalog.lua`
 - `config/script-modules/youtube-catalog.lua`
 - `.gitignore`
