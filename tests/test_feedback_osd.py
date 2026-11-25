@@ -60,6 +60,15 @@ handlers.show('倍速','1.5');status('danmaku','');timers[1].fn()
 eq(props['osd-msg1'],'导出中\\n字幕调整')
 ''')
 
+    def test_live_end_result_remains_after_short_actions_until_owner_clears(self):
+        self.run_case('''
+status('live','正在确认直播状态…');eq(props['osd-msg1'],'正在确认直播状态…')
+handlers.show('音量 40%','1.5');eq(props['osd-msg1'],'')
+status('live','直播已结束');eq(props['osd-msg1'],'')
+timers[1].fn();eq(props['osd-msg1'],'直播已结束')
+eq(#messages,1);status('live','');eq(props['osd-msg1'],'')
+''')
+
     def test_external_native_message_is_never_cleared_or_replayed(self):
         self.run_case('''
 status('capture','导出中');handlers.show('倍速','1.5')

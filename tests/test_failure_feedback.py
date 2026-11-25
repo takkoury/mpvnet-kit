@@ -222,7 +222,8 @@ assert(#pending==5 and #notices==before)
             for name, file in [('live_path', 'live-playback.lua'), ('bili_path', 'bilibili-live.lua'),
                                ('catalog_path', 'youtube-catalog.lua')])
         self.lua.execute(fixture + r'''
-local events, requests, messages, timers = {}, {}, {}, {}
+local events, requests, timers = {}, {}, {}
+local visible, ready, fallback = '', true, nil
 local id = 'rFZHOHl-L8A'
 local meta, last, proxy = {}, {}, 'http://127.0.0.1:1234'
 local mp = {
@@ -231,6 +232,7 @@ local mp = {
     observe_property=function(k,_,f) events[k]=f end,
     get_property=function(k) return k=='frames' and 'all' or 'none' end,
     get_property_bool=function() return false end,
+    set_property_native=function(k, v) assert(k=='user-data/mpvnet/feedback/live'); visible=v end,
     get_property_native=function(k)
         if k=='user-data/mpv/ytdl/json-subprocess-result/stdout' then return 'fixture' end
         if k=='user-data/mpv/ytdl/path' then return 'fixture/yt-dlp.exe' end
@@ -247,7 +249,7 @@ local mp = {
 }
 local catalog=dofile(catalog_path)
 local room=dofile(live_path).new(mp,{parse_json=function() return meta end},
-    {show=function(msg) messages[#messages+1]=msg end},ytdl_result)
+    {is_ready=function() return ready end,show=function(text) assert(not ready);fallback=text end},ytdl_result)
 local function open(status,video)
     events['start-file'](); room.open(nil)
     meta={extractor_key='Youtube',id=video or id,live_status=status}
@@ -260,30 +262,36 @@ for _,status in ipairs({'was_live','not_live','post_live','is_upcoming'}) do
     assert(not open(status)); stop_stream()
 end
 assert(not open('is_live','another_id_'));stop_stream()
-assert(#requests==0 and #messages==0)
+assert(#requests==0 and visible=='')
 assert(open('is_live')); room.finish('stop');assert(#requests==0)
 assert(open('is_live'))
 proxy='http://127.0.0.1:4321'
-stop_stream();assert(#requests==1 and not last.cmd.playback_only)
+stop_stream();assert(#requests==1 and not last.cmd.playback_only and visible=='正在确认直播状态…')
 local args=last.cmd.args
 assert(args[1]=='fixture/yt-dlp.exe' and args[#args]=='https://www.youtube.com/watch?v='..id)
 assert(args[#args-2]=='http://127.0.0.1:1234')
 last.done(true,{status=0,stdout=id..' is_live\r\n'})
-assert(messages[1]=='直播连接中断\n可重新打开直播链接' and timers[1].killed)
+assert(visible=='直播连接中断\n可重新打开直播链接' and timers[1].killed)
+events['playback-restart'](); assert(visible=='')
 for _,status in ipairs({'post_live','was_live'}) do
     open('is_live');room.finish('error');last.done(true,{status=0,stdout=id..' '..status..'\n'})
-    assert(messages[#messages]=='直播已结束')
+    assert(visible=='直播已结束')
+    room.finish('stop'); assert(visible=='')
 end
 open('is_live');stop_stream();last.done(true,{status=0,stdout='other_video was_live\n'})
-assert(messages[#messages]:match('^暂时无法确认直播状态'))
-open('is_live');stop_stream();local old=last;local n=#messages
-events['playback-restart']();assert(old.cancelled)
-old.done(true,{status=0,stdout=id..' was_live\n'});assert(#messages==n)
+assert(visible:match('^暂时无法确认直播状态'))
+open('is_live');assert(visible=='');stop_stream();local old=last
+events['playback-restart']();assert(old.cancelled and visible=='')
+old.done(true,{status=0,stdout=id..' was_live\n'});assert(visible=='')
 stop_stream();local timed_out=last;timers[#timers].fire()
-assert(timed_out.cancelled and #messages==n+1 and messages[#messages]:match('^暂时无法确认直播状态'))
-timed_out.done(true,{status=0,stdout=id..' was_live\n'});assert(#messages==n+1)
+assert(timed_out.cancelled and visible:match('^暂时无法确认直播状态'))
+timed_out.done(true,{status=0,stdout=id..' was_live\n'});assert(visible:match('^暂时无法确认直播状态'))
 open('is_live');stop_stream();local ended=last;events['start-file']()
-ended.done(true,{status=0,stdout=id..' was_live\n'});assert(ended.cancelled and #messages==n+1)
+ended.done(true,{status=0,stdout=id..' was_live\n'});assert(ended.cancelled and visible=='')
+open('is_live');stop_stream();last.done(true,{status=0,stdout=id..' was_live\n'})
+assert(visible=='直播已结束');events.shutdown();assert(visible=='')
+ready=false;open('is_live');stop_stream();last.done(true,{status=0,stdout=id..' was_live\n'})
+assert(visible=='直播已结束' and fallback==visible)
 ''', 'playback/youtube-end')
 
     def check_share_link(self, cases):

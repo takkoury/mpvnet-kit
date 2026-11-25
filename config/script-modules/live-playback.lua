@@ -1,6 +1,7 @@
 -- Own the playing broadcast, its single end-of-stream lookup and its feedback.
 -- A YouTube watch URL can also be VOD; confirm its extraction before arming it.
 local M = {}
+local live_status = 'user-data/mpvnet/feedback/live'
 
 function M.new(mp, utils, feedback, ytdl_result)
     local bili = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-live.lua'}))
@@ -17,8 +18,15 @@ function M.new(mp, utils, feedback, ytdl_result)
         end
     end
 
-    function control.open(bili_id)
+    local function reset_check()
+        if not room or not room.checked then return end
         cancel_query()
+        room.checked = false
+        if room.youtube then mp.set_property_native(live_status, '') end
+    end
+
+    function control.open(bili_id)
+        reset_check()
         room = bili_id and {id=bili_id} or nil
     end
 
@@ -39,13 +47,16 @@ function M.new(mp, utils, feedback, ytdl_result)
     local function report(current, output)
         if current.youtube then
             local id, status = (output or ''):match('^([%w_%-]+) ([a-z_]+)%s*$')
+            local message
             if id == current.id and (status == 'post_live' or status == 'was_live') then
-                feedback.show('直播已结束', 'notice')
+                message = '直播已结束'
             elseif id == current.id and status == 'is_live' then
-                feedback.show('直播连接中断\n可重新打开直播链接', 'notice')
+                message = '直播连接中断\n可重新打开直播链接'
             else
-                feedback.show('暂时无法确认直播状态\n可重新打开直播链接', 'notice')
+                message = '暂时无法确认直播状态\n可重新打开直播链接'
             end
+            mp.set_property_native(live_status, message)
+            if not feedback.is_ready() then feedback.show(message, 'notice') end
         elseif output and bili.ended(utils, current.id, output) then
             feedback.show('直播已结束', 'notice')
         else
@@ -60,6 +71,7 @@ function M.new(mp, utils, feedback, ytdl_result)
         local command = current.request
         if not current.youtube then command = bili.status_request(utils, current.id) end
         if not command then report(current); return end
+        if current.youtube then mp.set_property_native(live_status, '正在确认直播状态…') end
         local handle
         handle = mp.command_native_async(command, function(ok, result)
             if room ~= current or current.query ~= handle then return end
@@ -82,8 +94,7 @@ function M.new(mp, utils, feedback, ytdl_result)
     end)
     mp.register_event('playback-restart', function()
         if room and room.checked and not mp.get_property_bool('eof-reached') then
-            cancel_query()
-            room.checked = false
+            reset_check()
         end
     end)
     mp.add_hook('on_unload', 60, function()
