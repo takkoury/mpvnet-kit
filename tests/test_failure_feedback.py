@@ -87,6 +87,8 @@ failure_source, url, data = 'page', page..'?p=3&t=8', {extractor_key='BiliBili',
 assert(network_resume_source()==bv..'_p3')
 data.id=bv..'_p4'; assert(not network_resume_source())
 url=page; data.id=bv; assert(network_resume_source()==bv..'_p1')
+data._type='playlist'; data.entries={}; assert(not network_resume_source())
+data._type='video'; data.entries=nil; assert(network_resume_source()==bv..'_p1')
 data.is_live=true; assert(not network_resume_source()); data.is_live=false
 url='https://stream.bilivideo.com/media'; assert(not network_resume_source())
 url='https://www.bilibili.com/bangumi/play/ep1'; assert(not network_resume_source())
