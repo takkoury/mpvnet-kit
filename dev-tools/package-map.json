@@ -152,6 +152,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/script-modules/bilibili-live.lua",
+      "destination": "config/script-modules/bilibili-live.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/network-resume.lua",
       "destination": "config/script-modules/network-resume.lua",
       "component": "author",

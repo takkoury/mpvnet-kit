@@ -29,7 +29,7 @@ class PlaybackEndFeedback(unittest.TestCase):
                               'mp.register_event("file-loaded", function()')
         cls.origin = fragment(playback, 'local origin_path, origin_page, origin_active',
                               'local function media_address()')
-        cls.start = fragment(playback, "mp.add_hook('on_before_start_file', 50, function()",
+        cls.start = "local live_room = {open=function(id) assert(id == nil) end}\n" + fragment(playback, "mp.add_hook('on_before_start_file', 50, function()",
                              'mp.register_event("end-file", function(event)')
 
     def check_event(self, event, expected):
@@ -150,6 +150,65 @@ identity='BV14J4114768_p4'
 hooks.on_preloaded()
 assert(props['file-local-options/start']=='8' and changed==1)
 ''', 'playback/network-resume')
+
+    def test_live_room_status_belongs_to_the_current_playback(self):
+        module = json.dumps((ROOT / 'config/script-modules/bilibili-live.lua').as_posix())
+        self.lua.execute('local live = dofile(' + module + ')\n' + r'''
+local events, hooks, pending, props, notices = {}, {}, {}, {}, {}
+os.getenv=function(k) if k=='SystemRoot' then return 'C:/Windows' end end
+local mp = {
+    register_event=function(k, f) events[k]=f end,
+    add_hook=function(k, _, f) hooks[k]=f end,
+    observe_property=function(k, _, f) events[k]=f end,
+    get_property=function(k, fallback) return props[k] or fallback end,
+    get_property_bool=function(k) return props[k] end,
+    get_property_number=function(k, fallback) return props[k] or fallback end,
+    get_property_native=function(k) return props[k] end,
+    command_native_async=function(cmd, done)
+        assert(not cmd.playback_only and cmd.args[#cmd.args]:match('id=19$'))
+        pending[#pending+1]={done=done}
+        return #pending
+    end,
+    abort_async_command=function(id) pending[id].cancelled=true end,
+}
+local utils={join_path=function(a,b) return a..'/'..b end, parse_json=function(v) return v end}
+local room=live.new(mp, utils, {show=function(text) notices[#notices+1]=text end})
+local key='user-data/mpv/ytdl/json-subprocess-result/'
+local function open()
+    events['start-file']()
+    room.open('19')
+    props={['end']='none',length='none',frames='all'}
+end
+local function error_with(status, text)
+    open(); props[key..'status']=status; props[key..'stderr']=text
+    hooks.on_unload(); room.finish('error')
+    return notices[#notices]
+end
+local offline='ERROR: [BiliLive] 19: Streamer is not live'
+assert(error_with(1,'WARNING: transient\r\n'..offline..'\r\n')=='直播间当前未开播')
+assert(error_with(1,offline:gsub('19','18')):match('^暂时无法打开直播间'))
+assert(error_with(0,offline):match('^暂时无法打开直播间'))
+assert(error_with(1,'timeout'):match('^暂时无法打开直播间') and #pending==0)
+local function result(i,id,live)
+    pending[i].done(true,{status=0,stdout={code=0,data={room_id=id,live_status=live}}})
+end
+open(); events['file-loaded'](); events['eof-reached'](nil,true); room.finish('eof')
+assert(#pending==1)
+result(1,19,0); assert(notices[#notices]=='直播已结束')
+open(); events['file-loaded'](); room.finish('error')
+result(2,19,1); assert(notices[#notices]:match('^直播连接中断'))
+open(); events['file-loaded'](); room.finish('eof')
+result(3,20,0); assert(notices[#notices]:match('^直播连接中断'))
+open(); events['file-loaded'](); events['eof-reached'](nil,true)
+events['playback-restart'](); assert(pending[4].cancelled)
+events['eof-reached'](nil,true)
+local before=#notices
+result(4,19,0); assert(#notices==before)
+room.finish('stop'); assert(pending[5].cancelled)
+open(); result(5,19,0); assert(#notices==before)
+props['end']='15'; events['file-loaded'](); events['eof-reached'](nil,true);room.finish('eof')
+assert(#pending==5 and #notices==before)
+''', 'playback/live-room')
 
     def check_share_link(self, cases):
         web_resume = (ROOT / 'config/script-modules/web-resume.lua').read_text(encoding='utf-8')
@@ -393,6 +452,14 @@ load(7, page); finish(8, generic)
 finish(7, generic) -- No saved hint survives end-file.
 load(9, 'https://youtu.be/YE7VzlLtp-4?t=42')
 finish(9, '无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理')
+local room
+live_room.open=function(id) room=id end
+live_room.finish=function(reason) assert(room=='19' and reason=='error');messages[#messages+1]='live error' end
+load(10, 'https://live.bilibili.com/blanc/19/?source=share'); finish(10, 'live error')
+load(11, 'https://live.bilibili.com/19#player'); finish(11, 'live error')
+load(12, 'https://live.bilibili.com.invalid/19'); finish(12, direct)
+load(13, 'https://live.bilibili.com/19/another'); finish(13, direct)
+load(14, 'https://live.bilibili.com/19'); finish(15, generic)
 '''
         self.lua.execute(prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
 

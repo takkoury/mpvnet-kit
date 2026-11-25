@@ -3,6 +3,7 @@
 local mp = require("mp")
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
+local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-live.lua'})).new(mp, utils, feedback_client)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 -- The Windows host enables defaults before mpv_initialize; enforce the user whitelist at runtime too.
 mp.set_property_bool("input-default-bindings", false)
@@ -104,6 +105,11 @@ local function capture_media_origin(loaded)
     local _, host, rest = web_address(path)
     if not host then return end
     if youtube_video_id(host, rest) then return 'youtube' end
+    if host == 'live.bilibili.com' then
+        local path = rest:match('^[^?#]*')
+        local id = path:match('^/([1-9]%d*)/?$') or path:match('^/blanc/([1-9]%d*)/?$')
+        if id then return 'live', id end
+    end
     if host == 'b23.tv' and expanded_short_page then return 'page' end
     if not site_host(host, 'bilivideo.com') then
         return bilibili_page(path) and 'page' or 'url'
@@ -609,7 +615,9 @@ end)
 
 -- File-local source metadata is available here even if opening the stream fails.
 mp.add_hook('on_load', 50, function()
-    failure_source = capture_media_origin(false)
+    local source, room_id = capture_media_origin(false)
+    failure_source = source
+    live_room.open(room_id)
 end)
 mp.register_event("end-file", function(event)
     initial_media = false
@@ -618,7 +626,10 @@ mp.register_event("end-file", function(event)
     release_hold()
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
     local resume_position = network_resume.ended(event)
-    if resume_position then
+    local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
+    if source == 'live' then
+        live_room.finish(event.reason)
+    elseif resume_position then
         if event.reason == 'error' then
             feedback_client.show('暂时无法续播\n连接恢复后，请重新加载当前媒体', 'error')
         else
@@ -626,7 +637,6 @@ mp.register_event("end-file", function(event)
         end
     elseif event.reason == "error" then
         -- Never echo backend errors: they may contain private paths or URLs.
-        local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
         local message
         if source == 'youtube' then
             message = "无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理"

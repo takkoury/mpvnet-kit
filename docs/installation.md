@@ -65,6 +65,8 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 2. 从 [yt-dlp 官方发布页](https://github.com/yt-dlp/yt-dlp/releases/latest)下载 Windows x64 独立程序 `yt-dlp.exe`。把它放在刚打开的目录里，与 `mpv.conf` 放在同一层，然后重新启动播放器。无需修改系统 PATH。
 3. 复制视频网址或含单个网址的分享文案。B 站也可以只复制完整 BV 号。请保留网址中的分 P 或起播时间。在播放器按 Ctrl+Shift+V，或选择“文件 > 粘贴网址”。一次粘贴多条时每行放一个网址。空队列会从第一条开播；已有队列时会按顺序追加到队尾。
 
+B 站公开直播间也可以这样打开。复制浏览器地址栏中的完整房间网址，在播放器按 Ctrl+Shift+V。房间正在开播时即可观看，显示“直播间当前未开播”时可以稍后再打开同一个网址。
+
 YouTube 支持普通观看页和 `youtu.be` 单视频分享链接。分享链接带有 `t=42s` 或 `t=42` 时，会从第 42 秒附近起播。使用 Clash Verge 等本机 HTTP 代理时，在代理软件里开启“系统代理”即可。每次开始播放 YouTube 视频，播放器都会读取 Windows 为该网址选用的 HTTP 代理，用它解析网页和读取音视频。换到其他媒体后，这次使用的代理随即失效。
 
 如果 YouTube 提示解析失败，请检查系统代理并更新 yt-dlp。部分视频还需要 JavaScript 运行时，可按 [yt-dlp 的 Windows 说明](https://github.com/yt-dlp/yt-dlp/wiki/EJS#deno)将 Deno 放在 `yt-dlp.exe` 旁，再重新打开视频。
