@@ -2,7 +2,7 @@
 -- itself and the initial offline diagnostic come from the existing extractor.
 local M = {}
 
-function M.new(mp, utils, feedback)
+function M.new(mp, utils, feedback, ytdl_result)
     local room
     local control = {}
 
@@ -66,18 +66,7 @@ function M.new(mp, utils, feedback)
     end)
     mp.add_hook('on_unload', 60, function()
         if not room or room.played then return end
-        -- The core clears the subprocess result after unloading. Keep only a
-        -- positive match for this room, never the diagnostic or a signed URL.
-        local key = 'user-data/mpv/ytdl/json-subprocess-result/'
-        if mp.get_property_number(key .. 'status', 0) == 0 then return end
-        local err = mp.get_property_native(key .. 'stderr')
-        if type(err) ~= 'string' then return end
-        for line in err:gmatch('[^\r\n]+') do
-            if line:match('^ERROR: %[BiliLive%] (%d+): Streamer is not live$') == room.id then
-                room.offline = true
-                return
-            end
-        end
+        room.offline = ytdl_result.match_error(mp, 'BiliLive', room.id, '^Streamer is not live$') ~= nil
     end)
 
     function control.finish(reason)

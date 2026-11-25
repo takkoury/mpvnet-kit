@@ -3,7 +3,8 @@
 local mp = require("mp")
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
-local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-live.lua'})).new(mp, utils, feedback_client)
+local ytdl_result = dofile(mp.command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
+local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-live.lua'})).new(mp, utils, feedback_client, ytdl_result)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 -- The Windows host enables defaults before mpv_initialize; enforce the user whitelist at runtime too.
 mp.set_property_bool("input-default-bindings", false)
@@ -25,6 +26,7 @@ local path_sequence = 0
 local origin_path, origin_page, origin_active, origin_cid
 local initial_media, inherited_cid = true, nil
 local playback_entry_id, failure_source
+local youtube_start_hint
 local expanded_short_page
 
 local function web_address(value)
@@ -432,7 +434,6 @@ end)
 local function show_resume_position(position)
     feedback_client.show('播放停在 ' .. time_text(position, position >= 3600) .. '\n重新加载当前媒体可从这里继续', 'error')
 end
-local ytdl_result = dofile(mp.command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
 local function network_resume_source()
     if failure_source == 'url' then return true end
     if failure_source ~= 'page' then return end
@@ -514,7 +515,7 @@ mp.add_hook('on_before_start_file', 50, function()
     inherited_cid = mp.get_opt('cid')
 end)
 mp.register_event("start-file", function(event)
-    playback_entry_id, failure_source = event.playlist_entry_id, nil
+    playback_entry_id, failure_source, youtube_start_hint = event.playlist_entry_id, nil, nil
     expanded_short_page = nil
     origin_active = false
     frame_pending = false
@@ -637,6 +638,23 @@ mp.add_hook('on_load', 50, function()
     failure_source = source
     live_room.open(room_id)
 end)
+mp.add_hook('on_unload', 60, function()
+    if failure_source ~= 'youtube' then return end
+    local _, host, rest = web_address(mp.get_property('path'))
+    local delay = ytdl_result.match_error(mp, 'youtube', youtube_playback_page(host, rest),
+        '^This live event will begin in (.+)%.$')
+    if not delay then return end
+    local count, unit = delay:match('^(%d+) ([a-z]+)$')
+    local units = {second='秒', minute='分钟', hour='小时', day='天', week='周', month='个月', year='年'}
+    local label = unit and units[(unit:gsub('s$', ''))]
+    if label and #count <= 4 then
+        youtube_start_hint = '约 ' .. count .. ' ' .. label .. '后开播'
+    elseif delay == 'a few moments' then
+        youtube_start_hint = '即将开播，请稍后再打开'
+    else
+        youtube_start_hint = '请按原网页的预告时间再打开'
+    end
+end)
 mp.register_event("end-file", function(event)
     initial_media = false
     origin_active = false
@@ -656,7 +674,9 @@ mp.register_event("end-file", function(event)
     elseif event.reason == "error" then
         -- Never echo backend errors: they may contain private paths or URLs.
         local message
-        if source == 'youtube' then
+        if source == 'youtube' and youtube_start_hint then
+            message = "这场 YouTube 直播尚未开始\n" .. youtube_start_hint
+        elseif source == 'youtube' then
             message = "无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理"
         elseif source == 'page' then
             message = "播放失败\n请回到原网页，再用外部播放器播放"
@@ -669,7 +689,7 @@ mp.register_event("end-file", function(event)
         end
         feedback_client.show(message, 'error')
     end
-    playback_entry_id, failure_source = nil, nil
+    playback_entry_id, failure_source, youtube_start_hint = nil, nil, nil
 end)
 mp.register_event("file-loaded", function()
     failure_source = capture_media_origin(true)

@@ -24,6 +24,8 @@ class PlaybackEndFeedback(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         playback = PLAYBACK.read_text(encoding='utf-8')
+        module = json.dumps((ROOT / 'config/script-modules/ytdl-result.lua').as_posix())
+        cls.ytdl = 'local ytdl_result = dofile(' + module + ')\n'
         cls.source = "local network_resume = {ended=function() end}\n" + fragment(playback,
                               'mp.register_event("end-file", function(event)',
                               'mp.register_event("file-loaded", function()')
@@ -153,7 +155,7 @@ assert(props['file-local-options/start']=='8' and changed==1)
 
     def test_live_room_status_belongs_to_the_current_playback(self):
         module = json.dumps((ROOT / 'config/script-modules/bilibili-live.lua').as_posix())
-        self.lua.execute('local live = dofile(' + module + ')\n' + r'''
+        self.lua.execute(self.ytdl + 'local live = dofile(' + module + ')\n' + r'''
 local events, hooks, pending, props, notices = {}, {}, {}, {}, {}
 os.getenv=function(k) if k=='SystemRoot' then return 'C:/Windows' end end
 local mp = {
@@ -172,7 +174,7 @@ local mp = {
     abort_async_command=function(id) pending[id].cancelled=true end,
 }
 local utils={join_path=function(a,b) return a..'/'..b end, parse_json=function(v) return v end}
-local room=live.new(mp, utils, {show=function(text) notices[#notices+1]=text end})
+local room=live.new(mp, utils, {show=function(text) notices[#notices+1]=text end}, ytdl_result)
 local key='user-data/mpv/ytdl/json-subprocess-result/'
 local function open()
     events['start-file']()
@@ -417,6 +419,7 @@ local mp = {
     add_hook=function(name, priority, fn) hooks[name]=fn end,
     get_opt=function() return nil end,
     get_property=function(key) return props[key] end,
+    get_property_number=function(key, fallback) return props[key] or fallback end,
     get_property_native=function(key, fallback) return props[key] or fallback end,
     commandv=function() end,
 }
@@ -465,8 +468,30 @@ load(11, 'https://live.bilibili.com/19#player'); finish(11, 'live error')
 load(12, 'https://live.bilibili.com.invalid/19'); finish(12, direct)
 load(13, 'https://live.bilibili.com/19/another'); finish(13, direct)
 load(14, 'https://live.bilibili.com/19'); finish(15, generic)
+local id = 'ss12_-AbCdE'
+local url = 'https://www.youtube.com/live/'..id
+local key = 'user-data/mpv/ytdl/json-subprocess-result/'
+local function upcoming(status, diagnostic, ended_id, expected)
+    load(20, url)
+    props[key..'status'],props[key..'stderr']=status,diagnostic
+    hooks.on_unload()
+    finish(ended_id, expected)
+end
+local prefix='ERROR: [youtube] '..id..': This live event will begin in '
+local title='这场 YouTube 直播尚未开始\n'
+local unavailable='无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理'
+upcoming(1,'WARNING: retry\r\n'..prefix..'3 days.\r\n',20,title..'约 3 天后开播')
+upcoming(1,prefix..'1 hour.',20,title..'约 1 小时后开播')
+upcoming(1,prefix..'a few moments.',20,title..'即将开播，请稍后再打开')
+upcoming(1,prefix..'unexpected text.',20,title..'请按原网页的预告时间再打开')
+upcoming(1,prefix..'7 minutes.',21,generic)
+upcoming(0,prefix..'4 hours.',20,unavailable)
+upcoming(1,'ERROR: [youtube] OtherID_123: This live event will begin in 1 day.',20,unavailable)
+upcoming(1,'ERROR: [youtube] '..id..': Private video',20,unavailable)
+upcoming(1,prefix..'3 days.',20,title..'约 3 天后开播')
+load(21,url); finish(21,unavailable)
 '''
-        self.lua.execute(prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
+        self.lua.execute(self.ytdl + prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
 
 
 class VideoRestore(unittest.TestCase):
