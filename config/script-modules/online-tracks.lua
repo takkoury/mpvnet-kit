@@ -133,6 +133,32 @@ function M.format(pair)
     return selector(pair.video)..'+'..selector(pair.audio)
 end
 
+-- Resolve the viewer's choices against this episode's catalogue. Its original
+-- selection is the fallback for each stream independently.
+local function preferred_audio(tracks, choice)
+    if not choice then return end
+    local ordinary
+    for _,track in ipairs(tracks) do
+        if track.lang == choice.lang then
+            if track.role == choice.role then return track end
+            if choice.role ~= '评论' and choice.role ~= '口述影像' and
+                track.role ~= '评论' and track.role ~= '口述影像' then ordinary = ordinary or track end
+        end
+    end
+    return ordinary
+end
+
+local function episode_formats(c, choices)
+    local video = c.selected.video
+    for _,track in ipairs(c.video) do
+        if track.height == choices.height then video = track; break end
+    end
+    local audio = preferred_audio(c.audio, choices.voice) or c.selected.audio
+    if video.key ~= c.selected.video.key or audio.key ~= c.selected.audio.key then
+        return {video=video, audio=audio}
+    end
+end
+
 function M.read(mp, utils)
     local raw = mp.get_property_native('user-data/mpv/ytdl/json-subprocess-result/stdout')
     if type(raw) ~= 'string' or raw == '' or #raw > 24*1024*1024 then return end
@@ -157,7 +183,7 @@ end
 -- Bind a reload and its single recovery attempt to the original queue entry.
 function M.new(mp, utils)
     local state = {}
-    local catalog, pending
+    local catalog, pending, choices
 
     function state.catalog()
         if catalog ~= nil then return catalog or nil end
@@ -174,6 +200,38 @@ function M.new(mp, utils)
     local function same()
         local id, path = entry()
         return pending and pending.id == id and pending.path == path
+    end
+
+    local function remember(request)
+        local selected = request.target[request.kind]
+        choices = choices or {id=request.id, path=request.path}
+        if request.kind == 'video' then
+            choices.height = selected.height
+        else
+            choices.voice = selected.lang and {lang=selected.lang, role=selected.role} or nil
+        end
+        if not choices.height and not choices.voice then choices = nil end
+    end
+
+    function state.forget(kind)
+        if not choices or (kind ~= 'audio' and kind ~= 'video') or not state.catalog() then return end
+        if kind == 'video' then choices.height = nil else choices.voice = nil end
+        if not choices.voice and not choices.height then choices = nil end
+    end
+
+    local function enter_playlist_item()
+        if not choices then return end
+        local id, path = entry()
+        if id == choices.id and path == choices.path then return end
+        -- mpv retains entry IDs when a queue is reordered or appended to.
+        -- Opening even the same URL separately creates a fresh entry.
+        for _,item in ipairs(mp.get_property_native('playlist', {})) do
+            if id and item.id == choices.id and item.filename == choices.path then
+                choices.id, choices.path = id, path
+                return
+            end
+        end
+        choices = nil
     end
 
     local function recover()
@@ -222,24 +280,51 @@ function M.new(mp, utils)
 
     mp.add_hook('on_load', 9, function()
         catalog = nil
+        enter_playlist_item()
         if not same() then pending = nil; return end
-        local pair = pending.restoring and pending.previous or pending.target
         pending.loading = true
-        mp.set_property('file-local-options/ytdl-format', M.format(pair))
-        mp.set_property('file-local-options/start', string.format('%.6f', pending.position))
-        for kind,option in pairs({audio='aid', video='vid'}) do
-            local off = pending[kind..'_off'] and (pending.restoring or pending.kind ~= kind)
-            mp.set_property('file-local-options/'..option, off and 'no' or 'auto')
+        if pending.kind or not pending.restoring then
+            local pair = pending.restoring and pending.previous or pending.target
+            mp.set_property('file-local-options/ytdl-format', M.format(pair))
+        end
+        if pending.position then
+            mp.set_property('file-local-options/start', string.format('%.6f', pending.position))
+            for kind,option in pairs({audio='aid', video='vid'}) do
+                local off = pending[kind..'_off'] and (pending.restoring or pending.kind ~= kind)
+                mp.set_property('file-local-options/'..option, off and 'no' or 'auto')
+            end
         end
     end)
+    local function apply_episode_choices()
+        if pending or not choices then return end
+        local c = state.catalog()
+        local pair = c and episode_formats(c, choices)
+        if not pair then return end
+        local id, path = entry()
+        if id ~= choices.id or path ~= choices.path or path ~= mp.get_property('path') or
+            mp.get_property_number('playlist-playing-pos', -1) ~= mp.get_property_number('playlist-pos') then return end
+        pending = {id=id, path=path, media_id=c.media_id, previous=c.selected, target=pair}
+        if not mp.commandv('no-osd', 'playlist-play-index', 'current') then pending = nil end
+    end
+    -- The built-in hook extracts YouTube in on_load and can extract Bilibili
+    -- in on_load_fail. Decide before mpv starts the default rendition.
+    mp.add_hook('on_load', 45, apply_episode_choices)
+    mp.add_hook('on_load_fail', 45, apply_episode_choices)
     mp.add_hook('on_preloaded', 45, function()
-        if same() and pending.loading then
+        if same() and pending.loading and pending.position then
             -- The upstream hook can apply the share URL's timestamp after extraction.
             mp.set_property('file-local-options/start', string.format('%.6f', pending.position))
         end
     end)
     mp.register_event('playback-restart', function()
         if not same() or not pending.loading then return end
+        -- A failed automatic choice retries this episode using its original
+        -- options. Its current default can change between extractions.
+        if pending.restoring and not pending.kind then
+            mp.osd_message('已改用本集默认版本。', 2)
+            pending = nil
+            return
+        end
         local current = state.catalog()
         local pair = pending.restoring and pending.previous or pending.target
         if not current or current.media_id ~= pending.media_id or current.selected.audio.key ~= pair.audio.key or
@@ -249,8 +334,12 @@ function M.new(mp, utils)
             recover()
             return
         end
-        local label = current.selected[pending.kind].title
-        mp.osd_message(pending.restoring and '切换失败，已回到原版本。' or ('已切换到'..label), 2)
+        if pending.restoring then
+            mp.osd_message('切换失败，已回到原版本。', 2)
+        elseif pending.kind then
+            remember(pending)
+            mp.osd_message('已切换到'..current.selected[pending.kind].title, 2)
+        end
         pending = nil
     end)
     mp.register_event('end-file', function(event)
@@ -269,7 +358,7 @@ function M.new(mp, utils)
             recover()
         end
     end)
-    mp.register_event('idle', function() pending = nil end)
+    mp.register_event('idle', function() pending, choices = nil, nil end)
     return state
 end
 

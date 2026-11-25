@@ -24,3 +24,6 @@ class OnlineTracks(unittest.TestCase):
 
     def test_new_selection_cancels_recovery(self):
         self.lua.execute(self.source + '\ncheck_reload(true)')
+
+    def test_same_playlist_resolves_choices_independently(self):
+        self.lua.execute(self.source + '\ncheck_continuation()')

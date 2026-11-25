@@ -1162,6 +1162,7 @@ local function select_tracks(kind)
                 if not ok or (tonumber(current_id(target_kind)) or 0)~=(value=='no' and 0 or target.id) then
                     refresh_selector();return false,'未能应用'..target_definition.label..'，请重试。'
                 end
+                if online_state then online_state.forget(target_kind) end
                 if target_kind=='video' then invalidate_video_restore() end
                 return true
             end
@@ -1265,6 +1266,7 @@ local function select_tracks(kind)
             end
             local ok = mp.set_property(definition.property, target)
             if not ok then return false, '未能切换' .. definition.label .. '，请重试。' end
+            if online_state then online_state.forget(kind) end
             if kind == 'video' then
                 -- Explicit selection retires audio-only's earlier restore record.
                 -- A shared revision avoids a delayed message clearing a newer save.

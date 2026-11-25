@@ -38,7 +38,7 @@ function check_reload(user_moved)
     local function get(name,default) if props[name]~=nil then return props[name] end;return default end
     local mp={get_property=get,get_property_number=get,get_property_native=get,
         set_property=function(k,v) props[k]=v;return true end,
-        add_hook=function(k,p,fn) hooks[k]=fn end,register_event=function(k,fn) events[k]=fn end,
+        add_hook=function(k,p,fn) hooks[k..p]=fn end,register_event=function(k,fn) events[k]=fn end,
         osd_message=function() end, commandv=function(_,command,index)
             assert(command=='playlist-play-index' and index=='current')
             commands=commands+1;return true
@@ -47,20 +47,111 @@ function check_reload(user_moved)
     assert(state.switch('video',state.catalog().video[2].row_id))
     assert(commands==1)
     events['end-file']({reason='stop',playlist_entry_id=8})
-    hooks.on_after_end_file()
-    hooks.on_load()
+    hooks.on_after_end_file60()
+    hooks.on_load9()
     assert(props['file-local-options/ytdl-format']:find('[height=720]',1,true))
     props['file-local-options/start']='42'
-    hooks.on_preloaded()
+    hooks.on_preloaded45()
     assert(tonumber(props['file-local-options/start'])==130 and props.pause)
     events['end-file']({reason='error',playlist_entry_id=8})
     if user_moved then props['playlist/2/id']=20 end
-    hooks.on_after_end_file()
+    hooks.on_after_end_file60()
     if user_moved then assert(commands==1);return end
     assert(commands==2)
-    hooks.on_load()
+    hooks.on_load9()
     assert(props['file-local-options/ytdl-format']:find('[height=1080]',1,true))
     events['end-file']({reason='error',playlist_entry_id=8})
-    hooks.on_after_end_file()
+    hooks.on_after_end_file60()
     assert(commands==2)
+end
+
+function check_continuation()
+    local hooks, events, commands = {}, {}, 0
+    local items = {{id=7,filename='one'},{id=31,filename='two'},{id=29,filename='three'}}
+    local props = {playlist=items, ['time-pos']=130, seekable=true, vid='auto', aid='auto',
+        ['audio-params/samplerate']=48000,['user-data/mpv/ytdl/json-subprocess-result/stdout']='fixture'}
+    local episode
+    local function get(k,default) if props[k]~=nil then return props[k] end;return default end
+    local mp={get_property=get,get_property_number=get,get_property_native=get,
+        set_property=function(k,v) props[k]=v;return true end,
+        add_hook=function(k,p,f) hooks[k..p]=f end,register_event=function(k,f) events[k]=f end,
+        osd_message=function() end,commandv=function(_,cmd,where)
+            assert(cmd=='playlist-play-index' and where=='current');commands=commands+1;return true
+        end}
+    local state=M.new(mp,{parse_json=function() return episode end})
+    local function set_entry(i,formats,selected_video,selected_audio)
+        local pos=i-1
+        props['playlist-pos'],props['playlist-playing-pos']=pos,pos
+        props.path=items[i].filename
+        props['playlist/'..pos..'/id'],props['playlist/'..pos..'/filename']=items[i].id,props.path
+        episode={id=props.path,extractor_key='Youtube', formats=formats,
+            requested_formats={selected_video,selected_audio}}
+        props['video-params/h']=selected_video.height
+        props['file-local-options/start']='9'
+        props['file-local-options/ytdl-format']='user-default'
+        hooks.on_load9()
+    end
+    local function replay(i,formats,v,a)
+        events['end-file']({reason='stop',playlist_entry_id=items[i].id})
+        set_entry(i,formats,v,a)
+        hooks.on_load45()
+        hooks.on_preloaded45()
+        events['playback-restart']()
+    end
+    local fs={hd,sd,en,ja}
+    set_entry(1,fs,hd,en)
+    assert(state.switch('video',state.catalog().video[2].row_id))
+    replay(1,fs,sd,en)
+    -- A video-only choice preserves the following episode's own default audio.
+    local de=audio('de','de-DE','German')
+    set_entry(2,{hd,sd,ja,de},hd,de)
+    hooks.on_load45()
+    assert(commands==2)
+    replay(2,{hd,sd,ja,de},sd,de)
+    assert(props['file-local-options/ytdl-format']:find('de[language=de-DE]',1,true))
+    assert(props['file-local-options/start']=='9')
+    local japanese
+    for _,d in ipairs(state.catalog().audio) do if d.lang=='ja' then japanese=d end end
+    assert(state.switch('audio',japanese.row_id))
+    replay(2,{hd,sd,ja,de},sd,ja)
+    -- Different format IDs, missing language. Keep the voice for a later item.
+    local other_sd=video('new-sd',720)
+    set_entry(3,{hd,other_sd,en},hd,en)
+    hooks.on_load_fail45()
+    assert(commands==4)
+    replay(3,{hd,other_sd,en},other_sd,en)
+    assert(props['file-local-options/ytdl-format']:find('new-sd[height=720]',1,true))
+    assert(props['file-local-options/start']=='9')
+    -- Missing height, available language. No resolution cap or carried seek.
+    set_entry(1,{hd,en,ja},hd,en)
+    hooks.on_load45()
+    assert(commands==5)
+    replay(1,{hd,en,ja},hd,ja)
+    assert(props['file-local-options/ytdl-format']:find('2-ja[language=ja]',1,true))
+    -- Reordering and appending entries keep identity. A default which already
+    -- matches both choices should play in one pass.
+    items[1],items[3]=items[3],items[1]
+    set_entry(3,fs,sd,ja)
+    hooks.on_load45();hooks.on_preloaded45()
+    assert(commands==5 and props['file-local-options/ytdl-format']=='user-default')
+    state.forget('audio')
+    set_entry(2,fs,sd,en)
+    hooks.on_load45()
+    assert(commands==5)
+    set_entry(1,fs,hd,en);hooks.on_load45()
+    assert(commands==6)
+    events['end-file']({reason='stop',playlist_entry_id=items[1].id})
+    set_entry(1,fs,hd,en)
+    events['end-file']({reason='error',playlist_entry_id=items[1].id})
+    hooks.on_after_end_file60()
+    assert(commands==7)
+    set_entry(1,fs,hd,en);hooks.on_load45();events['playback-restart']()
+    assert(props['file-local-options/ytdl-format']=='user-default')
+    set_entry(2,fs,hd,en);hooks.on_load45()
+    assert(commands==8)
+    replay(2,fs,sd,en)
+    -- A separate load of an identical URL gets a new ID and normal defaults.
+    items={{id=99,filename=items[2].filename}};props.playlist=items
+    set_entry(1,fs,hd,en);hooks.on_load45()
+    assert(commands==8 and props['file-local-options/ytdl-format']=='user-default')
 end
