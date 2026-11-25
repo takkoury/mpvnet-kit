@@ -87,5 +87,5 @@ assert(#native == 0 and #commands == 0)
 assert(policy.accepts_duration(1.5) and policy.accepts_duration(2) and policy.accepts_duration(4))
 for _, value in ipairs({0, 3, 20, '2', math.huge}) do assert(not policy.accepts_duration(value)) end
 assert(not policy.accepts_duration(nil) and not policy.accepts_duration(0/0))
-assert(table.concat(policy.owners, ',') == 'capture,danmaku,subtitle')
+assert(table.concat(policy.owners, ',') == 'live,buffering,capture,danmaku,subtitle')
 ''')

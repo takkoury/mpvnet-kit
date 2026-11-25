@@ -3,7 +3,7 @@
 local M = {}
 
 function M.new(mp, resume_source, show_position, part_changed, playing_live)
-    local pending, unloading
+    local pending, unloading, next_load
 
     local function matches(index, point)
         if index < 0 then return false end
@@ -46,11 +46,19 @@ function M.new(mp, resume_source, show_position, part_changed, playing_live)
     end)
 
     mp.register_event('start-file', function(event)
-        if pending and pending.phase == 'queued' and pending.id == event.playlist_entry_id then
+        -- A format switch may reopen this entry again before its first frame.
+        local retry = pending and pending.phase == 'queued' and pending or next_load
+        next_load = nil
+        if retry and retry.id == event.playlist_entry_id then
+            pending = retry
             pending.phase = 'loading'
         else
             pending = nil
         end
+    end)
+
+    mp.observe_property('idle-active', 'bool', function(_, idle)
+        if idle then next_load = nil end
     end)
 
     mp.add_hook('on_preloaded', 80, function()
@@ -75,10 +83,14 @@ function M.new(mp, resume_source, show_position, part_changed, playing_live)
         unloading = nil
         -- Reload retires the original load with a stop before starting the same ID.
         if pending and pending.phase == 'queued' and event.reason == 'stop' then return end
-        if pending and pending.id == event.playlist_entry_id
-            and pending.phase == 'loading' and event.reason == 'error' then
-            pending.phase = nil
-            return pending.position, pending.position == nil
+        if pending and pending.phase == 'loading' and pending.id == event.playlist_entry_id then
+            if pending.position and (event.reason == 'stop' or event.reason == 'error') then
+                next_load = pending
+            end
+            if event.reason == 'error' then
+                pending.phase = nil
+                return pending.position, pending.position == nil
+            end
         end
         pending = nil
         -- VOD recovery is for the final interrupted item. A live room may

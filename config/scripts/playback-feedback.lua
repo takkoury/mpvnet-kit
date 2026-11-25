@@ -3,6 +3,7 @@
 local mp = require("mp")
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
+local web_source = dofile(mp.command_native({'expand-path', '~~/script-modules/web-source.lua'}))
 local ytdl_result = dofile(mp.command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
 local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/live-playback.lua'})).new(mp, utils, feedback_client, ytdl_result)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
@@ -29,120 +30,27 @@ local playback_entry_id, failure_source
 local youtube_live_hint
 local expanded_short_page
 
-local function web_address(value)
-    if type(value) ~= 'string' or value:find('%s') or value:find('%c') then return end
-    local authority, rest = value:match('^[Hh][Tt][Tt][Pp][Ss]?://([^/?#]+)(.*)$')
-    if not authority or authority:find('@', 1, true) then return end
-    local host = authority:lower():gsub(':%d+$', '')
-    return value, host, rest
-end
-
-local function site_host(host, domain)
-    return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
-end
-
-local function youtube_host(host)
-    return host == 'www.youtube.com' or host == 'youtube.com' or host == 'm.youtube.com'
-end
-
-local function youtube_id(value)
-    if value and #value == 11 and value:match('^[%w_%-]+$') then return value end
-end
-
-local function youtube_watch_id(host, rest)
-    local id
-    if host == 'youtu.be' then
-        id = rest:match('^([^?#]*)'):match('^/([^/]+)/?$')
-    elseif youtube_host(host) then
-        local query = rest:match('^/watch%?([^#]*)') or ''
-        for value in ('&' .. query):gmatch('&v=([^&]*)') do
-            if id and id ~= value then return end
-            id = value
-        end
-    end
-    return youtube_id(id)
-end
-
--- A live share uses the same network route. Its URL alone does not establish
--- a VOD timeline for browser handoff or a playlist to expand.
-local function youtube_playback_page(host, rest)
-    if youtube_host(host) and rest:sub(1, 6) == '/live/' then
-        local path = rest:match('^[^?#]*')
-        return youtube_id(path:match('^/live/([^/]+)/?$'))
-    end
-    return youtube_watch_id(host, rest)
-end
-
-local function share_parameters(short_url, target_url)
-    local part, start_time
-    -- The first valid value for each parameter wins, including across the redirect.
-    for _, url in ipairs({short_url or '', target_url}) do
-        local query = url:match('^[^?#]*%?([^#]*)') or ''
-        for field in query:gmatch('[^&]+') do
-            part = part or field:match('^p=([1-9]%d*)$')
-            start_time = start_time or field:match('^t=(%d+)$') or field:match('^t=(%d+%.%d*)$')
-        end
-    end
-    return part, start_time
-end
-
-local function bilibili_page(value, short_url)
-    local address, host, rest = web_address(value)
-    if not address or not site_host(host, 'bilibili.com') then return end
-    local path = rest:match('^([^?#]*)'):gsub('^/zh%-Han[st]/', '/')
-    local part, start_time = share_parameters(short_url, rest)
-    local bvid = path:match('^/video/(BV%w+)/?$')
-    if bvid and #bvid == 12 then
-        local page = 'https://www.bilibili.com/video/' .. bvid .. '/'
-        if part then page = page .. '?p=' .. part end
-        return page, bvid, start_time
-    end
-    local id = path:match('^/bangumi/play/(ep[1-9]%d*)/?$') or path:match('^/bangumi/play/(ss[1-9]%d*)/?$')
-    if id then
-        local page = 'https://www.bilibili.com/bangumi/play/' .. id
-        -- A season alone does not identify the episode to start at this time.
-        return page, id, id:sub(1, 2) == 'ep' and start_time or nil
-    end
-end
-
--- Return a canonical page, plus a Bilibili lookup ID only if the page still
--- needs a specific part or episode. YouTube IDs are opaque.
-local function resume_target(address, from_cdn, cid)
-    local _, host, rest = web_address(address)
-    local video_id = youtube_watch_id(host, rest)
-    if video_id then return 'https://www.youtube.com/watch?v=' .. video_id end
-    local page, id = bilibili_page(address)
-    if not page then return end
-    if id:sub(1, 2) == 'ss' or (from_cdn and id:sub(1, 2) == 'BV' and not page:find('?p=', 1, true)) then
-        return page, id, from_cdn and cid or nil
-    end
-    return page
-end
-
 local function capture_media_origin(loaded)
     origin_active = false
     local path = mp.get_property('path')
-    local _, host, rest = web_address(path)
-    if not host then return end
-    local youtube_id = youtube_playback_page(host, rest)
-    if youtube_id then return 'youtube', youtube_id end
-    if host == 'live.bilibili.com' then
-        local path = rest:match('^[^?#]*')
-        local id = path:match('^/([1-9]%d*)/?$') or path:match('^/blanc/([1-9]%d*)/?$')
-        if id then return 'live', id end
-    end
-    if host == 'b23.tv' and expanded_short_page then return 'page' end
-    if not site_host(host, 'bilivideo.com') then
-        return bilibili_page(path) and 'page' or 'url'
+    local source = web_source.parse(path)
+    if not source then return end
+    if source.kind == 'youtube' or source.kind == 'live' then return source.kind, source.id end
+    if source.kind == 'bilibili' or (source.kind == 'short' and expanded_short_page) then return 'page' end
+    if source.kind ~= 'cdn' then return 'url' end
+
+    local function referrer(address)
+        local page = web_source.parse(address)
+        if page and page.kind == 'bilibili' then return page.page, page.id end
     end
     local option = 'referrer'
-    local page, id = bilibili_page(mp.get_property('file-local-options/referrer'))
+    local page, id = referrer(mp.get_property('file-local-options/referrer'))
     if not page then
         option = 'http-header-fields'
         local headers = mp.get_property_native('file-local-options/http-header-fields', {})
         for _, header in ipairs(type(headers) == 'table' and headers or {}) do
             if type(header) == 'string' and (header:match('^%s*([^:]+):') or ''):lower() == 'referer' then
-                page, id = bilibili_page(header:match('^[^:]+:%s*(.-)%s*$'))
+                page, id = referrer(header:match('^[^:]+:%s*(.-)%s*$'))
                 if page then break end
             end
         end
@@ -168,12 +76,12 @@ local function media_address()
     local path = mp.get_property("path")
     if not path or path == "" then return nil, "PATH" end
     if path:find("://", 1, true) then
-        local address, host = web_address(path)
-        if not address then return nil, 'URL' end
-        if site_host(host, 'bilivideo.com') then
+        local source = web_source.parse(path)
+        if not source then return nil, 'URL' end
+        if source.kind == 'cdn' then
             return origin_active and origin_path == path and origin_page or nil, 'URL'
         end
-        return bilibili_page(address) or address, 'URL'
+        return source.kind == 'bilibili' and source.page or path, 'URL'
     end
     local file = utils.file_info(path)
     if not file or not file.is_file then return nil, "PATH" end
@@ -381,12 +289,12 @@ local web_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/w
 local bili_catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-catalog.lua'}))
 local youtube_catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/youtube-catalog.lua'}))
 web_resume.bind(mp, utils, feedback_client, function()
-    local _, host = web_address(mp.get_property('path'))
-    if not host then return end
+    local source = web_source.parse(mp.get_property('path'))
+    if not source then return end
     local address
-    if host == 'b23.tv' then address = expanded_short_page else address = media_address() end
-    return resume_target(address, site_host(host, 'bilivideo.com'), origin_active and origin_cid)
-end, open_address, bilibili_page, bili_catalog)
+    if source.kind == 'short' then address = expanded_short_page else address = media_address() end
+    return web_source.resume_target(address, source.kind == 'cdn', origin_active and origin_cid)
+end, open_address, web_source, bili_catalog)
 mp.add_key_binding(nil, "clipboard-url", function()
     mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")
 end)
@@ -440,9 +348,9 @@ local function network_resume_source()
     if failure_source ~= 'page' then return end
     -- A browser-supplied CDN stream can have a page Referer, but reloading
     -- that queue entry would reopen the CDN URL instead of extracting the page.
-    local page, bv = bilibili_page(expanded_short_page or mp.get_property('path'))
-    if not bv or bv:sub(1, 2) ~= 'BV' then return end
-    return ytdl_result.bilibili_part(ytdl_result.read(mp, utils), bv, page:match('%?p=(%d+)$') or '1')
+    local source = web_source.parse(expanded_short_page or mp.get_property('path'))
+    if not source or source.kind ~= 'bilibili' or source.id:sub(1, 2) ~= 'BV' then return end
+    return ytdl_result.bilibili_part(ytdl_result.read(mp, utils), source.id, source.part or '1')
 end
 local network_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/network-resume.lua'})).new(
     mp, network_resume_source, show_resume_position, function()
@@ -577,29 +485,30 @@ end
 mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
     if not mp.get_property_native('options/ytdl') then return end
-    local _, host, rest = web_address(input)
-    if youtube_playback_page(host, rest) then
+    local source = web_source.parse(input)
+    if not source then return end
+    if source.kind == 'youtube' then
         use_youtube_system_proxy(hook, input)
         return
     end
-    if host ~= 'b23.tv' then
-        local _, _, start_time = bilibili_page(input)
-        apply_share_start(start_time)
+    if source.kind ~= 'short' then
+        apply_share_start(source.start)
         return
     end
-    local code = rest:match('^([^?#]*)'):match('^/([A-Za-z0-9]+)/?$')
+    local code = source.code
     local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
-    if not code or #code > 32 or not windows then return end
+    if not code or not windows then return end
     hook:defer()
     mp.command_native_async({name='subprocess', playback_only=true, capture_stdout=true,
         args={utils.join_path(windows, 'System32/curl.exe'), '--disable', '--silent', '--head',
             '--output', 'NUL', '--max-time', '4', '--write-out', '%{redirect_url}', 'https://b23.tv/' .. code}},
         function(ok, result)
             if ok and result and result.status == 0 and mp.get_property('stream-open-filename') == input then
-                local page, _, start_time = bilibili_page(result.stdout, input)
-                if page and mp.set_property('stream-open-filename', web_resume.url_at_time(page, start_time)) then
-                    expanded_short_page = page
-                    apply_share_start(start_time)
+                local target = web_source.parse(result.stdout, input)
+                if target and target.kind == 'bilibili' and
+                    mp.set_property('stream-open-filename', web_source.url_at_time(target.page, target.start)) then
+                    expanded_short_page = target.page
+                    apply_share_start(target.start)
                 end
             end
             hook:cont()
@@ -611,25 +520,24 @@ mp.add_hook('on_load', 7, function()
     if not mp.get_property_native('options/ytdl') then return end
     local standalone = mp.get_property_number('playlist-count') == 1 and not mp.get_property('playlist/0/playlist-path')
     local input = mp.get_property('path')
-    local _, host, rest = web_address(input)
-    local video = youtube_watch_id(host, rest)
-    if video then
-        local list, index, single = youtube_catalog.watch_list(video, rest)
+    local source = web_source.parse(expanded_short_page or input)
+    if not source then return end
+    if source.kind == 'youtube' and source.page then
+        local list, index, single = youtube_catalog.watch_list(source.id, source.rest)
         if not list or mp.get_property('stream-open-filename') ~= input then return end
         if not mp.set_property('stream-open-filename', single) then return end
         local raw = mp.get_property_native('file-local-options/ytdl-raw-options', {})
         if standalone and raw['no-playlist'] == nil then
             mp.set_property_native(key, {provider='youtube', id=mp.get_property_native('playlist/0/id'),
-                content_id=video, playlist_id=list, index=index})
+                content_id=source.id, playlist_id=list, index=index})
         end
         return
     end
-    if not standalone then return end
-    local page, content_id = bilibili_page(expanded_short_page or mp.get_property('path'))
+    if not standalone or source.kind ~= 'bilibili' or source.id:sub(1, 2) == 'ss' then return end
     local id = mp.get_property_native('playlist/0/id')
-    if id and content_id and content_id:sub(1, 2) ~= 'ss' then
-        local part = content_id:sub(1, 2) == 'BV' and (tonumber(page:match('%?p=(%d+)$')) or 1) or nil
-        mp.set_property_native(key, {provider='bilibili', id=id, content_id=content_id, part=part})
+    if id then
+        local part = source.id:sub(1, 2) == 'BV' and (tonumber(source.part) or 1) or nil
+        mp.set_property_native(key, {provider='bilibili', id=id, content_id=source.id, part=part})
     end
 end)
 
@@ -661,8 +569,8 @@ end
 
 mp.add_hook('on_unload', 60, function()
     if failure_source ~= 'youtube' then return end
-    local _, host, rest = web_address(mp.get_property('path'))
-    youtube_live_hint = youtube_live_error(youtube_playback_page(host, rest))
+    local source = web_source.parse(mp.get_property('path'))
+    if source and source.kind == 'youtube' then youtube_live_hint = youtube_live_error(source.id) end
 end)
 mp.register_event("end-file", function(event)
     initial_media = false
@@ -722,12 +630,12 @@ mp.register_event("shutdown", function()
 end)
 capture_media_origin(true)
 
--- Report sustained underruns only after network VOD has started playing.
+-- Report sustained underruns after a network stream with a known duration starts.
 local buffering_key = 'user-data/mpvnet/feedback/buffering'
-local network_vod, buffering_visible = false, false
+local buffering_eligible, buffering_visible = false, false
 
 local function waiting_for_cache()
-    return network_vod and mp.get_property_bool('paused-for-cache') and not mp.get_property_bool('pause')
+    return buffering_eligible and mp.get_property_bool('paused-for-cache') and not mp.get_property_bool('pause')
 end
 
 local buffering_timer = mp.add_timeout(1, function()
@@ -751,12 +659,12 @@ local function update_buffering()
 end
 
 local function clear_buffering()
-    network_vod = false
+    buffering_eligible = false
     update_buffering()
 end
 
 mp.register_event('playback-restart', function()
-    network_vod = mp.get_property_bool('demuxer-via-network') and mp.get_property_number('duration', 0) > 0
+    buffering_eligible = mp.get_property_bool('demuxer-via-network') and mp.get_property_number('duration', 0) > 0
     update_buffering()
 end)
 mp.observe_property('paused-for-cache', 'bool', update_buffering)

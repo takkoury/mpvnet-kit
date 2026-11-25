@@ -20,6 +20,10 @@ python -B dev-tools/run-tests.py --profile core
 
 执行器先检查全部所选组的必要条件，再运行测试。缺少必要条件、失败或意外跳过都会返回非零；返回零只表示所选组通过。末尾摘要列出执行、失败、跳过数量及原因。新增测试类必须归入一组，发现遗漏或重复时入口会停止。
 
+### 网络播放回归
+
+分享链接、网页接续和断流重试见 [NetworkPlayback](test_network_playback.py) 与 [WebResume](test_web_resume.py)。前者也覆盖直播状态、过期回调及选轨再次重载时的断点。片单展开与队列身份见 [PlaylistInputController](test_playlist_input_controller.py)，在线选轨、回退和跨集沿用见 [OnlineTracks](test_online_tracks.py)。这些用例归入 `lua`，使用合成的站点返回值。剪贴板文案识别由 `helpers` 中的 [PlaylistInput](test_playlist_input.py) 使用实际 C# 处理。站点可用性、浏览器交接和可见提示需另行实播核对。
+
 ## 右键菜单扩展
 
 core 检查包含扩展构建输入、单文件宿主提取边界、仓外输出保护、菜单能力和受管 DLL 的源码摘要；这些检查只需 Python。修改 WPF 扩展时另运行：

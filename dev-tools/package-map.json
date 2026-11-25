@@ -140,6 +140,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/script-modules/web-source.lua",
+      "destination": "config/script-modules/web-source.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/web-resume.lua",
       "destination": "config/script-modules/web-resume.lua",
       "component": "author",

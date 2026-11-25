@@ -44,6 +44,11 @@ function check_reload(user_moved)
             commands=commands+1;return true
         end}
     local state=M.new(mp,{parse_json=function()return data end})
+    local sub={type='sub', id=3, external=true, title='Bilibili Danmaku', ['external-filename']='extra.ass'}
+    props['track-list']={sub}
+    assert(not state.switch('video',state.catalog().video[2].row_id) and commands==0,
+        'a matching subtitle title must not authorize losing an external file')
+    props['user-data/mpvnet/danmaku/reloadable-track']=sub.id
     assert(state.switch('video',state.catalog().video[2].row_id))
     assert(commands==1)
     events['end-file']({reason='stop',playlist_entry_id=8})

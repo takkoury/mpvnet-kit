@@ -1,14 +1,7 @@
 -- Returning to a webpage is an explicit handoff for the current media only.
 local M = {}
 
--- The canonical page can already contain a video ID or part number.
-function M.url_at_time(page, seconds)
-    if not seconds then return page end
-    local separator = page:find('?', 1, true) and '&' or '?'
-    return page .. separator .. 't=' .. seconds
-end
-
-local function episode_for_cid(index, cid, parse_page)
+local function episode_for_cid(index, cid, web_source)
     if type(index) ~= 'table' or not cid then return end
     local found
     local function scan(section)
@@ -21,8 +14,8 @@ local function episode_for_cid(index, cid, parse_page)
                 local episode = 'ep' .. string.format('%.0f', id)
                 if found and episode ~= found then return false end
                 if row.share_url then
-                    local _, linked = parse_page(row.share_url)
-                    if linked ~= episode then return false end
+                    local linked = web_source.parse(row.share_url)
+                    if not linked or linked.id ~= episode or linked.kind ~= 'bilibili' then return false end
                 end
                 found = episode
             end
@@ -39,7 +32,7 @@ local function episode_for_cid(index, cid, parse_page)
     if found then return 'https://www.bilibili.com/bangumi/play/' .. found end
 end
 
-function M.bind(mp, utils, feedback, source, open_address, parse_page, catalog)
+function M.bind(mp, utils, feedback, source, open_address, web_source, catalog)
     local pending
     local function retire()
         local old = pending
@@ -68,7 +61,7 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page, catalog)
         local job = {path=mp.get_property('path'), id=playing_id()}
         pending = job
         local function launch(target)
-            local address = M.url_at_time(target, math.floor(time))
+            local address = web_source.url_at_time(target, math.floor(time))
             job.handle = open_address(address, 'URL', function(ok)
                 if not current(job) then return end
                 pending = nil
@@ -96,7 +89,7 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page, catalog)
         job.handle = catalog.fetch(mp, utils, id, function(data)
             if not current(job) then return end
             if season then
-                local target = episode_for_cid(data, cid, parse_page)
+                local target = episode_for_cid(data, cid, web_source)
                 if target then launch(target) else unresolved() end
                 return
             end

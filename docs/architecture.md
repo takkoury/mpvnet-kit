@@ -21,25 +21,27 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
-剪贴板文本由 `KitPlaylistInput.exe` 读取，`InputProcessor.ParseClipboardText` 逐行识别分享网址和完整 BV 号，保留网址原文。Ctrl+Shift+V 沿用稳定动作 `playback_feedback/clipboard-url`。helper 在去重前标记本次是否包含多条网址。播放列表输入控制层复核队列快照后，单条沿用原有的替换和暂停处理；多条通过一次列表导入提交，空队列从首项开播，已有队列时跳过相同网址并追加到队尾。显式片单即使去重后只剩一项，也沿用片单顺序。通用文件打开与追加继续使用 `clipboard`，优先处理 Windows 文件列表。
+### 网络播放
 
-启用网页解析时，`playback-feedback.lua` 的 `on_load` 在 mpv 内置 ytdl_hook 之前处理 B 站分享地址。普通投稿和具体番剧分集共用地址解析，分别返回规范页、内容 ID 和分享时间。只有 `b23.tv` 短链才调用 Windows 系统目录下的 curl，限时读取一次跳转；确认目标后更新本次的 `stream-open-filename`，队列仍保留原短链。短链上显式给出的分 P、时间各自优先于跳转目标。长链和短链以同一规则把时间写入本条的 `file-local-options/start`，尊重已有起点及显式启动选项；季页不提供分集起点。短链无法确认时沿用原地址，解码、画质和站点取流由上游处理。
+mpv 持有真实队列、轨道和缓存。yt-dlp 与 mpv 内置的 ytdl_hook 负责取流。套件识别分享来源，在当前队列项上应用用户选择，并通过现有播放列表和反馈入口报告结果。
 
-网络播放失败提示由 `playback-feedback.lua` 负责。它在 `on_load` 按当前输入辨认媒体网址和可确认的 B 站来源页，加载成功时更新判断。只有 `end-file` 的条目 ID 与本次 `start-file` 一致，才采用该条目的网络提示；结束时清除分类。复制或打开 CDN 来源页继续使用已加载媒体的来源关联。
+| 职责 | 维护位置与约定 |
+| --- | --- |
+| 识别网址 | [web-source.lua](../config/script-modules/web-source.lua) 解析 HTTP(S) 输入，返回站点、内容 ID 和适用的规范页、分 P、起点。短链参数逐项优先于跳转目标。YouTube 直播分享链接可用于取流，只有观看页或单视频短链提供网页接续目标。此模块不读播放器状态，也不联网。 |
+| 准备本次取流 | [playback-feedback.lua](../config/scripts/playback-feedback.lua) 在 `on_load` 中先解析分享链接。B 站短链用系统 curl 限时四秒读取一次跳转，确认目标后只改本次取流地址。普通投稿和具体分集可设置条目起点，已有起点或显式设置优先。YouTube 按原网址[查询系统 HTTP 代理](../config/helpers/system-http-proxy.ps1)，限时四秒，仅设置本条的 `http-proxy` 与 `ytdl-raw-options.proxy`，尊重显式代理。 |
+| 从网页接手或返回 | [浏览器播放事件](../config/browser/youtube-play-event.txt)通过用户配置的 Handler 传入观看页，启用同步时带上正片当前秒数。[web-resume.lua](../config/script-modules/web-resume.lua) 在点击时冻结队列 ID、路径和位置，系统接受打开请求且仍在原条目时才暂停。B 站 CDN 来源仅采信与本条关联的来源页和 CID。分 P 不明时查投稿目录，季页按 CID 在正片和附加分集中唯一匹配 EP。换片或退出即取消。 |
+| 粘贴和展开队列 | [输入 helper](../config/helpers/playlist-input.cs)逐行识别分享文案、HTTP(S) 网址和完整 BV 号，在去重前标记多条粘贴。[队列输入模块](../config/script-modules/playlist-input.lua)复核快照后提交。单条替换，多条在空队列开始播放或向已有队列追加，去重后只剩一条仍按片单处理。 |
+| 选择在线版本 | [online-tracks.lua](../config/script-modules/online-tracks.lua) 从[当前取流结果](../config/script-modules/ytdl-result.lua)提取格式说明，按高度、语言和用途供原轨道面板选择。它只记成功手选的维度，下一项独立匹配画质和配音，缺少时回到该项默认。离开队列或进入空闲即清除偏好。 |
+| 断点与直播重进 | [network-resume.lua](../config/script-modules/network-resume.lua)只保留本实例一个恢复目标，绑定原队列 ID 和网址。可定位且时长已知的直链保留中断位置，B 站普通投稿还需核对同一 BV 和分 P 的单视频提取结果。直播只保留队列身份，重进时由来源决定起点。 |
+| 直播诊断 | [live-playback.lua](../config/script-modules/live-playback.lua)为每次中断最多查询一次。[B 站房间](../config/script-modules/bilibili-live.lua)按房间号核对。YouTube 须由同一视频的 `is_live` 结果确认正在直播，查询复用本条的解析器和代理，最多等十二秒。恢复、换片或退出时取消查询。预定开播、未开播和回放不可用的错误行在卸载时按提取器和内容 ID 匹配。 |
 
-YouTube 直播状态和 B 站未开播的判断共用[本次取流结果](../config/script-modules/ytdl-result.lua)。卸载时按提取器名称和当前视频或房间 ID 匹配错误行。YouTube 明确预告稍后开播或报告录像不可用时，播放反馈脚本只保留对应的中文提示。换片时清除提示，网络故障或其他取流失败沿用原反馈。
+**来源关联。** 播放脚本在单文件选项生效前记录进程继承的 CID。初始输入可使用启动时传入的值，后续输入须有本条提供的 CID，或仍与先前确认的媒体和来源相符。只保存当前来源关联，不保留请求头。
 
-[直播播放状态](../config/script-modules/live-playback.lua)跟踪当前条目。B 站使用[房间号查询](../config/script-modules/bilibili-live.lua)，打开失败时在卸载阶段核对未开播诊断。YouTube 只有在实际加载的提取结果为同一视频且状态为 `is_live` 时才进入直播流程，并保留本条使用的 yt-dlp 和代理。流停止或停在末帧时，每次中断只查询一次；指定播放终点、时长或帧数的播放除外。播放恢复、换片和退出会取消查询并忽略迟到的结果。
+**队列展开。** 加载前用 `user-data/mpvnet/web-queue-source` 标记独立打开的单条输入。队列层在 `on_preloaded` 读取[B 站目录](../config/script-modules/bilibili-catalog.lua)或 [YouTube 目录](../config/script-modules/youtube-catalog.lua)。BV 按分 P 排列，EP 只取顶层正片并唯一匹配当前集，YouTube 普通公开列表先核对索引处的视频 ID，否则要求 ID 唯一。确认队列快照仍有效，才在原项前后插入带标题的 M3U 片段。原项保留地址、暂停状态和文件选项。已有片单沿用指定顺序，目录不可用时继续原项。
 
-YouTube 的复核只请求原视频 ID 和直播状态，最多等 12 秒。查询进行时，直播模块向持续反馈槽 `user-data/mpvnet/feedback/live` 写入“正在确认直播状态…”。返回同一 ID 且状态为 `post_live` 或 `was_live` 时，用“直播已结束”替换等待文字。仍为 `is_live` 时提示连接中断。身份、状态或连接无法确认时提示稍后重新打开链接。结果保留到播放恢复、停止、换片或退出，由反馈协调器显示。普通回放按点播处理。
+**重载顺序。** 选轨在内置 ytdl_hook 前设置本条格式，预加载时恢复位置，播放开始后核对实际格式和解码结果，失败最多回退一次。手动添加的外挂轨道会阻止此次切换。弹幕脚本只为随媒体自动加载的轨道发布 `user-data/mpvnet/danmaku/reloadable-track`，销毁时清除。点播断点在 `on_preloaded` 的选轨钩子之后复核身份并设置起点。若选轨在第一帧前再次重开同一条目，断点可传到这次加载。切换条目、停止后进入空闲或恢复播放会结束这次传递。媒体已卸载时，点播保留提前结束的末项供显式重试。距片尾约两秒、限时、限帧或倒放沿用普通重载。
 
-“回到网页继续播放”沿用播放反馈脚本已核实的来源页和打开网址的 helper。YouTube 观看页和短链与代理选择共用视频 ID 识别规则，返回网页时只用该 ID 构造观看页。来源明确时直接使用规范网页；需要核对 B 站分集或分 P 时，来源解析才额外传入查询所需的 BV 或季号，以及可用的 CID。脚本在核心应用单文件选项前记录进程继承的 CID，初始输入可使用启动时传入的值；后续输入须有该文件新提供的 CID，或与已确认的媒体和来源一致。
-
-[网页接续模块](../config/script-modules/web-resume.lua)的 `url_at_time` 从规范页和秒数生成带时间的网址，短链展开和返回网页共用这个函数。模块在返回网页时保存本次动作的媒体身份、点击时刻和异步请求。`ep` 直接接续。BV 的 CDN 来源缺少分 P 时按公开分 P 列表核对。若 CDN 来源是 `ss` 且当前 CID 可信，则只在点击时查询该季官方目录，检查 `main_section.episodes` 与 `section[].episodes`。同一 CID 只有一个不同的 EP 且返回的分集分享页（如有）一致时才打开；季页本身、集数标题和目录顺序不足以确认目标。换片或退出会取消待处理请求；系统接受打开请求且仍是原队列条目时才暂停播放器。
-
-`playback-feedback.lua` 在同一加载钩子中识别 YouTube 观看页、单视频短链和指向具体视频的 `/live/视频ID` 分享链接。直播分享链接沿用原网址取流，与普通观看页共用代理和失败提示。[系统代理查询](../config/helpers/system-http-proxy.ps1)按目的网址调用 Windows PowerShell 的 .NET 系统代理接口，返回 HTTP 代理地址或空结果。播放器只在该条目设置 `http-proxy` 和 `ytdl-raw-options.proxy`，保留其余解析选项，已有显式代理优先。查询限时四秒；直连、失败或取消时沿用现有配置。分享时间由 yt-dlp 和 mpv 内置钩子处理。
-
-External Player 的[YouTube 播放事件](../config/browser/youtube-play-event.txt)由用户添加到浏览器，在普通观看页将正片的当前位置向下取整后写入规范观看网址。关闭同步时沿用原网址。浏览器通过已有的 `MPVNET` 协议映射只传一个网址，复用上面的逐条代理与起播流程。浏览器脚本、协议注册和播放器进程仍由各自上游负责。
+**反馈。** 网络错误只在结束事件与加载的条目 ID 匹配时使用该条的提示。正时长的网络媒体开始播放后，`paused-for-cache` 持续约一秒且用户未暂停时发布缓冲状态。恢复供数、暂停、条目结束或退出时清除。YouTube 直播停止后使用 `user-data/mpvnet/feedback/live` 持续显示复核结果，指定播放终点、时长或帧数时略过复核。缓存与播放进度仍归 mpv。
 
 ### 显式文件输入
 
@@ -59,12 +61,6 @@ External Player 的[YouTube 播放事件](../config/browser/youtube-play-event.t
 
 构建工具通过源码摘要校验受管EXE，普通构包不编译、不下载依赖；与设置构建共用本地托管程序构建基础。验证分别覆盖实际C#输入规则、完整Lua控制层和隔离核心；真实选择对话框与键鼠体验仍需用户验收。
 
-播放反馈脚本在短链解析后标记独立打开的 B 站普通投稿或具体番剧分集，记录队列条目 ID、BV 或 EP，以及适用的分 P 编号。播放列表控制层在媒体已解析的 `on_preloaded` 阶段查询公开目录，与“回到网页继续播放”共用 `bilibili-catalog.lua`。投稿按分 P 编号排列。番剧用当前 EP 查询季详情，从顶层 `episodes` 按来源顺序读取 `section_type=0` 的正片，按 EP 唯一匹配当前项。预告、精彩看点或无法确认的条目沿用单集播放。
-
-YouTube 观看页和短链若带明确的普通播放列表 ID（`PL…`），`youtube-catalog.lua` 将本次取流地址设为带原时间参数的单视频观看页，由 yt-dlp 按单视频处理起点。对于独立输入，在 `on_preloaded` 通过 mpv 实际选用的 yt-dlp 和本条代理读取公开列表的 ID、视频 ID、标题。索引和视频 ID 相符时按索引定位，否则须在返回目录中唯一匹配视频 ID。纯列表页继续走上游列表解析，显式片单中的视频网址只播放该视频。
-
-两种站点的目录模块都返回有标题的网页条目和当前项位置。异步结果须匹配原条目和队列快照，控制层才用带标题的 M3U 将前后条目放入原 Playlist。原条目保留原始链接、单文件选项和播放状态。季页仍交给现有网页解析器，已有队列和列表文件沿用给定顺序。目录不可用时继续加载当前项，更新队列或退出会退休在途请求。
-
 ### 播放列表文件读写
 
 [playlist-files.cs](../config/helpers/playlist-files.cs)分离列表读取和保存职责。读取只针对用户明确选中的本地M3U／M3U8；从父Process.Modules定位已加载的libmpv，通过绝对路径加载同一库，为本请求惰性建立隔离core。不读个人配置、不播放、不写历史，使用loadlist append取得顺序、标题和重复项，每份列表前stop／clear，完成后释放实例及库。继承当前metadata-codepage值，不自建编码猜测。先识别UTF-8／BOM／UTF-16的HLS标记并返回单一来源；网络条目不预检，嵌套列表不自行递归。直接本地引用缺失计入missing_files；任何列表读取失败或超限拒绝整个准备结果，队列不受影响。
@@ -79,14 +75,6 @@ YouTube 观看页和短链若带明确的普通播放列表 ID（`PL…`），`y
 
 ### 操作反馈与持续状态
 
-网络重载模块还处理直播退到空窗后的手动重进。直播模块确认该条目已经开播且没有显式播放终点后，重载模块保存原队列 ID 和网址。直播流结束卸载，或显式重载同一场直播时再次开流失败，均可在原窗口重试。重试复核队列身份并重新打开原网址，起点由直播源决定。换片、手动停止、移除或替换原项后不再重进这一项。
-
-直链点播支持定位且已知时长时，[网络断点模块](../config/script-modules/network-resume.lua)在提前到达 EOF 时读取实际位置，与队列条目 ID 和原路径关联。片尾约两秒、显式的结束时间、限时、限帧及倒放沿用普通重载。核心已卸载媒体时，只在同一末项提前结束或出错后保留本实例的恢复点。用户显式重新加载时才重开该条目，在 `on_preloaded` 复核 ID 和路径并设置本次起点。重开失败仍可重试，播放恢复或另一个条目开始时释放断点。
-
-从 B 站普通投稿网页取流时，播放反馈脚本用原网址或本次展开的短链确定 BV 和分 P，并与 [yt-dlp 本次解析结果](../config/script-modules/ytdl-result.lua)核对。断点只多保存已确认的媒体 ID。重开原条目后，在上游应用网页起点之后复核新结果，匹配才写入断点。只凭浏览器交付的 CDN 地址及其来源头无法进入这条网页续播路径。在线选轨与续播共用解析结果读取入口。
-
-网络点播首次进入播放后，播放反馈脚本在核心报告 `paused-for-cache` 且用户未暂停时启动一秒计时。到期仍在等待才通过 `user-data/mpvnet/feedback/buffering` 发布“正在缓冲…”，显示顺序在直播状态之后。核心退出缓冲、用户暂停、条目结束或播放器退出时清理计时和提示。缓存、暂停及播放位置均由核心管理。
-
 [feedback.lua](../config/script-modules/feedback.lua)提供`new(mp)`客户端，各控制器用`show(text, kind)`发送已有文案；`action`为1.5秒，`success`和普通`notice`为2秒，`error`为4秒。发送、就绪判断和原生回退集中在该Module，控制器仍拥有动作结果、文案和任务生命周期；弹幕加载用`is_ready()`决定是否需要无协调器时的短暂回退。
 
 [feedback-osd.lua](../config/scripts/feedback-osd.lua)继续通过既有`feedback_osd/show(text, seconds)`接收短消息，先暂时撤下自身持续文字，再交给原生`mp.osd_message`；秒数校验与持续槽顺序取自同一反馈Module。尚未发布`user-data/mpvnet/feedback/ready=true`时，客户端直接用原生短消息回退。原有未纳入该协议的3秒错误和20秒属性详情不变，不增加通用事件总线或动态槽注册。
@@ -98,10 +86,6 @@ YouTube 观看页和短链若带明确的普通播放列表 ID（`PL…`），`y
 当前固定核心把`osd-msg1`与其他原生短消息分行组合，未公开原生消息正文／剩余时长。协调器到期只恢复持续选项，不重发或清空原生消息；未纳入反馈协议的提示、20秒属性详情及stats可能与持续文字分行并存，保持原时长和关闭方式。不拦截任意用户命令，不靠轮询`show-text`抢占其他脚本。真实呈现与跨DPI需在目标环境分别验证，逻辑回归见[反馈协调](../tests/test_feedback_osd.py)。
 
 ### 轨道、章节与音频设备选择器
-
-连续观看的在线选择由同一在线轨道模块在内存中维护。手动切换成功后，只记所选视频高度或音轨语言与用途。下一条目加载时，先用前一条目的原生 ID 和地址确认队列仍相连，再按新条目的解析结果分别匹配画质和配音。未选或缺失的一项沿用新条目自己的默认选择。两项已符合时直接播放；需要更换时在默认流开始播放前重播原条目，沿用该条目自身的起点。停止进入空闲或换成新队列时结束本次选择。
-
-[在线轨道模块](../config/script-modules/online-tracks.lua)从当前条目的 mpv 网页解析结果读取分离音视频的格式，以清晰度、语言及已标记的音频用途组织选项。会话只保留选择所需的格式元数据。视频和音轨选择器仍负责原生选轨，网站的格式行通过同一面板提交。切换网站版本由模块重播原队列项，在内置 ytdl_hook 之前设置该项的格式表达式，在预加载阶段恢复切换时的位置。重新取流、代理和站点访问由原播放路径负责。模块按真实队列 ID 和地址核对在途选择，播放重新开始后检查格式和解码属性，目标失败时仅为同条目尝试一次原版本。
 
 [track-selector.lua](../config/script-modules/track-selector.lua)共用Lua/ASS绘制、搜索与临时输入；[track-selection.lua](../config/scripts/track-selection.lua)单实例持有面板类型、媒体／会话代次及aid或sid提交。独立轨道面板与“全部轨道”共用当前轨道的判断。选轨属性为 `auto` 时，从 `current-tracks` 取实际轨道 ID，显示和提交时使用同一规则。音轨只读 audio 轨，普通字幕排除弹幕；提交前重新验证轨道ID，id=0或再次选中当前轨都写对应属性no，不改mute、volume、audio-device、secondary-sid或配置文件。
 

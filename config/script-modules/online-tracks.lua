@@ -262,8 +262,9 @@ function M.new(mp, utils)
         local pair = {video=c.selected.video, audio=c.selected.audio}
         pair[kind] = target
         -- A reload cannot recreate a file the viewer added during playback.
+        local danmaku_id = mp.get_property_native('user-data/mpvnet/danmaku/reloadable-track')
         for _,track in ipairs(mp.get_property_native('track-list', {})) do
-            local restored_sub = track.type == 'sub' and (track.title == 'Bilibili Danmaku' or
+            local restored_sub = track.type == 'sub' and ((danmaku_id and track.id == danmaku_id) or
                 (track['external-filename'] or ''):match('^edl://!no_clip;!delay_open,media_type=sub'))
             if track.external and not restored_sub then
                 return false,'当前有外挂轨道，重新取流会将它移除。'

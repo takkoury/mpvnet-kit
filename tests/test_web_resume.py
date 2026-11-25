@@ -1,8 +1,8 @@
+import json
 from pathlib import Path
 import unittest
 
 from lua_runtime import load_lua51
-from support.lua_source import fragment
 
 MODULE = Path(__file__).resolve().parents[1] / 'config/script-modules/web-resume.lua'
 
@@ -11,9 +11,11 @@ class WebResume(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lua = load_lua51()
-        cls.source = MODULE.read_text(encoding='utf-8')
-        playback = (MODULE.parents[1] / 'scripts/playback-feedback.lua').read_text(encoding='utf-8')
-        cls.page_reader = fragment(playback, 'local function web_address(value)', 'local function capture_media_origin(')
+        cls.modules = '\n'.join(
+            'local ' + name + ' = dofile(' + json.dumps(MODULE.with_name(filename).as_posix()) + ')'
+            for name, filename in [('api', 'web-resume.lua'), ('catalog', 'bilibili-catalog.lua'),
+                                   ('web_source', 'web-source.lua')]
+        )
 
     def run_case(self, case):
         fixture = r'''
@@ -29,17 +31,13 @@ local mp = {get_property=get,get_property_number=get,get_property_native=get,
     command_native_async=function(command,cb) fetched[#fetched+1]={command,cb};return #fetched end,
     abort_async_command=function(h) cancelled[h]=true end}
 local utils = {join_path=function(a,b)return a..'/'..b end, parse_json=function()return rows end}
-local os = {getenv=function()return 'windows' end}
-local api=(function()
-''' + self.source + r'''
-end)()
-''' + 'local catalog=(function()\n' + MODULE.with_name('bilibili-catalog.lua').read_text(encoding='utf-8') + '\nend)()\n' + self.page_reader + r'''
+os.getenv=function() return 'windows' end
 api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()
-    return resume_target(src, cdn, cid)
+    return web_source.resume_target(src, cdn, cid)
 end,
-    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, bilibili_page, catalog)
+    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, web_source, catalog)
 '''
-        self.lua.execute(fixture + case, 'web-resume')
+        self.lua.execute(self.modules + '\n' + fixture + case, 'web-resume')
 
     def test_direct_page_time_and_successful_launch(self):
         self.run_case("""

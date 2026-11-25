@@ -44,7 +44,11 @@
 - `config/helpers/KitPlaylistWindow.dll`
 - `config/helpers/KitPlaylistInput.exe`
 - `config/script-modules/playlist-input.lua`
+- `config/script-modules/web-source.lua`
 - `config/script-modules/web-resume.lua`
+- `config/script-modules/bilibili-live.lua`
+- `config/script-modules/live-playback.lua`
+- `config/script-modules/online-tracks.lua`
 - `config/script-modules/network-resume.lua`
 - `config/script-modules/ytdl-result.lua`
 - `config/script-modules/bilibili-catalog.lua`

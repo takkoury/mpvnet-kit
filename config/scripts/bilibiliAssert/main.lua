@@ -44,6 +44,7 @@ if paths.options.python_path ~= '' then o.python_path = paths.options.python_pat
 local danmu_file = nil
 local danmu_open = false
 local danmu_sid = nil
+local reloadable_track = "user-data/mpvnet/danmaku/reloadable-track"
 local secondary_state = nil
 local generation = 0
 local pending_request = nil
@@ -111,7 +112,7 @@ local function log(text, user_text)
 end
 
 -- load function
-local function load_danmu(file)
+local function load_danmu(file, reloadable)
 	local metadata = utils.file_info(file)
 	if not metadata or not metadata.is_file then feedback("弹幕加载失败", 'error') return end
 	local secondary_sid = mp.get_property("secondary-sid", "no")
@@ -140,6 +141,7 @@ local function load_danmu(file)
 		return
 	end
 	danmu_file, danmu_sid, secondary_state = file, added_sid, previous_state
+	if reloadable then mp.set_property_native(reloadable_track, added_sid) end
 	mp.set_property_native("secondary-sub-visibility", false)
 	mp.set_property_native("secondary-sub-ass-override", false)
 	local approximatedDanmukuCount = math.floor((metadata.size - 850) / 120)
@@ -169,11 +171,11 @@ local function Danmaku_check()
 		end
 	end
 
-	Danmaku_process(cid)
+	Danmaku_process(cid, true)
 end
 
 -- Convert comments using the bundled Python script.
-function Danmaku_process(cid)
+function Danmaku_process(cid, reloadable)
 	if cid == nil then return end
 	if not o.use_python then feedback("弹幕加载失败", 'error') return end
 	local secondary_sid = secondary_id()
@@ -228,7 +230,7 @@ function Danmaku_process(cid)
 			os.remove(output_path) return -- This callback owns only its unique output file.
 		end
 		if res and val and val.status == 0 then
-			if not load_danmu(output_path) then os.remove(output_path) end
+			if not load_danmu(output_path, reloadable) then os.remove(output_path) end
 		else
 			os.remove(output_path)
 			-- Only mpv's explicit spawn failure identifies an unavailable Python
@@ -261,6 +263,7 @@ function Danmaku_terminate()
 	loading(false)
 	cancel_request()
 	if not danmu_file then return end
+	mp.set_property_native(reloadable_track, false)
 	log('FILE ENDED', '弹幕已清除')
 	if file_exists(danmu_file) then
 		os.remove(danmu_file)
@@ -318,5 +321,5 @@ mp.register_event("end-file", Danmaku_terminate)
 mp.register_event("shutdown", function() shutting_down = true; Danmaku_terminate() end)
 mp.observe_property("speed", nil, Add_fps_vf)
 
-mp.register_script_message('load-danmaku', Danmaku_process)
+mp.register_script_message('load-danmaku', function(cid) Danmaku_process(cid) end)
 mp.add_key_binding(nil, 'toggle', Danmaku_toggle)
