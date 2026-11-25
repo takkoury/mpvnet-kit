@@ -556,14 +556,14 @@ mp.add_hook('on_load', 5, function(hook)
         end)
 end)
 mp.add_hook('on_load', 7, function()
-    mp.set_property_native('user-data/mpvnet/bilibili-parts-source', false)
+    mp.set_property_native('user-data/mpvnet/bilibili-queue-source', false)
     if not mp.get_property_native('options/ytdl') or mp.get_property_number('playlist-count') ~= 1
         or mp.get_property('playlist/0/playlist-path') then return end
-    local page, bv = bilibili_page(expanded_short_page or mp.get_property('path'))
+    local page, content_id = bilibili_page(expanded_short_page or mp.get_property('path'))
     local id = mp.get_property_native('playlist/0/id')
-    if id and bv and bv:sub(1, 2) == 'BV' then
-        mp.set_property_native('user-data/mpvnet/bilibili-parts-source',
-            {id=id, bv=bv, part=tonumber(page:match('%?p=(%d+)$')) or 1})
+    if id and content_id and content_id:sub(1, 2) ~= 'ss' then
+        local part = content_id:sub(1, 2) == 'BV' and (tonumber(page:match('%?p=(%d+)$')) or 1) or nil
+        mp.set_property_native('user-data/mpvnet/bilibili-queue-source', {id=id, content_id=content_id, part=part})
     end
 end)
 

@@ -149,8 +149,8 @@ function part_catalog_guards()
     h.queue({{id=5,filename=url}})
     local deferred,continued=0,0
     local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
-    local source={id=5,bv='BV1234567890',part=2}
-    local function request() h.controller.expand_parts(source,hook) end
+    local source={id=5,content_id='BV1234567890',part=2}
+    local function request() h.controller.expand_catalog(source,hook) end
     h.properties['playlist/0/playlist-path']='user.m3u8';request();eq(deferred,0)
     h.properties['playlist/0/playlist-path']=nil
     request();h.finish({code=-1});eq(continued,1);eq(#h.calls,0)
@@ -161,6 +161,22 @@ function part_catalog_guards()
     h.finish({code=0,data={{page=1,part='one'},{page=2,part='two'}}})
     eq(continued,3);eq(#h.calls,0)
     request();eq(deferred,3)
+end
+function season_catalog_order()
+    local catalog=dofile(catalog_path)
+    local episodes={{id=91,section_type=0,title='1',long_title='春天'},
+        {id=17,section_type=0,ep_id=17,show_title='第2话 散步'},
+        {id=5,section_type=1,title='PV'}, {id=72,section_type=0,title='3'}}
+    local season={season_id=28,episodes=episodes,section={{episodes={{id=6,title='花絮'}}}}}
+    local entries,position=catalog.queue_entries('ep17',season)
+    eq(position,2); eq(#entries,3); eq(entries[1].title,'第1集 春天')
+    eq(entries[2].title,'第2话 散步'); eq(entries[3].path,'https://www.bilibili.com/bangumi/play/ep72')
+    for _,id in ipairs({'ep5','ep6','ep100'}) do
+        local _,index=catalog.queue_entries(id,season);eq(index,nil)
+    end
+    episodes[2].ep_id=99;eq(catalog.queue_entries('ep17',season),nil)
+    episodes[2].ep_id=17;episodes[4].id=17;eq(catalog.queue_entries('ep17',season),nil)
+    episodes[4].id=72;episodes[1].section_type=nil;eq(catalog.queue_entries('ep17',season),nil)
 end
 local function entry(path, kind) return {path='X:/fixture/'..path,kind=kind or 'media'} end
 local function message(h,text,seconds)

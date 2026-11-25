@@ -7,7 +7,7 @@ function M.new(mp, utils, feedback, read_include_images)
     local session = string.format('%.0f-%.0f', mp.get_property_number('pid', 0), mp.get_time() * 1000000)
     local sequence, pending, saving, closing = 0, nil, nil, false
     local last_save_path = ''
-    local expanded_part_entry
+    local expanded_entry
     -- These are per-entry loading policies, not another queue or title store.
     -- mpv owns both the IDs and the titles parsed from the validated M3U body.
     local exact_entries = {}
@@ -55,7 +55,7 @@ function M.new(mp, utils, feedback, read_include_images)
     mp.observe_property('playlist', 'native', function()
         local live = {}
         local list = mp.get_property_native('playlist', {})
-        if pending and pending.part_entry and (#list ~= 1 or list[1].id ~= pending.part_entry) then retire() end
+        if pending and pending.catalog_entry and (#list ~= 1 or list[1].id ~= pending.catalog_entry) then retire() end
         for _, entry in ipairs(list) do
             if entry.id ~= nil then live[entry.id] = entry.filename end
         end
@@ -358,51 +358,45 @@ function M.new(mp, utils, feedback, read_include_images)
         end)
     end
 
-    local function expand_parts(source, hook)
-        local bv, part = source.bv, source.part
-        if closing or pending or type(bv) ~= 'string' or #bv ~= 12 or not bv:match('^BV%w+$') then return end
+    local function expand_catalog(source, hook)
+        local content_id = source.content_id
+        if closing or pending or type(content_id) ~= 'string' then return end
         local state = snapshot()
         local anchor = state.entries[1]
-        part = tonumber(part)
         if #state.entries ~= 1 or state.current ~= 0 or not anchor.id or anchor.id ~= source.id
-            or expanded_part_entry == anchor.id or mp.get_property('playlist/0/playlist-path')
-            or not part or part < 1 or part ~= math.floor(part) then return end
+            or expanded_entry == anchor.id or mp.get_property('playlist/0/playlist-path') then return end
         local catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-catalog.lua'}))
         sequence = sequence + 1
-        local generation, job = sequence, {part_entry=anchor.id, hook=hook}
+        local generation, job = sequence, {catalog_entry=anchor.id, hook=hook}
         pending = job
-        local function populate(pages)
-            local titles = catalog.titles(pages)
-            if not titles or #titles < 2 or not titles[part] or not unchanged(state) then return end
+        local function populate(data)
+            local entries, current = catalog.queue_entries(content_id, data, source.part)
+            if not entries or #entries < 2 or not entries[current] or not unchanged(state) then return end
             -- The original entry separates two contiguous M3U segments. Never
             -- unload it: its input, file-local options and pause state stay live.
-            local entries = {}
-            for n, title in ipairs(titles) do
-                if n == part then entries[n] = anchor
-                else
-                    entries[n] = {from_playlist=true, kind='media', title='P' .. n .. ' · ' .. title,
-                        path='https://www.bilibili.com/video/' .. bv .. '/?p=' .. n}
-                end
+            for _, entry in ipairs(entries) do
+                entry.from_playlist, entry.kind = true, 'media'
             end
+            entries[current] = anchor
             local segments = prepare_segments(entries, generation)
             if not segments then return end
-            local later, earlier = segments[part+1], segments[1]
+            local later, earlier = segments[current+1], segments[1]
             local err = later and load_list_segment(later, 'append', generation)
             if not err and earlier and not closing and sequence == generation then
                 local list = mp.get_property_native('playlist', {})
-                if #list == 1 + #titles - part and list[1].id == anchor.id then
+                if #list == 1 + #entries - current and list[1].id == anchor.id then
                     err = load_list_segment(earlier, 'insert-at', generation, 0)
                 end
             end
             cleanup_segments(segments)
-            if err then feedback.show('分 P 目录未能完整加入，继续播放当前项', 'error')
-            else expanded_part_entry = anchor.id end
+            if err then feedback.show('目录未能完整加入播放列表，继续播放当前项', 'error')
+            else expanded_entry = anchor.id end
         end
         hook:defer()
-        job.handle = catalog.fetch(mp, utils, bv, function(pages)
+        job.handle = catalog.fetch(mp, utils, content_id, function(data)
             if pending ~= job then return end
             pending = nil
-            local ok = pcall(populate, pages)
+            local ok = pcall(populate, data)
             hook:cont()
             if not ok then mp.msg.error('Could not expand the Bilibili playlist') end
         end)
@@ -454,7 +448,7 @@ function M.new(mp, utils, feedback, read_include_images)
 
     return {
         request=request,
-        expand_parts=expand_parts,
+        expand_catalog=expand_catalog,
         save=save,
         clear=function()
             if closing then return end
