@@ -447,7 +447,7 @@ end
 local network_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/network-resume.lua'})).new(
     mp, network_resume_source, show_resume_position, function()
         feedback_client.show('未能确认原分 P，沿用网页起点', 'notice')
-    end)
+    end, live_room.can_rejoin)
 
 mp.add_key_binding(nil, "reload", function()
     local path = mp.get_property("path")
@@ -670,10 +670,11 @@ mp.register_event("end-file", function(event)
     frame_pending = false
     release_hold()
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
-    local resume_position = network_resume.ended(event)
+    local resume_position, live_target = network_resume.ended(event)
+    local retry_hint = live_target and '直播暂时无法连接\n网络恢复后按 Ctrl+R 重新进入'
     local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
     if source == 'live' then
-        live_room.finish(event.reason)
+        live_room.finish(event.reason, retry_hint)
     elseif resume_position then
         if event.reason == 'error' then
             feedback_client.show('暂时无法续播\n连接恢复后，请重新加载当前媒体', 'error')
@@ -684,7 +685,7 @@ mp.register_event("end-file", function(event)
         -- Never echo backend errors: they may contain private paths or URLs.
         local message
         if source == 'youtube' then
-            message = youtube_live_hint or "无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理"
+            message = youtube_live_hint or retry_hint or "无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理"
         elseif source == 'page' then
             message = "播放失败\n请回到原网页，再用外部播放器播放"
         elseif source == 'url' then

@@ -118,7 +118,7 @@ local mp = {get_property=get, get_property_native=get, get_property_number=get, 
 local hints = 0
 local identity, changed = true, 0
 local control = resume.new(mp,function() return identity end,function() hints=hints+1 end,
-    function() changed=changed+1 end)
+    function() changed=changed+1 end,function() return false end)
 for k,v in pairs({['end']='15',length='4',frames='30',['play-direction']='backward',
         seekable=false,['demuxer-via-network']=false,['rebase-start-time']=false,['time-pos']=59.9}) do
     local original=props[k]; props[k]=v
@@ -152,6 +152,51 @@ identity='BV14J4114768_p4'
 hooks.on_preloaded()
 assert(props['file-local-options/start']=='8' and changed==1)
 ''', 'playback/network-resume')
+
+    def test_idle_reload_rejoins_only_the_same_live_entry_without_seeking(self):
+        module = json.dumps((ROOT / 'config/script-modules/network-resume.lua').as_posix())
+        self.lua.execute('local resume=dofile(' + module + ')\n' + '''
+local hooks,events,observers={},{},{}
+local url='https://live.bilibili.com/19'
+local props={['playlist/0/id']=7,['playlist/0/filename']=url,['playlist-count']=1,playlist={{id=7}}}
+local function get(k,d) if props[k]~=nil then return props[k] end;return d end
+local mp={get_property=get,get_property_native=get,get_property_number=get,get_property_bool=get,
+    set_property=function() error('live reload must not set a start time') end,
+    add_hook=function(k,_,f) hooks[k]=f end,register_event=function(k,f) events[k]=f end,
+    observe_property=function(k,_,f) observers[k]=f end}
+local playing=false
+local ctl=resume.new(mp,function() return nil end,function() error('live has no position hint') end,
+    function() error('unexpected VOD identity check') end,function() return playing end)
+local function active()
+    events['start-file']({playlist_entry_id=7})
+    props.path=url;props['idle-active']=false;props['playlist-pos']=0;props['playlist-playing-pos']=0
+    playing=true
+end
+local function unload(reason)
+    hooks.on_unload();playing=false;props.path=nil
+    props['idle-active']=true;props['playlist-pos']=-1;props['playlist-playing-pos']=-1
+    return ctl.ended({reason=reason,playlist_entry_id=7})
+end
+-- Network failure that unloads the media directly.
+active();local pos,live=unload('error');assert(not pos and live and ctl.prepare_reload()==0)
+-- The replacement open itself fails. Repeated explicit retries keep the target.
+events['start-file']({playlist_entry_id=7});pos,live=unload('error')
+assert(not pos and live and ctl.prepare_reload()==0 and ctl.prepare_reload()==false)
+active();hooks.on_preloaded();events['playback-restart']()
+-- Explicit retry from an active or frozen frame, before transport has recovered.
+assert(ctl.prepare_reload()==0);unload('stop');events['start-file']({playlist_entry_id=7})
+pos,live=unload('error');assert(not pos and live)
+-- The same URL in a replacement entry must not be reopened.
+props['playlist/0/id']=8;props.playlist={{id=8}};assert(not ctl.prepare_reload())
+props['playlist/0/id']=7;props.playlist={{id=7}}
+active();unload('stop');assert(not ctl.prepare_reload())
+active();unload('eof');props['playlist/0/filename']='other.mp4';assert(not ctl.prepare_reload())
+props['playlist/0/filename']=url;props['playlist-count']=2
+active();unload('error') -- A surviving idle item need not be the last one.
+props.playlist={{id=8},{id=7}};props['playlist/0/id']=8;props['playlist/1/id']=7;props['playlist/1/filename']=url
+assert(ctl.prepare_reload()==1)
+events['start-file']({playlist_entry_id=8});assert(not ctl.prepare_reload())
+''','playback/idle-live-reload')
 
     def test_live_room_status_belongs_to_the_current_playback(self):
         modules = ROOT / 'config/script-modules'

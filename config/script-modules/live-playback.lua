@@ -103,7 +103,11 @@ function M.new(mp, utils, feedback, ytdl_result)
         end
     end)
 
-    function control.finish(reason)
+    function control.can_rejoin()
+        return room ~= nil and room.played == true and not room.limited
+    end
+
+    function control.finish(reason, retry_hint)
         if not room then return end
         if reason ~= 'error' and reason ~= 'eof' then
             control.open(nil)
@@ -113,7 +117,7 @@ function M.new(mp, utils, feedback, ytdl_result)
             if room.offline then
                 feedback.show('直播间当前未开播', 'notice')
             else
-                feedback.show('暂时无法打开直播间\n请检查网络和 yt-dlp，或打开原网页查看', 'error')
+                feedback.show(retry_hint or '暂时无法打开直播间\n请检查网络和 yt-dlp，或打开原网页查看', 'error')
             end
         end
     end

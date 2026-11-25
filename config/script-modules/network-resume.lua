@@ -1,8 +1,8 @@
--- One in-memory restart point. Direct URLs use queue identity alone (true);
--- extracted pages also carry the media ID to check again on reload.
+-- One in-memory reload target. VOD carries a position and a source identity;
+-- a live room keeps only its original queue entry and reopens at the live edge.
 local M = {}
 
-function M.new(mp, resume_source, show_position, part_changed)
+function M.new(mp, resume_source, show_position, part_changed, playing_live)
     local pending, unloading
 
     local function matches(index, point)
@@ -12,7 +12,16 @@ function M.new(mp, resume_source, show_position, part_changed)
             and mp.get_property(entry .. 'filename') == point.path
     end
 
+    local function entry_target(position, source)
+        local index = mp.get_property_number('playlist-playing-pos', -1)
+        if index < 0 then return end
+        local target = {id=mp.get_property_native('playlist/' .. index .. '/id'),
+            path=mp.get_property('path'), position=position, source=source}
+        if target.id and target.path and matches(index, target) then return target end
+    end
+
     local function checkpoint()
+        if playing_live() then return entry_target() end
         if not mp.get_property_bool('demuxer-via-network') or not mp.get_property_bool('seekable') then return end
         local position = mp.get_property_number('time-pos')
         local duration = mp.get_property_number('duration')
@@ -21,19 +30,14 @@ function M.new(mp, resume_source, show_position, part_changed)
         if mp.get_property('end') ~= 'none' or mp.get_property('length') ~= 'none'
             or mp.get_property('frames') ~= 'all' or mp.get_property('play-direction') ~= 'forward'
             or not mp.get_property_bool('rebase-start-time') then return end
-        local index = mp.get_property_number('playlist-playing-pos', -1)
-        if index < 0 then return end
         local source = resume_source()
-        if not source then return end
-        local point = {id=mp.get_property_native('playlist/' .. index .. '/id'),
-            path=mp.get_property('path'), position=position, source=source}
-        if point.id and point.path and matches(index, point) then return point end
+        if source then return entry_target(position, source) end
     end
 
     mp.observe_property('eof-reached', 'bool', function(_, eof)
         if eof then
             local point = checkpoint()
-            if point then show_position(point.position) end
+            if point and point.position then show_position(point.position) end
         end
     end)
 
@@ -50,7 +54,7 @@ function M.new(mp, resume_source, show_position, part_changed)
     end)
 
     mp.add_hook('on_preloaded', 80, function()
-        if pending and pending.phase == 'loading' and pending.path == mp.get_property('path')
+        if pending and pending.position and pending.phase == 'loading' and pending.path == mp.get_property('path')
             and matches(mp.get_property_number('playlist-pos', -1), pending) then
             if pending.source ~= true and resume_source() ~= pending.source then
                 pending = nil
@@ -74,27 +78,30 @@ function M.new(mp, resume_source, show_position, part_changed)
         if pending and pending.id == event.playlist_entry_id
             and pending.phase == 'loading' and event.reason == 'error' then
             pending.phase = nil
-            return pending.position
+            return pending.position, pending.position == nil
         end
         pending = nil
+        -- VOD recovery is for the final interrupted item. A live room may
+        -- move in the queue; a subsequent start-file retires it if playback advances.
         if (event.reason == 'eof' or event.reason == 'error') and previous and previous.id == event.playlist_entry_id
-            and matches(mp.get_property_number('playlist-count', 0) - 1, previous) then
+            and (not previous.position or matches(mp.get_property_number('playlist-count', 0) - 1, previous)) then
             pending = previous
-            return pending.position
+            return pending.position, pending.position == nil
         end
     end
 
     function control.prepare_reload()
         -- Repeated keypresses must not replace the restart point while opening.
         if pending and pending.phase then return false end
-        if mp.get_property_bool('eof-reached') then
+        local idle = mp.get_property_bool('idle-active')
+        if mp.get_property_bool('eof-reached') or (not idle and playing_live()) then
             pending = checkpoint()
-        elseif not mp.get_property_bool('idle-active') then
+        elseif not idle then
             pending = nil
         end
         if not pending then return end
         local index = mp.get_property_number('playlist-pos', -1)
-        if index < 0 and mp.get_property_bool('idle-active') then
+        if index < 0 and idle then
             for i, entry in ipairs(mp.get_property_native('playlist', {})) do
                 if entry.id == pending.id then index = i - 1; break end
             end
