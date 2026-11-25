@@ -4,7 +4,7 @@ local durations = {action = 1.5, success = 2, notice = 2, error = 4}
 
 M.root = 'user-data/mpvnet/feedback/'
 -- Fixed display order, shared with the coordinator; not a registration system.
-M.owners = {'capture', 'danmaku', 'subtitle'}
+M.owners = {'buffering', 'capture', 'danmaku', 'subtitle'}
 
 function M.accepts_duration(value)
     for _, duration in pairs(durations) do

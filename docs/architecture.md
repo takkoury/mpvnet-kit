@@ -73,6 +73,8 @@ YouTube 观看页和短链若带明确的普通播放列表 ID（`PL…`），`y
 
 ### 操作反馈与持续状态
 
+网络点播首次进入播放后，播放反馈脚本在核心报告 `paused-for-cache` 且用户未暂停时启动一秒计时。到期仍在等待才通过 `user-data/mpvnet/feedback/buffering` 发布“正在缓冲…”，排在其他持续状态之前。核心退出缓冲、用户暂停、条目结束或播放器退出时清理计时和提示。缓存、暂停及播放位置均由核心管理。
+
 [feedback.lua](../config/script-modules/feedback.lua)提供`new(mp)`客户端，各控制器用`show(text, kind)`发送已有文案；`action`为1.5秒，`success`和普通`notice`为2秒，`error`为4秒。发送、就绪判断和原生回退集中在该Module，控制器仍拥有动作结果、文案和任务生命周期；弹幕加载用`is_ready()`决定是否需要无协调器时的短暂回退。
 
 [feedback-osd.lua](../config/scripts/feedback-osd.lua)继续通过既有`feedback_osd/show(text, seconds)`接收短消息，先暂时撤下自身持续文字，再交给原生`mp.osd_message`；秒数校验与持续槽顺序取自同一反馈Module。尚未发布`user-data/mpvnet/feedback/ready=true`时，客户端直接用原生短消息回退。原有未纳入该协议的3秒错误和20秒属性详情不变，不增加通用事件总线或动态槽注册。

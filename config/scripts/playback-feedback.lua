@@ -1,5 +1,5 @@
 -- Focused playback actions shared by input.conf and ModernZ.
--- No property observer emits OSD: feedback belongs to explicit user actions.
+-- Explicit actions use short messages. Cache waits publish a persistent status.
 local mp = require("mp")
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
@@ -633,3 +633,45 @@ mp.register_event("shutdown", function()
     for path, request in pairs(path_requests) do mp.abort_async_command(request); os.remove(path) end
 end)
 capture_media_origin(true)
+
+-- Report sustained underruns only after network VOD has started playing.
+local buffering_key = 'user-data/mpvnet/feedback/buffering'
+local network_vod, buffering_visible = false, false
+
+local function waiting_for_cache()
+    return network_vod and mp.get_property_bool('paused-for-cache') and not mp.get_property_bool('pause')
+end
+
+local buffering_timer = mp.add_timeout(1, function()
+    if waiting_for_cache() then
+        buffering_visible = true
+        mp.set_property_native(buffering_key, '正在缓冲…')
+    end
+end)
+buffering_timer:kill()
+
+local function update_buffering()
+    if waiting_for_cache() then
+        if not buffering_visible and not buffering_timer:is_enabled() then buffering_timer:resume() end
+    else
+        buffering_timer:kill()
+        if buffering_visible then
+            buffering_visible = false
+            mp.set_property_native(buffering_key, '')
+        end
+    end
+end
+
+local function clear_buffering()
+    network_vod = false
+    update_buffering()
+end
+
+mp.register_event('playback-restart', function()
+    network_vod = mp.get_property_bool('demuxer-via-network') and mp.get_property_number('duration', 0) > 0
+    update_buffering()
+end)
+mp.observe_property('paused-for-cache', 'bool', update_buffering)
+mp.observe_property('pause', 'bool', update_buffering)
+mp.register_event('end-file', clear_buffering)
+mp.register_event('shutdown', clear_buffering)
