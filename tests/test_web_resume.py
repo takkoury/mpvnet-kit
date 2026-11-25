@@ -35,8 +35,7 @@ local api=(function()
 end)()
 ''' + self.page_reader + r'''
 api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()
-    local canonical, id = bilibili_page(src)
-    return canonical, id, cdn, cdn and cid or nil
+    return resume_target(src, cdn, cid)
 end,
     function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, bilibili_page)
 '''
@@ -49,6 +48,26 @@ assert(#fetched==0 and #opened==1 and opened[1][1]==page..'?p=3&t=42' and not pr
 opened[1][2](true);assert(props.pause)
 props.pause=false;props['time-pos']=0;src=page;bind()
 assert(opened[2][1]==page..'?t=0');opened[2][2](false);assert(not props.pause)
+""")
+
+    def test_youtube_returns_to_the_current_video_and_replaces_the_incoming_time(self):
+        self.run_case("""
+local base='https://www.youtube.com/watch?v='
+local id='ss12_-AbCdE'
+for i,url in ipairs({base..id..'&t=42s&list=old', 'https://youtu.be/'..id..'?si=old#t=42',
+                     'https://m.youtube.com/watch?t=42&v='..id}) do
+    src=url;props['time-pos']=130.85;props.pause=false
+    bind();assert(#opened==i and #fetched==0 and opened[i][1]==base..id..'&t=130')
+    assert(not props.pause);opened[i][2](true);assert(props.pause)
+end
+src=base..'YE7VzlLtp-4&t=77';props['time-pos']=0;props.pause=false;bind()
+assert(opened[4][1]==base..'YE7VzlLtp-4&t=0')
+events['start-file']();src='local.mp4';opened[4][2](true)
+for _,url in ipairs({src, 'https://cdn.googlevideo.com/videoplayback', base..id..'&v=YE7VzlLtp-4',
+                     'https://youtu.be.example/'..id, 'https://www.youtube.com/watch?x=1#v='..id}) do
+    src=url;bind()
+end
+assert(#opened==4 and #fetched==0 and not props.pause and #messages==5)
 """)
 
     def test_part_lookup_uses_matching_cid_and_click_time(self):

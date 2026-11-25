@@ -44,6 +44,7 @@
 - `config/helpers/KitPlaylistWindow.dll`
 - `config/helpers/KitPlaylistInput.exe`
 - `config/script-modules/playlist-input.lua`
+- `config/script-modules/web-resume.lua`
 - `.gitignore`
 - `CHANGELOG.md`
 - `Install.cmd`

@@ -1,7 +1,7 @@
 -- Returning to a webpage is an explicit handoff for the current media only.
 local M = {}
 
--- Accept a canonical page, which may already select a part with ?p=.
+-- The canonical page can already contain a video ID or part number.
 function M.url_at_time(page, seconds)
     if not seconds then return page end
     local separator = page:find('?', 1, true) and '&' or '?'
@@ -73,9 +73,8 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page)
 
     mp.add_key_binding(nil, 'resume-webpage', function()
         if pending then return end
-        local page, id, from_cdn, raw = source()
-        if not page then feedback.show('当前媒体没有可接续的 B 站来源页', 'error'); return end
-        local season = id:sub(1, 2) == 'ss'
+        local page, id, raw = source()
+        if not page then feedback.show('当前媒体没有可接续的网页', 'error'); return end
         local time = mp.get_property_number('time-pos')
         if not time or not (time >= 0 and time < math.huge) then
             feedback.show('暂时无法取得播放位置', 'error'); return
@@ -94,11 +93,10 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page)
                 end
             end)
         end
-        if not season and (id:sub(1, 2) == 'ep' or not from_cdn or page:find('?p=', 1, true)) then
-            launch(page); return
-        end
+        if not id then launch(page); return end
 
         -- Resolve only within the index for the confirmed source, at click time.
+        local season = id:sub(1, 2) == 'ss'
         local function unresolved()
             pending = nil
             feedback.show(season and '无法确认当前集数\n请从番剧的具体分集页打开视频'
@@ -106,7 +104,7 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page)
         end
         local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
         local cid = raw and tostring(raw):match('^[1-9]%d*$') and tonumber(raw)
-        if not windows or (raw ~= nil and (not cid or cid >= 2^53)) or (season and (not from_cdn or not cid)) then
+        if not windows or (raw ~= nil and (not cid or cid >= 2^53)) or (season and not cid) then
             unresolved(); return
         end
         local endpoint = season and ('https://api.bilibili.com/pgc/web/season/section?season_id=' .. id:sub(3))

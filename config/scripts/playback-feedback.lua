@@ -38,15 +38,18 @@ local function site_host(host, domain)
     return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
 end
 
-local function youtube_video(host, rest)
+local function youtube_video_id(host, rest)
     local id
     if host == 'youtu.be' then
-        id = rest:match('^([^?#]*)'):match('^/([%w_%-]+)/?$')
+        id = rest:match('^([^?#]*)'):match('^/([^/]+)/?$')
     elseif host == 'www.youtube.com' or host == 'youtube.com' or host == 'm.youtube.com' then
-        local query = rest:match('^/watch%?([^#]*)')
-        if query then id = ('&' .. query .. '&'):match('&v=([%w_%-]+)&') end
+        local query = rest:match('^/watch%?([^#]*)') or ''
+        for value in ('&' .. query):gmatch('&v=([^&]*)') do
+            if id and id ~= value then return end
+            id = value
+        end
     end
-    return id ~= nil and #id == 11
+    if id and #id == 11 and id:match('^[%w_%-]+$') then return id end
 end
 
 local function share_parameters(short_url, target_url)
@@ -81,12 +84,26 @@ local function bilibili_page(value, short_url)
     end
 end
 
+-- Return a canonical page, plus a Bilibili lookup ID only if the page still
+-- needs a specific part or episode. YouTube IDs are opaque.
+local function resume_target(address, from_cdn, cid)
+    local _, host, rest = web_address(address)
+    local video_id = youtube_video_id(host, rest)
+    if video_id then return 'https://www.youtube.com/watch?v=' .. video_id end
+    local page, id = bilibili_page(address)
+    if not page then return end
+    if id:sub(1, 2) == 'ss' or (from_cdn and id:sub(1, 2) == 'BV' and not page:find('?p=', 1, true)) then
+        return page, id, from_cdn and cid or nil
+    end
+    return page
+end
+
 local function capture_media_origin(loaded)
     origin_active = false
     local path = mp.get_property('path')
     local _, host, rest = web_address(path)
     if not host then return end
-    if youtube_video(host, rest) then return 'youtube' end
+    if youtube_video_id(host, rest) then return 'youtube' end
     if host == 'b23.tv' and expanded_short_page then return 'page' end
     if not site_host(host, 'bilivideo.com') then
         return bilibili_page(path) and 'page' or 'url'
@@ -339,9 +356,7 @@ web_resume.bind(mp, utils, feedback_client, function()
     if not host then return end
     local address
     if host == 'b23.tv' then address = expanded_short_page else address = media_address() end
-    local page, id = bilibili_page(address)
-    local from_cdn = site_host(host, 'bilivideo.com')
-    return page, id, from_cdn, from_cdn and origin_active and origin_cid or nil
+    return resume_target(address, site_host(host, 'bilivideo.com'), origin_active and origin_cid)
 end, open_address, bilibili_page)
 mp.add_key_binding(nil, "clipboard-url", function()
     mp.commandv("script-message-to", "playlist_controls", "open-clipboard-url")
@@ -512,7 +527,7 @@ mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
     if not mp.get_property_native('options/ytdl') then return end
     local _, host, rest = web_address(input)
-    if youtube_video(host, rest) then
+    if youtube_video_id(host, rest) then
         use_youtube_system_proxy(hook, input)
         return
     end
