@@ -37,6 +37,7 @@ local function host()
             return true
         end,
         command_native=function(args)
+            if args[1]=='expand-path' and args[2]=='~~/script-modules/bilibili-catalog.lua' then return catalog_path end
             if args[1]=='expand-path' then return args[2] end
             if args.name=='subprocess' then
                 eq(args.detach,true);eq(args.capture_stdout,false);eq(args.capture_stderr,false)
@@ -85,6 +86,7 @@ local function host()
         end,
     }
     os.getenv=function(name)
+        if name=='SystemRoot' then return 'X:/Windows' end
         if (name=='TEMP' or name=='TMP') and h.fail~='temp' then return 'X:/fixture/temp' end
     end
     os.remove=function(path) h.removed[#h.removed+1]=path;h.files[path]=nil;return true end
@@ -139,6 +141,26 @@ local function host()
         h.properties['playlist-pos']=position;h.hooks.on_load()
     end
     return h
+end
+function part_catalog_guards()
+    local h=host()
+    local url='https://www.bilibili.com/video/BV1234567890/?p=2'
+    h.properties.path=url
+    h.queue({{id=5,filename=url}})
+    local deferred,continued=0,0
+    local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
+    local source={id=5,bv='BV1234567890',part=2}
+    local function request() h.controller.expand_parts(source,hook) end
+    h.properties['playlist/0/playlist-path']='user.m3u8';request();eq(deferred,0)
+    h.properties['playlist/0/playlist-path']=nil
+    request();h.finish({code=-1});eq(continued,1);eq(#h.calls,0)
+    request();h.finish({code=0,data={{page=1,part='one'},{page=1,part='duplicate'}}})
+    eq(continued,2);eq(#h.calls,0)
+    request();h.queue({{id=5,filename=url},{id=8,filename='my-next.mp4'}})
+    eq(continued,3);eq(#h.aborted,1)
+    h.finish({code=0,data={{page=1,part='one'},{page=2,part='two'}}})
+    eq(continued,3);eq(#h.calls,0)
+    request();eq(deferred,3)
 end
 local function entry(path, kind) return {path='X:/fixture/'..path,kind=kind or 'media'} end
 local function message(h,text,seconds)

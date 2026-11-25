@@ -16,11 +16,15 @@ class PlaylistInputController(unittest.TestCase):
         cls.fixture = (ROOT / 'tests/lua/playlist_input.lua').read_text(encoding='utf-8')
 
     def run_case(self, name):
-        source = ('local input_module = dofile(' + json.dumps(MODULE.as_posix()) + ')\n'
+        source = ('local catalog_path = ' + json.dumps(MODULE.with_name('bilibili-catalog.lua').as_posix()) + '\n'
+                  + 'local input_module = dofile(' + json.dumps(MODULE.as_posix()) + ')\n'
                   + 'local feedback_module = dofile('
                   + json.dumps((ROOT / 'config/script-modules/feedback.lua').as_posix()) + ')\n'
                   + self.fixture + '\n' + name + '()')
         self.lua.execute(source, 'playlist-input/' + name)
+
+    def test_part_catalog_failure_and_retirement_resume_the_original_load(self):
+        self.run_case('part_catalog_guards')
 
     def test_image_input_setting_and_per_entry_loading_policy(self):
         self.run_case('image_inputs_capture_setting_and_use_local_still_duration')

@@ -8,20 +8,6 @@ function M.url_at_time(page, seconds)
     return page .. separator .. 't=' .. seconds
 end
 
-local function part_for_cid(pages, cid)
-    if type(pages) ~= 'table' then return end
-    local part
-    for _, row in ipairs(pages) do
-        if type(row) == 'table' and type(row.cid) == 'number'
-            and (row.cid == cid or (cid == nil and #pages == 1)) then
-            if part or type(row.page) ~= 'number' or row.page < 1 or row.page > #pages
-                or row.page ~= math.floor(row.page) then return end
-            part = row.page
-        end
-    end
-    return part
-end
-
 local function episode_for_cid(index, cid, parse_page)
     if type(index) ~= 'table' or not cid then return end
     local found
@@ -53,7 +39,7 @@ local function episode_for_cid(index, cid, parse_page)
     if found then return 'https://www.bilibili.com/bangumi/play/' .. found end
 end
 
-function M.bind(mp, utils, feedback, source, open_address, parse_page)
+function M.bind(mp, utils, feedback, source, open_address, parse_page, catalog)
     local pending
     local function retire()
         local old = pending
@@ -102,27 +88,19 @@ function M.bind(mp, utils, feedback, source, open_address, parse_page)
             feedback.show(season and '无法确认当前集数\n请从番剧的具体分集页打开视频'
                 or '无法确认当前分 P\n请从原网页选择分集', 'error')
         end
-        local windows = os.getenv('SystemRoot') or os.getenv('WINDIR')
         local cid = raw and tostring(raw):match('^[1-9]%d*$') and tonumber(raw)
-        if not windows or (raw ~= nil and (not cid or cid >= 2^53)) or (season and not cid) then
+        if (raw ~= nil and (not cid or cid >= 2^53)) or (season and not cid) then
             unresolved(); return
         end
-        local endpoint = season and ('https://api.bilibili.com/pgc/web/season/section?season_id=' .. id:sub(3))
-            or ('https://api.bilibili.com/x/player/pagelist?bvid=' .. id)
         feedback.show(season and '正在确认番剧分集…' or '正在确认当前分 P…', 'action')
-        job.handle = mp.command_native_async({name='subprocess', playback_only=true, capture_stdout=true,
-            capture_size=2097152, args={utils.join_path(windows, 'System32/curl.exe'), '--disable',
-                '--silent', '--fail', '--max-time', '4', '--max-filesize', '2097152',
-                endpoint}}, function(ok, result)
+        job.handle = catalog.fetch(mp, utils, id, function(data)
             if not current(job) then return end
-            local data = ok and result and result.status == 0 and utils.parse_json(result.stdout or '')
-            if type(data) ~= 'table' or data.code ~= 0 then unresolved(); return end
             if season then
-                local target = episode_for_cid(data.result, cid, parse_page)
+                local target = episode_for_cid(data, cid, parse_page)
                 if target then launch(target) else unresolved() end
                 return
             end
-            local part = part_for_cid(data.data, cid)
+            local part = catalog.part_for_cid(data, cid)
             if not part then unresolved(); return end
             launch(page .. '?p=' .. part)
         end)

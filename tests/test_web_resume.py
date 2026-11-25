@@ -33,11 +33,11 @@ local os = {getenv=function()return 'windows' end}
 local api=(function()
 ''' + self.source + r'''
 end)()
-''' + self.page_reader + r'''
+''' + 'local catalog=(function()\n' + MODULE.with_name('bilibili-catalog.lua').read_text(encoding='utf-8') + '\nend)()\n' + self.page_reader + r'''
 api.bind(mp,utils,{show=function(msg)messages[#messages+1]=msg end},function()
     return resume_target(src, cdn, cid)
 end,
-    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, bilibili_page)
+    function(url,kind,cb) assert(kind=='URL');opened[#opened+1]={url,cb};return 100+#opened end, bilibili_page, catalog)
 '''
         self.lua.execute(fixture + case, 'web-resume')
 

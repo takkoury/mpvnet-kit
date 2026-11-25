@@ -45,6 +45,7 @@
 - `config/helpers/KitPlaylistInput.exe`
 - `config/script-modules/playlist-input.lua`
 - `config/script-modules/web-resume.lua`
+- `config/script-modules/bilibili-catalog.lua`
 - `.gitignore`
 - `CHANGELOG.md`
 - `Install.cmd`
