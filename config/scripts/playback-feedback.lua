@@ -579,7 +579,7 @@ mp.register_event("end-file", function(event)
     release_hold()
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
     local resume_position, live_target = network_resume.ended(event)
-    local retry_hint = live_target and '直播暂时无法连接\n网络恢复后按 Ctrl+R 重新进入'
+    local retry_hint = live_target and '直播暂时无法连接\n网络恢复后请选择“重新加载当前媒体”'
     local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
     if source == 'live' then
         live_room.finish(event.reason, retry_hint)

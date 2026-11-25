@@ -623,7 +623,9 @@ load(16, 'https://www.youtube.com/live/ss12_-AbCdE?si=share')
 finish(16, '无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理')
 local room
 live_room.open=function(id) room=id end
-live_room.finish=function(reason) assert(room=='19' and reason=='error');messages[#messages+1]='live error' end
+live_room.finish=function(reason, retry_hint)
+    assert(room=='19' and reason=='error');messages[#messages+1]=retry_hint or 'live error'
+end
 load(10, 'https://live.bilibili.com/blanc/19/?source=share'); finish(10, 'live error')
 load(11, 'https://live.bilibili.com/19#player'); finish(11, 'live error')
 load(12, 'https://live.bilibili.com.invalid/19'); finish(12, direct)
@@ -657,5 +659,10 @@ youtube_error(0,replay,20,unavailable)
 youtube_error(1,'ERROR: [youtube] OtherID_123: This live stream recording is not available.',20,unavailable)
 youtube_error(1,replay,21,generic)
 youtube_error(1,'ERROR: [youtube] '..id..': Video unavailable',20,unavailable)
+-- A failed rejoin names the menu action even when its default key is unbound.
+network_resume.ended=function() return nil,true end
+local retry='直播暂时无法连接\n网络恢复后请选择“重新加载当前媒体”'
+load(22,'https://live.bilibili.com/19');finish(22,retry)
+load(23,url);finish(23,retry)
 '''
         self.lua.execute(self.ytdl + prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
