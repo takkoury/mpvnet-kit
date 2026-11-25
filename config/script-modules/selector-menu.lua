@@ -13,7 +13,7 @@ local function positive_integer(value)
     return type(value) == 'number' and value > 0 and value < math.huge and value == math.floor(value)
 end
 
-function M.snapshot(get)
+function M.snapshot(get, online)
     local counts = {sub=0, audio=0, video=0}
     local sub = get('current-tracks/sub')
     local current_sub_id = type(sub) == 'table' and sub.id
@@ -54,8 +54,8 @@ function M.snapshot(get)
     item(1, '主字幕轨', 'track_selection/select-primary', counts.sub > 0)
     item(2, '次字幕轨', 'track_selection/select-secondary', counts.sub > 1)
     item(3, '字幕行', 'track_selection/select-subtitle-line', text_sub)
-    item(4, '音轨', 'track_selection/select-audio', counts.audio > 1)
-    item(5, '视频轨', 'track_selection/select-video', counts.video > 1)
+    item(4, '音轨', 'track_selection/select-audio', counts.audio > 1 or counts.audio == 1 and online and #online.audio > 1)
+    item(5, '视频轨', 'track_selection/select-video', counts.video > 1 or counts.video == 1 and online and #online.video > 1)
     item(6, '播放列表（屏幕内）', 'track_selection/select-playlist', positive_integer(playlist_count) and playlist_count > 1)
     item(7, '章节', 'track_selection/select-chapter', has_chapter)
     item(8, disc and '标题（光盘）' or '媒体版本', 'track_selection/select-edition', edition_count > 1)

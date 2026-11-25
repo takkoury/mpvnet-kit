@@ -13,6 +13,7 @@ local bindings_data, binding_labels
 local properties_data
 local menu_data, refresh_menu
 local playlist_data, refresh_playlist
+local online_module, online_state
 local device_ids, device_names, device_rows, next_device_id
 local track_ids, track_targets, next_track_id
 local kinds = {
@@ -244,6 +245,17 @@ local function invalidate_video_restore()
     mp.set_property_native(property,revision+1)
 end
 
+local function online_catalog()
+    local path = mp.get_property_native('path')
+    if type(path) ~= 'string' or not (path:match('^https?://') or path:match('^ytdl://')) then return end
+    if not online_state then
+        if not mp.get_property_native('user-data/mpv/ytdl/path') then return end
+        online_module = dofile(mp.command_native({'expand-path', '~~/script-modules/online-tracks.lua'}))
+        online_state = online_module.new(mp, require('mp.utils'))
+    end
+    return online_state.catalog()
+end
+
 local function tracks_for(kind)
     if kind=='all' then return all_tracks() end
     if kind == 'chapter' then return chapter_tracks() end
@@ -264,6 +276,10 @@ local function tracks_for(kind)
                 tracks[#tracks+1]=row
             else tracks[#tracks + 1] = track end
         end
+    end
+    if kind == 'video' or kind == 'audio' then
+        local catalog = online_catalog()
+        if catalog then return online_module.rows(catalog, kind, tracks) end
     end
     return tracks
 end
@@ -474,7 +490,7 @@ local function read_menu()
         if ok and type(module) == 'table' and type(module.snapshot) == 'function' then menu_data = module end
     end
     if menu_data then
-        local ok, rows, targets = pcall(menu_data.snapshot, mp.get_property_native)
+        local ok, rows, targets = pcall(menu_data.snapshot, mp.get_property_native, online_catalog())
         if ok and type(rows) == 'table' and type(targets) == 'table' then return rows, targets, {} end
     end
     return {}, {}, {empty_title='未能读取屏幕内主菜单', empty_hint='请检查配置包文件，然后重试。', can_retry=true}
@@ -1232,6 +1248,11 @@ local function select_tracks(kind)
             else
                 for _, track in ipairs(tracks_for(kind)) do
                     if tostring(track.id) == tostring(id) then
+                        if track.online and online_state and tonumber(id) > 2^32 then
+                            local ok, reason = online_state.switch(kind, tonumber(id))
+                            if ok and kind == 'video' then invalidate_video_restore() end
+                            return ok, reason
+                        end
                         target = tostring(track.id) ==
                             tostring(current_id(kind)) and 'no' or tostring(track.id)
                         break

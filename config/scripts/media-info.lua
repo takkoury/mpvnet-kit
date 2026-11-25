@@ -49,9 +49,16 @@ local function snapshot()
         if type(value)=='number' and value==value and math.abs(value)~=math.huge or type(value)=='string' then properties[key]=value end
     end
     properties.tracks = {}
-    for _,track in ipairs(mp.get_property_native('track-list',{})) do
+    local tracks = mp.get_property_native('track-list',{})
+    local audio_label
+    if local_path == '' and mp.get_property_native('user-data/mpv/ytdl/path') then
+        local online = dofile(expand('script-modules/online-tracks.lua'))
+        audio_label = online.audio_label(online.read(mp, utils), tracks)
+    end
+    for _,track in ipairs(tracks) do
         local item={}
         for _,key in ipairs({'id','type','lang','selected','codec','audio-channels','demux-samplerate'}) do item[key]=track[key] end
+        if item.type == 'audio' and audio_label then item.lang = audio_label end
         properties.tracks[#properties.tracks+1]=item
     end
     return {has_media=path~='',local_path=local_path,title=title:sub(1,4096),properties=properties}

@@ -101,7 +101,7 @@ local function normalize(tracks)
                 detail_title=type(track.detail_title)=='string' and track.detail_title or '',
                 blocked_reason=type(track.blocked_reason)=='string' and clean(track.blocked_reason) or '',
                 slot_label=type(track.slot_label)=='string' and clean(track.slot_label) or '',
-                lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external,
+                lang=type(track.lang)=='string' and track.lang or '', codec=type(track.codec)=='string' and track.codec or '', external=track.external, online=track.online==true,
                 channels=positive(track['demux-channel-count']),rate=positive(track['demux-samplerate']),
                 width=positive(track['demux-w']),height=positive(track['demux-h']),fps=positive(track['demux-fps']),
                 image=track.image==true,albumart=track.albumart==true,
@@ -122,6 +122,7 @@ local function label(track,kind)
     return profiles[kind or 'subtitle'].fallback .. track.number_text
 end
 local function source(track)
+    if track.online then return '在线' end
     return track.external==true and '外挂' or track.external==false and '内嵌' or '来源未标注'
 end
 local function audio_details(track)
