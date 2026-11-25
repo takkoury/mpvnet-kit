@@ -72,6 +72,7 @@
 - `config/scripts/media-info.lua`
 - `config/helpers/media-path-action.ps1`
 - `config/helpers/system-http-proxy.ps1`
+- `config/browser/youtube-play-event.txt`
 - `config/helpers/playlist-window.ps1`
 - `config/scripts/user-shortcuts.lua`
 - `config/script-modules/user-shortcuts.lua`

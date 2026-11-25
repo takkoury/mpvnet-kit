@@ -75,7 +75,7 @@ YouTube 支持普通观看页和 `youtu.be` 单视频分享链接。分享链接
 
 ### 从网页打开播放器
 
-要从 B 站视频页面调用播放器，请按 [External Player 的安装说明](https://github.com/LuckyPuppy514/external-player)准备 Tampermonkey 并安装脚本，再按 [URL Scheme Handler 的说明](https://github.com/LuckyPuppy514/url-scheme-handler)注册协议。kit 安装器不代为注册。
+要从 Edge 的 B 站或 YouTube 视频页调用播放器，请按 [External Player 的安装说明](https://github.com/LuckyPuppy514/external-player)准备 Tampermonkey 并安装脚本，再按 [URL Scheme Handler 的说明](https://github.com/LuckyPuppy514/url-scheme-handler)注册协议。kit 安装器不代为注册。
 
 1. 在 Handler 中添加名为 `MPVNET` 的应用。用本安装包新装播放器时，选择安装目录中的 `player\mpvnet.exe`；给已有播放器安装 kit 时，选择当时安装 kit 的那份 `mpvnet.exe`。
 2. 打开 B 站投稿页或番剧的具体分集，在 External Player 中选择 `MPVNET` 播放。浏览器首次询问是否打开外部应用时，确认打开。点击后没有播放器窗口，可先核对协议是否已注册，以及 Handler 里的程序路径是否仍然有效。
@@ -84,6 +84,18 @@ YouTube 支持普通观看页和 `youtu.be` 单视频分享链接。分享链接
 想接着网页上的进度看，可以在视频页按 Ctrl+Alt+E 打开 External Player 设置，选择 `MPVNET`，在“预设事件”中勾选“同步时间”，点击“保存”。这个选项默认关闭。开启后，在 B 站普通投稿页选好分 P，再用 `MPVNET` 播放，脚本会把网页视频当时的播放位置传给播放器。
 
 新装目录里的 `Play.cmd` 会在启动时指定这份便携配置。Handler 直接启动 `mpvnet.exe`，若浏览器继承的 `MPVNET_HOME` 指向另一有效目录，同一个播放器也会读到另一套配置。这时请先核对该变量是否仍用于其他安装，再决定是否调整；调整后需重新启动浏览器才能使用新环境。
+
+#### 从 YouTube 当前进度续看
+
+先确认播放器能[直接粘贴 YouTube 网址播放](#在播放器中打开公开投稿网址)，并在 Handler 中配好上面的 `MPVNET` 应用。已经能从 B 站调起同一播放器时，可以直接添加 YouTube 按钮。
+
+1. 在 Edge 打开一个 YouTube 公开视频的普通观看页，按 Ctrl+Alt+E 打开 External Player 设置。点击左侧的“+”，名称填 `YouTube 续看`，系统选 Windows。
+2. 打开[播放事件文本](../config/browser/youtube-play-event.txt)，复制全文，粘贴到新按钮的“播放事件”框。也可以从播放器的“常用设置… > 高级 > 打开配置目录”进入 `browser` 文件夹，用记事本打开 `youtube-play-event.txt`。
+3. 在“预设事件”中勾选“同步时间”和“自动暂停”，勾选“启用”，点击“保存”。图标留空时，按钮显示字母 **Y**。
+
+等正片开始后，点网页上 External Player 的 **Y**，首次弹窗时确认打开外部应用。播放器会从点击时所在的那一秒开始，网页暂停。例如网址标着 0:42，已经看到 1:17，点 **Y** 就从 1:17 续看。关闭“同步时间”时，按钮会按原网址打开视频。
+
+这个按钮使用播放器为当前 YouTube 视频选用的 Windows 系统 HTTP 代理。B 站仍可使用原来的 `MPVNET` 按钮。要移除 YouTube 按钮，在 External Player 设置里选中 `YouTube 续看`，点击“删除”并保存。
 
 ## 5. 首次启动检查
 

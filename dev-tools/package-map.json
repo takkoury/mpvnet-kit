@@ -476,6 +476,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/browser/youtube-play-event.txt",
+      "destination": "config/browser/youtube-play-event.txt",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
       "destination": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
       "component": "anime4k",
