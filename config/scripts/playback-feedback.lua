@@ -405,17 +405,28 @@ mp.add_key_binding(nil, "file-loop", function()
     mp.commandv("no-osd", "set", "loop-file", enabled and "no" or "inf")
     feedback_client.show(enabled and "单文件循环已关闭" or "单文件循环已开启", 'action')
 end)
+local function show_resume_position(position)
+    feedback_client.show('播放停在 ' .. time_text(position, position >= 3600) .. '\n重新加载当前媒体可从这里继续', 'error')
+end
+local network_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/network-resume.lua'})).new(
+    mp, function() return failure_source == 'url' end, show_resume_position)
+
 mp.add_key_binding(nil, "reload", function()
     local path = mp.get_property("path")
-    if not path then return end
+    local index = network_resume.prepare_reload()
+    if index == false or (not path and not index) then return end
     release_hold()
     reload_pending = true
     -- Preserve only this explicit Reload of the same input; no media history/cache.
-    reload_marks = {path = path, mark = mark, a = mp.get_property_number("ab-loop-a"),
+    reload_marks = path and {path = path, mark = mark, a = mp.get_property_number("ab-loop-a"),
         b = mp.get_property_number("ab-loop-b"), count = mp.get_property("ab-loop-count", "inf")}
     -- Reuse the playlist entry, including its external audio and per-entry options.
-    mp.commandv("no-osd", "playlist-play-index", "current")
-    mp.set_property_bool("pause", false)
+    if mp.commandv("no-osd", "playlist-play-index", index or "current") then
+        mp.set_property_bool("pause", false)
+    else
+        reload_pending, reload_marks = false, nil
+        network_resume.reload_rejected()
+    end
 end)
 -- Callable without allocating an unspecified physical shortcut.
 mp.add_key_binding(nil, "revert-seek", function()
@@ -594,7 +605,14 @@ mp.register_event("end-file", function(event)
     frame_pending = false
     release_hold()
     if event.reason ~= "stop" then reload_pending = false; reload_marks = nil end
-    if event.reason == "error" then
+    local resume_position = network_resume.ended(event)
+    if resume_position then
+        if event.reason == 'error' then
+            feedback_client.show('暂时无法续播\n连接恢复后，请重新加载当前媒体', 'error')
+        else
+            show_resume_position(resume_position)
+        end
+    elseif event.reason == "error" then
         -- Never echo backend errors: they may contain private paths or URLs.
         local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
         local message

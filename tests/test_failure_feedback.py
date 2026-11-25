@@ -24,7 +24,7 @@ class PlaybackEndFeedback(unittest.TestCase):
     def setUpClass(cls):
         cls.lua = load_lua51()
         playback = PLAYBACK.read_text(encoding='utf-8')
-        cls.source = fragment(playback,
+        cls.source = "local network_resume = {ended=function() end}\n" + fragment(playback,
                               'mp.register_event("end-file", function(event)',
                               'mp.register_event("file-loaded", function()')
         cls.origin = fragment(playback, 'local origin_path, origin_page, origin_active',
@@ -68,6 +68,48 @@ local mp = {
         for reason in ('stop', 'eof', 'quit', 'redirect'):
             with self.subTest(reason=reason):
                 self.check_event("{reason='%s'}" % reason, None)
+
+    def test_network_resume_respects_play_ranges_and_queue_identity(self):
+        module = (ROOT / 'config/script-modules/network-resume.lua').as_posix()
+        self.lua.execute('local resume = dofile(' + json.dumps(module) + ')\n' + '''
+local url = 'http://example.test/v.mp4'
+local props = {path=url, ['playlist/0/id']=1, ['playlist/0/filename']=url,
+    ['playlist-pos']=0, ['playlist-playing-pos']=0, ['playlist-count']=1,
+    ['time-pos']=12, duration=60, ['eof-reached']=true, seekable=true,
+    ['demuxer-via-network']=true, ['rebase-start-time']=true,
+    ['end']='none', length='none', frames='all', ['play-direction']='forward'}
+local hooks, events, observers = {}, {}, {}
+local function get(k, default) if props[k] ~= nil then return props[k] end; return default end
+local mp = {get_property=get, get_property_native=get, get_property_number=get, get_property_bool=get,
+    set_property=function(k,v) props[k]=v end,
+    add_hook=function(k,_,fn) hooks[k]=fn end, register_event=function(k,fn) events[k]=fn end,
+    observe_property=function(k,_,fn) observers[k]=fn end}
+local hints = 0
+local control = resume.new(mp,function() return true end,function() hints=hints+1 end)
+for k,v in pairs({['end']='15',length='4',frames='30',['play-direction']='backward',
+        seekable=false,['demuxer-via-network']=false,['rebase-start-time']=false,['time-pos']=59.9}) do
+    local original=props[k]; props[k]=v
+    observers['eof-reached'](nil,true)
+    assert(not control.prepare_reload(), k)
+    props[k]=original
+end
+assert(hints==0)
+observers['eof-reached'](nil,true)
+assert(hints==1 and control.prepare_reload()==0 and control.prepare_reload()==false)
+events['start-file']({playlist_entry_id=1})
+-- A replacement with the identical URL is still a different queue entry.
+props['playlist/0/id']=2
+hooks.on_preloaded()
+assert(not props['file-local-options/start'])
+events['start-file']({playlist_entry_id=2})
+props['eof-reached']=false
+assert(not control.prepare_reload())
+-- A stop or explicit switch must not leave an idle restart point.
+hooks.on_unload()
+assert(not control.ended({reason='stop',playlist_entry_id=2}))
+props['idle-active']=true
+assert(not control.prepare_reload())
+''', 'playback/network-resume')
 
     def check_share_link(self, cases):
         web_resume = (ROOT / 'config/script-modules/web-resume.lua').read_text(encoding='utf-8')
