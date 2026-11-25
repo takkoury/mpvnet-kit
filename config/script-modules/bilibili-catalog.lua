@@ -87,9 +87,10 @@ local function season_episodes(ep, season)
     return entries, current
 end
 
-function M.queue_entries(content_id, data, part)
-    if content_id:sub(1, 2) == 'ep' then return season_episodes(content_id, data) end
-    return video_parts(content_id, data, part)
+function M.queue_entries(source, data)
+    local id = source.content_id
+    if id:sub(1, 2) == 'ep' then return season_episodes(id, data) end
+    return video_parts(id, data, source.part)
 end
 
 return M

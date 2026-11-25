@@ -352,6 +352,7 @@ end)
 
 local web_resume = dofile(mp.command_native({'expand-path', '~~/script-modules/web-resume.lua'}))
 local bili_catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-catalog.lua'}))
+local youtube_catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/youtube-catalog.lua'}))
 web_resume.bind(mp, utils, feedback_client, function()
     local _, host = web_address(mp.get_property('path'))
     if not host then return end
@@ -556,14 +557,30 @@ mp.add_hook('on_load', 5, function(hook)
         end)
 end)
 mp.add_hook('on_load', 7, function()
-    mp.set_property_native('user-data/mpvnet/bilibili-queue-source', false)
-    if not mp.get_property_native('options/ytdl') or mp.get_property_number('playlist-count') ~= 1
-        or mp.get_property('playlist/0/playlist-path') then return end
+    local key = 'user-data/mpvnet/web-queue-source'
+    mp.set_property_native(key, false)
+    if not mp.get_property_native('options/ytdl') then return end
+    local standalone = mp.get_property_number('playlist-count') == 1 and not mp.get_property('playlist/0/playlist-path')
+    local input = mp.get_property('path')
+    local _, host, rest = web_address(input)
+    local video = youtube_video_id(host, rest)
+    if video then
+        local list, index, single = youtube_catalog.watch_list(video, rest)
+        if not list or mp.get_property('stream-open-filename') ~= input then return end
+        if not mp.set_property('stream-open-filename', single) then return end
+        local raw = mp.get_property_native('file-local-options/ytdl-raw-options', {})
+        if standalone and raw['no-playlist'] == nil then
+            mp.set_property_native(key, {provider='youtube', id=mp.get_property_native('playlist/0/id'),
+                content_id=video, playlist_id=list, index=index})
+        end
+        return
+    end
+    if not standalone then return end
     local page, content_id = bilibili_page(expanded_short_page or mp.get_property('path'))
     local id = mp.get_property_native('playlist/0/id')
     if id and content_id and content_id:sub(1, 2) ~= 'ss' then
         local part = content_id:sub(1, 2) == 'BV' and (tonumber(page:match('%?p=(%d+)$')) or 1) or nil
-        mp.set_property_native('user-data/mpvnet/bilibili-queue-source', {id=id, content_id=content_id, part=part})
+        mp.set_property_native(key, {provider='bilibili', id=id, content_id=content_id, part=part})
     end
 end)
 

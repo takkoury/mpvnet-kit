@@ -265,7 +265,7 @@ mp.add_key_binding(nil, 'open-clipboard', function() input.request('open', 'clip
 mp.add_key_binding(nil, 'append-clipboard', function() input.request('append', 'clipboard') end)
 mp.register_script_message('open-clipboard-url', function() input.request('open', 'clipboard-url') end)
 mp.add_hook('on_preloaded', 50, function(hook)
-    local source = mp.get_property_native('user-data/mpvnet/bilibili-queue-source')
+    local source = mp.get_property_native('user-data/mpvnet/web-queue-source')
     if type(source) == 'table' then input.expand_catalog(source, hook) end
 end)
 mp.register_script_message('action', action)

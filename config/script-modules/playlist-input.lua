@@ -381,12 +381,14 @@ function M.new(mp, utils, feedback, read_include_images)
         local anchor = state.entries[1]
         if #state.entries ~= 1 or state.current ~= 0 or not anchor.id or anchor.id ~= source.id
             or expanded_entry == anchor.id or mp.get_property('playlist/0/playlist-path') then return end
-        local catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-catalog.lua'}))
+        local module = ({youtube='youtube-catalog.lua', bilibili='bilibili-catalog.lua'})[source.provider]
+        if not module then return end
+        local catalog = dofile(mp.command_native({'expand-path', '~~/script-modules/' .. module}))
         sequence = sequence + 1
         local generation, job = sequence, {catalog_entry=anchor.id, hook=hook}
         pending = job
         local function populate(data)
-            local entries, current = catalog.queue_entries(content_id, data, source.part)
+            local entries, current = catalog.queue_entries(source, data)
             if not entries or #entries < 2 or not entries[current] or not unchanged(state) then return end
             -- The original entry separates two contiguous M3U segments. Never
             -- unload it: its input, file-local options and pause state stay live.
@@ -409,12 +411,12 @@ function M.new(mp, utils, feedback, read_include_images)
             else expanded_entry = anchor.id end
         end
         hook:defer()
-        job.handle = catalog.fetch(mp, utils, content_id, function(data)
+        job.handle = catalog.fetch(mp, utils, source.playlist_id or content_id, function(data)
             if pending ~= job then return end
             pending = nil
             local ok = pcall(populate, data)
             hook:cont()
-            if not ok then mp.msg.error('Could not expand the Bilibili playlist') end
+            if not ok then mp.msg.error('Could not expand the online playlist') end
         end)
     end
 

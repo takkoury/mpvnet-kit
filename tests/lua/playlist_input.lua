@@ -149,7 +149,7 @@ function part_catalog_guards()
     h.queue({{id=5,filename=url}})
     local deferred,continued=0,0
     local hook={defer=function() deferred=deferred+1 end,cont=function() continued=continued+1 end}
-    local source={id=5,content_id='BV1234567890',part=2}
+    local source={id=5,provider='bilibili',content_id='BV1234567890',part=2}
     local function request() h.controller.expand_catalog(source,hook) end
     h.properties['playlist/0/playlist-path']='user.m3u8';request();eq(deferred,0)
     h.properties['playlist/0/playlist-path']=nil
@@ -168,17 +168,62 @@ function season_catalog_order()
         {id=17,section_type=0,ep_id=17,show_title='第2话 散步'},
         {id=5,section_type=1,title='PV'}, {id=72,section_type=0,title='3'}}
     local season={season_id=28,episodes=episodes,section={{episodes={{id=6,title='花絮'}}}}}
-    local entries,position=catalog.queue_entries('ep17',season)
+    local function lookup(id) return catalog.queue_entries({content_id=id},season) end
+    local entries,position=lookup('ep17')
     eq(position,2); eq(#entries,3); eq(entries[1].title,'第1集 春天')
     eq(entries[2].title,'第2话 散步'); eq(entries[3].path,'https://www.bilibili.com/bangumi/play/ep72')
     for _,id in ipairs({'ep5','ep6','ep100'}) do
-        local _,index=catalog.queue_entries(id,season);eq(index,nil)
+        local _,index=lookup(id);eq(index,nil)
     end
-    episodes[2].ep_id=99;eq(catalog.queue_entries('ep17',season),nil)
-    episodes[2].ep_id=17;episodes[4].id=17;eq(catalog.queue_entries('ep17',season),nil)
-    episodes[4].id=72;episodes[1].section_type=nil;eq(catalog.queue_entries('ep17',season),nil)
+    episodes[2].ep_id=99;eq(lookup('ep17'),nil)
+    episodes[2].ep_id=17;episodes[4].id=17;eq(lookup('ep17'),nil)
+    episodes[4].id=72;episodes[1].section_type=nil;eq(lookup('ep17'),nil)
 end
 local function entry(path, kind) return {path='X:/fixture/'..path,kind=kind or 'media'} end
+function youtube_catalog_order()
+    local catalog=dofile(youtube_path)
+    local a,b='0123456789A','0123456789B'
+    local list,index,single=catalog.watch_list(a,'/watch?v='..a..'&t=1m2s&index=3&list=PLtest')
+    eq(list,'PLtest');eq(index,3);eq(single,'https://www.youtube.com/watch?v='..a..'&t=1m2s')
+    eq(catalog.watch_list(a,'/'..a..'?list=RDmix'),nil)
+    eq(catalog.watch_list(a,'/watch?v='..a..'&list=PLone&list=PLtwo'),nil)
+    eq(catalog.watch_list(a,'/watch?v='..a..'#list=PLtest'),nil)
+    local rows={{id=a,title='First'},{id=b,title='Second'}, {id=a,title='Repeat'}}
+    local source={playlist_id=list,content_id=a,index=index}
+    local function resolve() return catalog.queue_entries(source,{id=list,entries=rows}) end
+    local entries,pos=resolve();eq(pos,3);eq(#entries,3);eq(entries[2].path,'https://www.youtube.com/watch?v='..b)
+    source.index=2;eq(resolve(),nil)
+    source.content_id=b;source.index=3;entries,pos=resolve();eq(pos,2)
+    source.content_id='missingxxxx';eq(resolve(),nil)
+    source.content_id=b;eq(catalog.queue_entries(source,{id='PLother',entries=rows}),nil)
+    rows[3].id='bad/id';eq(resolve(),nil)
+end
+function youtube_catalog_lookup()
+    local catalog=dofile(youtube_path)
+    local exe='C:/isolated player/yt-dlp.exe'
+    local proxy='http://127.0.0.1:1234'
+    local result,command,reply,cancel,aborted,stopped
+    local mp={
+        get_property_native=function(key)
+            if key=='user-data/mpv/ytdl/path' then return exe end
+            eq(key,'file-local-options/ytdl-raw-options');return {proxy=proxy}
+        end,
+        command_native_async=function(spec,cb) command,reply=spec,cb;return 21 end,
+        add_timeout=function(_,cb) cancel=cb;return {kill=function() stopped=true end} end,
+        abort_async_command=function(id) aborted=id end,
+    }
+    local utils={parse_json=function() return {id='PLtest'} end}
+    local function run()
+        result,command,stopped=false,nil,false
+        catalog.fetch(mp,utils,'PLtest',function(data) result=data end)
+    end
+    run();eq(command.args[1],exe);eq(command.args[#command.args-3],'--proxy')
+    eq(command.args[#command.args-2],proxy);eq(command.args[#command.args],'https://www.youtube.com/playlist?list=PLtest')
+    reply(true,{status=0,stdout='fixture'});eq(result.id,'PLtest');eq(stopped,true)
+    proxy='';run();eq(command.args[#command.args-2],'')
+    cancel();eq(aborted,21);reply(true,{status=-2});assert(not result);eq(stopped,true)
+    exe=nil;run();eq(command,nil);eq(result,nil)
+end
 local function message(h,text,seconds)
     eq(#h.messages,1);eq(h.messages[1][1],text);eq(h.messages[1][2],seconds)
 end

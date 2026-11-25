@@ -17,6 +17,7 @@ class PlaylistInputController(unittest.TestCase):
 
     def run_case(self, name):
         source = ('local catalog_path = ' + json.dumps(MODULE.with_name('bilibili-catalog.lua').as_posix()) + '\n'
+                  + 'local youtube_path = ' + json.dumps(MODULE.with_name('youtube-catalog.lua').as_posix()) + '\n'
                   + 'local input_module = dofile(' + json.dumps(MODULE.as_posix()) + ')\n'
                   + 'local feedback_module = dofile('
                   + json.dumps((ROOT / 'config/script-modules/feedback.lua').as_posix()) + ')\n'
@@ -31,6 +32,12 @@ class PlaylistInputController(unittest.TestCase):
 
     def test_season_catalog_uses_regular_episode_order_and_exact_episode_id(self):
         self.run_case('season_catalog_order')
+
+    def test_youtube_watch_context_and_queue_identity(self):
+        self.run_case('youtube_catalog_order')
+
+    def test_youtube_catalog_uses_actual_extractor_and_file_proxy(self):
+        self.run_case('youtube_catalog_lookup')
 
     def test_image_input_setting_and_per_entry_loading_policy(self):
         self.run_case('image_inputs_capture_setting_and_use_local_still_duration')
