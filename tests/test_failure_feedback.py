@@ -76,12 +76,17 @@ local props, hooks = {}, {}
 local pending, deferred, continued
 local mp = {
     get_property=function(name, default) return props[name] or default end,
-    get_property_native=function(name) return props[name] end,
+    get_property_native=function(name, default) if props[name] == nil then return default end; return props[name] end,
     set_property=function(name, value) props[name]=value; return true end,
+    set_property_native=function(name, value) props[name]=value; return true end,
+    command_native=function(command) assert(command[1]=='expand-path'); return command[2] end,
     register_event=function() end,
     add_hook=function(name, priority, callback) hooks[priority]=callback end,
-    command_native_async=function(command, callback) pending={command=command, done=callback} end,
+    command_native_async=function(command, callback) pending={command=command, done=callback}; return 7 end,
+    add_timeout=function(_, fn) pending.timeout=fn; return {kill=function() pending.stopped=true end} end,
+    abort_async_command=function(handle) assert(handle==7); pending.aborted=true end,
 }
+local paths = {powershell=function() return 'powershell.exe' end}
 local os = {getenv=function() return 'Windows' end}
 local utils = {join_path=function(a,b) return a..'/'..b end}
 '''
@@ -113,6 +118,45 @@ end
 '''
         module = 'local web_resume = (function()\n' + web_resume + '\nend)()\n'
         self.lua.execute(fixture + module + self.origin + self.start + setup + cases, 'playback/share-link')
+
+    def test_youtube_uses_the_current_items_proxy_and_preserves_other_extractor_options(self):
+        self.check_share_link('''
+local http, raw = 'file-local-options/http-proxy', 'file-local-options/ytdl-raw-options'
+local url = 'https://youtu.be/YE7VzlLtp-4?t=42'
+local full = 'https://www.youtube.com/watch?list=RDabc&v=YE7VzlLtp-4&t=42s'
+for _,link in ipairs({url,full}) do
+    open(link, true, {[raw]={['sub-langs']='en'}})
+    assert(pending.command.playback_only and pending.command.args[#pending.command.args]==link)
+    pending.done(true, {status=0, stdout='http://127.0.0.1:5180'})
+    assert(pending.stopped and continued==1 and props[http]=='http://127.0.0.1:5180')
+    assert(props[raw].proxy==props[http] and props[raw]['sub-langs']=='en' and not props[start])
+end
+for _,options in ipairs({{[http]='http://custom:8080'}, {[raw]={proxy=''}},
+    {['option-info/http-proxy/set-locally']=true}}) do
+    open(full, true, options); assert(not pending)
+end
+for _,other in ipairs({page,'local.mp4','http://192.168.1.2/clip.mp4',
+    'https://youtu.be.example/YE7VzlLtp-4','https://www.youtube.com/playlist?list=abc',
+    'https://youtube.com/watch?list=abc#?v=YE7VzlLtp-4','https://youtu.be/no-id'}) do
+    open(other,true); assert(not pending and not props[http], other)
+end
+open(full,false); assert(not pending)
+''')
+
+    def test_youtube_direct_failed_timed_out_and_stale_proxy_queries_leave_options_alone(self):
+        self.check_share_link('''
+local url='https://youtube.com/watch?v=YE7VzlLtp-4'
+local http, raw='file-local-options/http-proxy', 'file-local-options/ytdl-raw-options'
+for _,output in ipairs({'','https://example.test:443','http://user@proxy:80'}) do
+    open(url,true); pending.done(true,{status=0,stdout=output})
+    assert(continued==1 and not props[http] and not props[raw])
+end
+open(url,true); pending.timeout(); assert(pending.aborted)
+pending.done(false,nil); assert(continued==1 and not props[http])
+open(url,true); props[stream]='http://lan/video.mp4'
+pending.done(true,{status=0,stdout='http://localhost:8080'})
+assert(continued==1 and not props[http] and not props[raw])
+''')
 
     def test_share_time_applies_only_to_an_eligible_page_without_an_explicit_start(self):
         self.check_share_link('''
@@ -265,6 +309,8 @@ load(6, cdn..'c', 'https://www.bilibili.com.invalid/video/BV1234567890/')
 finish(6, direct)
 load(7, page); finish(8, generic)
 finish(7, generic) -- No saved hint survives end-file.
+load(9, 'https://youtu.be/YE7VzlLtp-4?t=42')
+finish(9, '无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理')
 '''
         self.lua.execute(prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
 

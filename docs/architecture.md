@@ -31,6 +31,8 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 [网页接续模块](../config/script-modules/web-resume.lua)的 `url_at_time` 从规范页和秒数生成带时间的网址，短链展开和返回网页共用这个函数。模块在返回网页时保存本次动作的媒体身份、点击时刻和异步请求。`ep` 直接接续。BV 的 CDN 来源缺少分 P 时按公开分 P 列表核对。若 CDN 来源是 `ss` 且当前 CID 可信，则只在点击时查询该季官方目录，检查 `main_section.episodes` 与 `section[].episodes`。同一 CID 只有一个不同的 EP 且返回的分集分享页（如有）一致时才打开；季页本身、集数标题和目录顺序不足以确认目标。换片或退出会取消待处理请求；系统接受打开请求且仍是原队列条目时才暂停播放器。
 
+`playback-feedback.lua` 在同一加载钩子中识别 YouTube 观看页和单视频短链。[系统代理查询](../config/helpers/system-http-proxy.ps1)按目的网址调用 Windows PowerShell 的 .NET 系统代理接口，返回 HTTP 代理地址或空结果。播放器只在该条目设置 `http-proxy` 和 `ytdl-raw-options.proxy`，保留其余解析选项，已有显式代理优先。查询限时四秒；直连、失败或取消时沿用现有配置。分享时间由 yt-dlp 和 mpv 内置钩子处理。
+
 ### 显式文件输入
 
 [playlist-input.lua](../config/script-modules/playlist-input.lua)由playlist-controls持有，集中受管菜单、稳定快捷键动作、剪贴板文件和侧窗拖入的打开／追加请求。真实队列仍归mpv；请求开始记录条目ID／路径、当前项、媒体路径和工作目录，异步结果提交前重查，变化则要求重新选择。新请求先退休旧请求；旧结果、关停和提交期间的重入不能继续写新队列。追加不重建原队列、不改暂停状态，空队列也不自动播放。

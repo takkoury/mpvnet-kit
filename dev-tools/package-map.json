@@ -470,6 +470,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/helpers/system-http-proxy.ps1",
+      "destination": "config/helpers/system-http-proxy.ps1",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
       "destination": "config/shaders/anime4k/Anime4K_Clamp_Highlights.glsl",
       "component": "anime4k",

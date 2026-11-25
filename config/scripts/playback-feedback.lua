@@ -38,6 +38,17 @@ local function site_host(host, domain)
     return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
 end
 
+local function youtube_video(host, rest)
+    local id
+    if host == 'youtu.be' then
+        id = rest:match('^([^?#]*)'):match('^/([%w_%-]+)/?$')
+    elseif host == 'www.youtube.com' or host == 'youtube.com' or host == 'm.youtube.com' then
+        local query = rest:match('^/watch%?([^#]*)')
+        if query then id = ('&' .. query .. '&'):match('&v=([%w_%-]+)&') end
+    end
+    return id ~= nil and #id == 11
+end
+
 local function share_parameters(short_url, target_url)
     local part, start_time
     -- The first valid value for each parameter wins, including across the redirect.
@@ -73,8 +84,9 @@ end
 local function capture_media_origin(loaded)
     origin_active = false
     local path = mp.get_property('path')
-    local _, host = web_address(path)
+    local _, host, rest = web_address(path)
     if not host then return end
+    if youtube_video(host, rest) then return 'youtube' end
     if host == 'b23.tv' and expanded_short_page then return 'page' end
     if not site_host(host, 'bilivideo.com') then
         return bilibili_page(path) and 'page' or 'url'
@@ -458,12 +470,52 @@ local function apply_share_start(start_time)
     mp.set_property('file-local-options/start', start_time)
 end
 
+-- Resolve at open time so a queued item uses the current Windows proxy.
+-- An explicitly configured route (including yt-dlp's empty direct proxy) wins.
+local function use_youtube_system_proxy(hook, input)
+    local raw_key = 'file-local-options/ytdl-raw-options'
+    local http_key = 'file-local-options/http-proxy'
+    local function available_options()
+        local raw = mp.get_property_native(raw_key, {})
+        if type(raw) == 'table' and raw.proxy == nil and mp.get_property(http_key, '') == ''
+            and not mp.get_property_native('option-info/http-proxy/set-from-commandline')
+            and not mp.get_property_native('option-info/http-proxy/set-locally') then return raw end
+    end
+    if not available_options() then return end
+    local helper = mp.command_native({'expand-path', '~~/helpers/system-http-proxy.ps1'})
+    hook:defer()
+    local timer
+    local handle = mp.command_native_async({name='subprocess', playback_only=true,
+        capture_stdout=true, capture_stderr=true, capture_size=2048,
+        args={paths.powershell(), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', helper, input}}, function(ok, result)
+        timer:kill()
+        if ok and result and result.status == 0 and mp.get_property('stream-open-filename') == input then
+            local proxy = (result.stdout or ''):match('^(http://[^%s/@?#]+)[\r\n]*$')
+            local raw = proxy and available_options()
+            if raw then
+                raw.proxy = proxy
+                if mp.set_property_native(raw_key, raw) and not mp.set_property(http_key, proxy) then
+                    raw.proxy = nil
+                    mp.set_property_native(raw_key, raw)
+                end
+            end
+        end
+        hook:cont()
+    end)
+    timer = mp.add_timeout(4, function() mp.abort_async_command(handle) end)
+end
+
 -- Apply the shared position before mpv's ytdl_hook (priority 10).
 -- The queue keeps the supplied link. Only this playback attempt changes source.
 mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
     if not mp.get_property_native('options/ytdl') then return end
     local _, host, rest = web_address(input)
+    if youtube_video(host, rest) then
+        use_youtube_system_proxy(hook, input)
+        return
+    end
     if host ~= 'b23.tv' then
         local _, _, start_time = bilibili_page(input)
         apply_share_start(start_time)
@@ -501,7 +553,9 @@ mp.register_event("end-file", function(event)
         -- Never echo backend errors: they may contain private paths or URLs.
         local source = playback_entry_id and playback_entry_id == event.playlist_entry_id and failure_source
         local message
-        if source == 'page' then
+        if source == 'youtube' then
+            message = "无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理"
+        elseif source == 'page' then
             message = "播放失败\n请回到原网页，再用外部播放器播放"
         elseif source == 'url' then
             message = "无法播放此网址\n请重新获取媒体直链后打开"
