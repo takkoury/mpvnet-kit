@@ -471,7 +471,7 @@ load(14, 'https://live.bilibili.com/19'); finish(15, generic)
 local id = 'ss12_-AbCdE'
 local url = 'https://www.youtube.com/live/'..id
 local key = 'user-data/mpv/ytdl/json-subprocess-result/'
-local function upcoming(status, diagnostic, ended_id, expected)
+local function youtube_error(status, diagnostic, ended_id, expected)
     load(20, url)
     props[key..'status'],props[key..'stderr']=status,diagnostic
     hooks.on_unload()
@@ -480,16 +480,22 @@ end
 local prefix='ERROR: [youtube] '..id..': This live event will begin in '
 local title='这场 YouTube 直播尚未开始\n'
 local unavailable='无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理'
-upcoming(1,'WARNING: retry\r\n'..prefix..'3 days.\r\n',20,title..'约 3 天后开播')
-upcoming(1,prefix..'1 hour.',20,title..'约 1 小时后开播')
-upcoming(1,prefix..'a few moments.',20,title..'即将开播，请稍后再打开')
-upcoming(1,prefix..'unexpected text.',20,title..'请按原网页的预告时间再打开')
-upcoming(1,prefix..'7 minutes.',21,generic)
-upcoming(0,prefix..'4 hours.',20,unavailable)
-upcoming(1,'ERROR: [youtube] OtherID_123: This live event will begin in 1 day.',20,unavailable)
-upcoming(1,'ERROR: [youtube] '..id..': Private video',20,unavailable)
-upcoming(1,prefix..'3 days.',20,title..'约 3 天后开播')
+youtube_error(1,'WARNING: retry\r\n'..prefix..'3 days.\r\n',20,title..'约 3 天后开播')
+youtube_error(1,prefix..'1 hour.',20,title..'约 1 小时后开播')
+youtube_error(1,prefix..'a few moments.',20,title..'即将开播，请稍后再打开')
+youtube_error(1,prefix..'unexpected text.',20,title..'请按原网页的预告时间再打开')
+youtube_error(1,prefix..'7 minutes.',21,generic)
+youtube_error(0,prefix..'4 hours.',20,unavailable)
+youtube_error(1,'ERROR: [youtube] OtherID_123: This live event will begin in 1 day.',20,unavailable)
+youtube_error(1,'ERROR: [youtube] '..id..': Private video',20,unavailable)
+youtube_error(1,prefix..'3 days.',20,title..'约 3 天后开播')
 load(21,url); finish(21,unavailable)
+local replay='ERROR: [youtube] '..id..': This live stream recording is not available.'
+youtube_error(1,replay,20,'这场 YouTube 直播的回放暂不可用')
+youtube_error(0,replay,20,unavailable)
+youtube_error(1,'ERROR: [youtube] OtherID_123: This live stream recording is not available.',20,unavailable)
+youtube_error(1,replay,21,generic)
+youtube_error(1,'ERROR: [youtube] '..id..': Video unavailable',20,unavailable)
 '''
         self.lua.execute(self.ytdl + prelude + self.origin + self.start + self.source + cases, 'playback/network-failure')
 
