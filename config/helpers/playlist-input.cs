@@ -52,6 +52,7 @@ namespace KitPlaylistInput
         public string status = "ok";
         public List<InputEntry> entries = new List<InputEntry>();
         public bool single_media;
+        public bool url_batch;
         public int skipped;
         public int duplicates;
         public int unreadable_directories;
@@ -308,11 +309,7 @@ namespace KitPlaylistInput
                     line = line.Trim();
                     string url = ShareUrlInLine(line, request);
                     if (!urlOnly) lines.Add(url ?? line);
-                    else if (url != null)
-                    {
-                        if (lines.Count != 0) throw new InputFailure("clipboard_url_multiple");
-                        lines.Add(url);
-                    }
+                    else if (url != null) lines.Add(url);
                 }
             }
             if (urlOnly && lines.Count == 0)
@@ -529,7 +526,9 @@ namespace KitPlaylistInput
         static InputResponse Prepare(InputRequest request, string[] inputs, IDirectoryScanner scanner,
             Func<PlaylistReader> createReader, Action ensureParent, Action checkCancellation)
         {
-            var response = new InputResponse { request_id = request.RequestId };
+            // Keep the paste shape even when duplicate links collapse to one entry.
+            var response = new InputResponse { request_id = request.RequestId,
+                url_batch = request.Operation == "clipboard-url" && inputs.Length > 1 };
             Action check = delegate {
                 if (checkCancellation != null) checkCancellation();
                 if (ensureParent != null) ensureParent();

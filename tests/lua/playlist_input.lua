@@ -368,6 +368,28 @@ end
 local function listed(path,title,kind)
     local value=entry(path,kind);value.from_playlist=true;value.title=title or '';return value
 end
+function paste_url_queue_modes()
+    local a,b='https://example.test/ep3?t=177','https://example.test/ep6?t=226'
+    local function paste(h,urls,batch)
+        local entries={}
+        for _,url in ipairs(urls) do entries[#entries+1]={path=url,kind='native'} end
+        h.start('open','clipboard-url')
+        h.finish(h.result(entries,{url_batch=batch}))
+    end
+    local h=host()
+    h.queue({{id=0,filename=a}})
+    paste(h,{a,b},true)
+    loaded_list(h,1,'#EXTM3U\n'..b..'\n','append')
+    eq(#h.writes,0);eq(h.properties.pause,true)
+    paste(h,{a},true)
+    eq(#h.calls,1);eq(h.messages[#h.messages][1],'这些网址已在播放列表中')
+    paste(h,{b},false)
+    eq(h.calls[2][1],'loadfile');eq(h.calls[2][2],b);eq(h.calls[2][3],'replace');eq(#h.writes,0)
+    h=host();h.queue({});h.properties['playlist-pos']=-1;h.properties.path=nil
+    paste(h,{a,b},true)
+    loaded_list(h,1,'#EXTM3U\n'..a..'\n'..b..'\n','replace')
+    eq(h.properties.pause,false)
+end
 function playlist_segments()
     local h=host();h.start()
     h.finish(h.result({entry('before.srt','subtitle'),listed('repeat.mkv','第一集'),

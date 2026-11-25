@@ -21,7 +21,7 @@ mpv.net 承载播放器窗口、原生菜单和 libmpv；`config/` 安装到播�
 
 ## 配置与状态所有权
 
-剪贴板文本由 `KitPlaylistInput.exe` 读取，`InputProcessor.ParseClipboardText` 统一识别分享网址和完整 BV 号。原快捷键动作 `playback_feedback/clipboard-url` 转交播放列表输入控制层，以 `operation=clipboard-url` 请求单一网址；通用打开与追加继续使用 `clipboard`，优先处理 Windows 文件列表。识别过程保留网址原文；控制层在提交前复核队列快照。仅网址入口沿用原有的暂停处理，追加不打断当前项。
+剪贴板文本由 `KitPlaylistInput.exe` 读取，`InputProcessor.ParseClipboardText` 逐行识别分享网址和完整 BV 号，保留网址原文。Ctrl+Shift+V 沿用稳定动作 `playback_feedback/clipboard-url`。helper 在去重前标记本次是否包含多条网址。播放列表输入控制层复核队列快照后，单条沿用原有的替换和暂停处理；多条通过一次列表导入提交，空队列从首项开播，已有队列时跳过相同网址并追加到队尾。显式片单即使去重后只剩一项，也沿用片单顺序。通用文件打开与追加继续使用 `clipboard`，优先处理 Windows 文件列表。
 
 启用网页解析时，`playback-feedback.lua` 的 `on_load` 在 mpv 内置 ytdl_hook 之前处理 B 站分享地址。普通投稿和具体番剧分集共用地址解析，分别返回规范页、内容 ID 和分享时间。只有 `b23.tv` 短链才调用 Windows 系统目录下的 curl，限时读取一次跳转；确认目标后更新本次的 `stream-open-filename`，队列仍保留原短链。短链上显式给出的分 P、时间各自优先于跳转目标。长链和短链以同一规则把时间写入本条的 `file-local-options/start`，尊重已有起点及显式启动选项；季页不提供分集起点。短链无法确认时沿用原地址，解码、画质和站点取流由上游处理。
 

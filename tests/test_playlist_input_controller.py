@@ -26,6 +26,9 @@ class PlaylistInputController(unittest.TestCase):
     def test_part_catalog_failure_and_retirement_resume_the_original_load(self):
         self.run_case('part_catalog_guards')
 
+    def test_url_shortcut_uses_existing_queue_for_batches_and_opens_single_links(self):
+        self.run_case('paste_url_queue_modes')
+
     def test_season_catalog_uses_regular_episode_order_and_exact_episode_id(self):
         self.run_case('season_catalog_order')
 

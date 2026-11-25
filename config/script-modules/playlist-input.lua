@@ -79,7 +79,7 @@ function M.new(mp, utils, feedback, read_include_images)
         input_unavailable='无法读取所选文件或剪贴板',
         clipboard_url_empty='剪贴板中没有网址',
         clipboard_url_invalid='剪贴板网址无效',
-        clipboard_url_multiple='发现多个网址，请只复制要播放的那一个',
+        clipboard_url_multiple='同一行有多个网址，请每行放一个',
         input_too_large='文件数量或路径内容过多，未修改播放列表',
         playlist_read_failed='未能读取播放列表，请检查文件内容或编码',
         playlist_core_unavailable='无法读取播放列表，请检查播放器组件是否完整',
@@ -354,6 +354,22 @@ function M.new(mp, utils, feedback, read_include_images)
         launch(payload_for(mode, operation, files, state, session .. '-' .. sequence), false, function(data)
             if not valid_entries(data.entries) then feedback.show('未能读取文件操作结果', 'error'); return end
             if not unchanged(state) then feedback.show('播放列表已变化，请重新选择文件', 'action'); return end
+            if operation == 'clipboard-url' and data.url_batch then
+                -- Import the explicit selection together, including after deduplication.
+                -- A remaining single EP or part must not expand into its whole catalog.
+                local existing = {}
+                for _, entry in ipairs(state.entries) do existing[entry.filename] = true end
+                local added = {}
+                for _, entry in ipairs(data.entries) do
+                    if not existing[entry.path] then
+                        entry.from_playlist = true
+                        added[#added+1] = entry
+                    end
+                end
+                if #added == 0 then feedback.show('这些网址已在播放列表中', 'action'); return end
+                mode = #state.entries == 0 and 'open' or 'append'
+                data.entries = added
+            end
             commit(mode, operation, data, generation)
         end)
     end

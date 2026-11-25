@@ -38,7 +38,7 @@ local definitions = {
     {'window.osc', '窗口与界面', '切换控制栏显示方式', 'script-binding playback_feedback/osc-visibility'},
     {'tools.console', '工具与设置', '控制台', 'script-binding console/enable', true},
     {'tools.copy-time', '工具与设置', '复制当前时间', 'script-binding playback_feedback/copy-time'},
-    {'tools.clipboard-url', '工具与设置', '打开剪贴板中的网址', 'script-binding playback_feedback/clipboard-url'},
+    {'tools.clipboard-url', '工具与设置', '粘贴网址', 'script-binding playback_feedback/clipboard-url'},
     {'playlist.toggle', '窗口与界面', '显示／隐藏播放列表侧窗', 'script-binding playlist_controls/toggle'},
 }
 -- New entries have no key literals. Defaults still come only from input.conf;

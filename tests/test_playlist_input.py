@@ -465,12 +465,23 @@ class PlaylistInput(unittest.TestCase):
         self.assertEqual([e['path'] for e in r['entries']], [url])
         for text, code in [('', 'clipboard_url_empty'), ('  \r\n', 'clipboard_url_empty'),
                            (str(self.video), 'clipboard_url_invalid'), ('没有网址', 'clipboard_url_invalid'),
-                           ('file:///C:/local.mp4', 'clipboard_url_invalid'),
-                           (url+'\nhttps://b23.tv/Short', 'clipboard_url_multiple')]:
+                           ('file:///C:/local.mp4', 'clipboard_url_invalid')]:
             self.assertEqual(self.invoke(operation='clipboard-url', clipboard=text)['error_code'], code)
         for operation in ('clipboard-url', 'clipboard'):
             r = self.invoke(operation=operation, clipboard='原片 '+url+' 备用 https://b23.tv/Short')
             self.assertEqual(r['error_code'], 'clipboard_url_multiple')
+
+    def test_url_paste_reports_an_explicit_batch_before_deduplication(self):
+        first = 'https://example.test/video?p=3&t=177'
+        second = 'https://b23.tv/Short'
+        for text, batch, paths in [
+                ('分享文案\r\n' + first, False, [first]),
+                (first + '\r\n\r\n分享：' + second, True, [first, second]),
+                (first + '\n' + first, True, [first])]:
+            with self.subTest(text=text):
+                response = self.invoke(operation='clipboard-url', clipboard=text)
+                self.assertEqual(response['url_batch'], batch)
+                self.assertEqual([entry['path'] for entry in response['entries']], paths)
 
     def test_bilibili_id_is_a_complete_input_and_preserves_case(self):
         bvid = 'BV1Qgyfz1ERa'
