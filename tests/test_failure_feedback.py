@@ -265,7 +265,8 @@ end
 local http, raw = 'file-local-options/http-proxy', 'file-local-options/ytdl-raw-options'
 local url = 'https://youtu.be/YE7VzlLtp-4?t=42'
 local full = 'https://www.youtube.com/watch?list=RDabc&v=YE7VzlLtp-4&t=42s'
-for _,link in ipairs({url,full}) do
+local live = 'https://www.youtube.com/live/ss12_-AbCdE?si=share'
+for _,link in ipairs({url,full,live,'https://m.youtube.com/live/ss12_-AbCdE/#share'}) do
     open(link, true, {[raw]={['sub-langs']='en'}})
     assert(pending.command.playback_only and pending.command.args[#pending.command.args]==link)
     pending.done(true, {status=0, stdout='http://127.0.0.1:5180'})
@@ -278,7 +279,9 @@ for _,options in ipairs({{[http]='http://custom:8080'}, {[raw]={proxy=''}},
 end
 for _,other in ipairs({page,'local.mp4','http://192.168.1.2/clip.mp4',
     'https://youtu.be.example/YE7VzlLtp-4','https://www.youtube.com/playlist?list=abc',
-    'https://youtube.com/watch?list=abc#?v=YE7VzlLtp-4','https://youtu.be/no-id'}) do
+    'https://youtube.com/watch?list=abc#?v=YE7VzlLtp-4','https://youtu.be/no-id',
+    'https://youtube.com/live/bad','https://youtube.com/live/ss12_-AbCdE/more',
+    'https://youtube.com.example/live/ss12_-AbCdE','https://www.youtube.com/@channel/live'}) do
     open(other,true); assert(not pending and not props[http], other)
 end
 open(full,false); assert(not pending)
@@ -452,6 +455,8 @@ load(7, page); finish(8, generic)
 finish(7, generic) -- No saved hint survives end-file.
 load(9, 'https://youtu.be/YE7VzlLtp-4?t=42')
 finish(9, '无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理')
+load(16, 'https://www.youtube.com/live/ss12_-AbCdE?si=share')
+finish(16, '无法播放此 YouTube 视频\n请检查 yt-dlp 和网络代理')
 local room
 live_room.open=function(id) room=id end
 live_room.finish=function(reason) assert(room=='19' and reason=='error');messages[#messages+1]='live error' end

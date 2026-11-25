@@ -33,7 +33,7 @@ B 站公开直播间使用原有粘贴入口和上游 yt-dlp 取流。[直播提
 
 [网页接续模块](../config/script-modules/web-resume.lua)的 `url_at_time` 从规范页和秒数生成带时间的网址，短链展开和返回网页共用这个函数。模块在返回网页时保存本次动作的媒体身份、点击时刻和异步请求。`ep` 直接接续。BV 的 CDN 来源缺少分 P 时按公开分 P 列表核对。若 CDN 来源是 `ss` 且当前 CID 可信，则只在点击时查询该季官方目录，检查 `main_section.episodes` 与 `section[].episodes`。同一 CID 只有一个不同的 EP 且返回的分集分享页（如有）一致时才打开；季页本身、集数标题和目录顺序不足以确认目标。换片或退出会取消待处理请求；系统接受打开请求且仍是原队列条目时才暂停播放器。
 
-`playback-feedback.lua` 在同一加载钩子中识别 YouTube 观看页和单视频短链。[系统代理查询](../config/helpers/system-http-proxy.ps1)按目的网址调用 Windows PowerShell 的 .NET 系统代理接口，返回 HTTP 代理地址或空结果。播放器只在该条目设置 `http-proxy` 和 `ytdl-raw-options.proxy`，保留其余解析选项，已有显式代理优先。查询限时四秒；直连、失败或取消时沿用现有配置。分享时间由 yt-dlp 和 mpv 内置钩子处理。
+`playback-feedback.lua` 在同一加载钩子中识别 YouTube 观看页、单视频短链和指向具体视频的 `/live/视频ID` 分享链接。直播分享链接沿用原网址取流，与普通观看页共用代理和失败提示。[系统代理查询](../config/helpers/system-http-proxy.ps1)按目的网址调用 Windows PowerShell 的 .NET 系统代理接口，返回 HTTP 代理地址或空结果。播放器只在该条目设置 `http-proxy` 和 `ytdl-raw-options.proxy`，保留其余解析选项，已有显式代理优先。查询限时四秒；直连、失败或取消时沿用现有配置。分享时间由 yt-dlp 和 mpv 内置钩子处理。
 
 External Player 的[YouTube 播放事件](../config/browser/youtube-play-event.txt)由用户添加到浏览器，在普通观看页将正片的当前位置向下取整后写入规范观看网址。关闭同步时沿用原网址。浏览器通过已有的 `MPVNET` 协议映射只传一个网址，复用上面的逐条代理与起播流程。浏览器脚本、协议注册和播放器进程仍由各自上游负责。
 

@@ -39,18 +39,36 @@ local function site_host(host, domain)
     return host and (host == domain or host:sub(-#domain - 1) == '.' .. domain)
 end
 
-local function youtube_video_id(host, rest)
+local function youtube_host(host)
+    return host == 'www.youtube.com' or host == 'youtube.com' or host == 'm.youtube.com'
+end
+
+local function youtube_id(value)
+    if value and #value == 11 and value:match('^[%w_%-]+$') then return value end
+end
+
+local function youtube_watch_id(host, rest)
     local id
     if host == 'youtu.be' then
         id = rest:match('^([^?#]*)'):match('^/([^/]+)/?$')
-    elseif host == 'www.youtube.com' or host == 'youtube.com' or host == 'm.youtube.com' then
+    elseif youtube_host(host) then
         local query = rest:match('^/watch%?([^#]*)') or ''
         for value in ('&' .. query):gmatch('&v=([^&]*)') do
             if id and id ~= value then return end
             id = value
         end
     end
-    if id and #id == 11 and id:match('^[%w_%-]+$') then return id end
+    return youtube_id(id)
+end
+
+-- A live share uses the same network route. Its URL alone does not establish
+-- a VOD timeline for browser handoff or a playlist to expand.
+local function youtube_playback_page(host, rest)
+    if youtube_host(host) and rest:sub(1, 6) == '/live/' then
+        local path = rest:match('^[^?#]*')
+        return youtube_id(path:match('^/live/([^/]+)/?$'))
+    end
+    return youtube_watch_id(host, rest)
 end
 
 local function share_parameters(short_url, target_url)
@@ -89,7 +107,7 @@ end
 -- needs a specific part or episode. YouTube IDs are opaque.
 local function resume_target(address, from_cdn, cid)
     local _, host, rest = web_address(address)
-    local video_id = youtube_video_id(host, rest)
+    local video_id = youtube_watch_id(host, rest)
     if video_id then return 'https://www.youtube.com/watch?v=' .. video_id end
     local page, id = bilibili_page(address)
     if not page then return end
@@ -104,7 +122,7 @@ local function capture_media_origin(loaded)
     local path = mp.get_property('path')
     local _, host, rest = web_address(path)
     if not host then return end
-    if youtube_video_id(host, rest) then return 'youtube' end
+    if youtube_playback_page(host, rest) then return 'youtube' end
     if host == 'live.bilibili.com' then
         local path = rest:match('^[^?#]*')
         local id = path:match('^/([1-9]%d*)/?$') or path:match('^/blanc/([1-9]%d*)/?$')
@@ -558,7 +576,7 @@ mp.add_hook('on_load', 5, function(hook)
     local input = mp.get_property('stream-open-filename', '')
     if not mp.get_property_native('options/ytdl') then return end
     local _, host, rest = web_address(input)
-    if youtube_video_id(host, rest) then
+    if youtube_playback_page(host, rest) then
         use_youtube_system_proxy(hook, input)
         return
     end
@@ -592,7 +610,7 @@ mp.add_hook('on_load', 7, function()
     local standalone = mp.get_property_number('playlist-count') == 1 and not mp.get_property('playlist/0/playlist-path')
     local input = mp.get_property('path')
     local _, host, rest = web_address(input)
-    local video = youtube_video_id(host, rest)
+    local video = youtube_watch_id(host, rest)
     if video then
         local list, index, single = youtube_catalog.watch_list(video, rest)
         if not list or mp.get_property('stream-open-filename') ~= input then return end

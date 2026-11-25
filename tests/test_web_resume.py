@@ -63,11 +63,12 @@ end
 src=base..'YE7VzlLtp-4&t=77';props['time-pos']=0;props.pause=false;bind()
 assert(opened[4][1]==base..'YE7VzlLtp-4&t=0')
 events['start-file']();src='local.mp4';opened[4][2](true)
-for _,url in ipairs({src, 'https://cdn.googlevideo.com/videoplayback', base..id..'&v=YE7VzlLtp-4',
-                     'https://youtu.be.example/'..id, 'https://www.youtube.com/watch?x=1#v='..id}) do
-    src=url;bind()
+for i,url in ipairs({src, 'https://cdn.googlevideo.com/videoplayback', base..id..'&v=YE7VzlLtp-4',
+                     'https://youtu.be.example/'..id, 'https://www.youtube.com/watch?x=1#v='..id,
+                     'https://www.youtube.com/live/'..id}) do
+    src=url;bind();assert(#messages==i)
 end
-assert(#opened==4 and #fetched==0 and not props.pause and #messages==5)
+assert(#opened==4 and #fetched==0 and not props.pause)
 """)
 
     def test_part_lookup_uses_matching_cid_and_click_time(self):

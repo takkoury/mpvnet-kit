@@ -67,7 +67,9 @@ FFmpeg 用于片段导出和提取字幕行，Python 用于弹幕转换。两者
 
 B 站公开直播间也可以这样打开。复制浏览器地址栏中的完整房间网址，在播放器按 Ctrl+Shift+V。房间正在开播时即可观看，显示“直播间当前未开播”时可以稍后再打开同一个网址。
 
-YouTube 支持普通观看页和 `youtu.be` 单视频分享链接。分享链接带有 `t=42s` 或 `t=42` 时，会从第 42 秒附近起播。使用 Clash Verge 等本机 HTTP 代理时，在代理软件里开启“系统代理”即可。每次开始播放 YouTube 视频，播放器都会读取 Windows 为该网址选用的 HTTP 代理，用它解析网页和读取音视频。换到其他媒体后，这次使用的代理随即失效。
+YouTube 支持普通观看页和 `youtu.be` 单视频分享链接。点播分享链接带有 `t=42s` 或 `t=42` 时，会从第 42 秒附近起播。观看公开直播时，可以复制该场直播的 `youtube.com/live/视频ID` 分享链接，在播放器按 Ctrl+Shift+V。
+
+使用 Clash Verge 等本机 HTTP 代理时，在代理软件里开启“系统代理”即可。每次开始播放 YouTube 视频，播放器都会读取 Windows 为该网址选用的 HTTP 代理，用它解析网页和读取音视频。换到其他媒体后，这次使用的代理随即失效。
 
 如果 YouTube 提示解析失败，请检查系统代理并更新 yt-dlp。部分视频还需要 JavaScript 运行时，可按 [yt-dlp 的 Windows 说明](https://github.com/yt-dlp/yt-dlp/wiki/EJS#deno)将 Deno 放在 `yt-dlp.exe` 旁，再重新打开视频。
 
