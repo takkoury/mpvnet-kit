@@ -154,11 +154,14 @@ assert(props['file-local-options/start']=='8' and changed==1)
 ''', 'playback/network-resume')
 
     def test_live_room_status_belongs_to_the_current_playback(self):
-        module = json.dumps((ROOT / 'config/script-modules/bilibili-live.lua').as_posix())
-        self.lua.execute(self.ytdl + 'local live = dofile(' + module + ')\n' + r'''
+        modules = ROOT / 'config/script-modules'
+        module = json.dumps((modules / 'live-playback.lua').as_posix())
+        provider = json.dumps((modules / 'bilibili-live.lua').as_posix())
+        self.lua.execute(self.ytdl + 'local bili_path = ' + provider + '\nlocal live = dofile(' + module + ')\n' + r'''
 local events, hooks, pending, props, notices = {}, {}, {}, {}, {}
 os.getenv=function(k) if k=='SystemRoot' then return 'C:/Windows' end end
 local mp = {
+    command_native=function() return bili_path end,
     register_event=function(k, f) events[k]=f end,
     add_hook=function(k, _, f) hooks[k]=f end,
     observe_property=function(k, _, f) events[k]=f end,
@@ -194,23 +197,94 @@ assert(error_with(1,'timeout'):match('^暂时无法打开直播间') and #pendin
 local function result(i,id,live)
     pending[i].done(true,{status=0,stdout={code=0,data={room_id=id,live_status=live}}})
 end
-open(); events['file-loaded'](); events['eof-reached'](nil,true); room.finish('eof')
+open(); room.loaded(); events['eof-reached'](nil,true); room.finish('eof')
 assert(#pending==1)
 result(1,19,0); assert(notices[#notices]=='直播已结束')
-open(); events['file-loaded'](); room.finish('error')
+open(); room.loaded(); room.finish('error')
 result(2,19,1); assert(notices[#notices]:match('^直播连接中断'))
-open(); events['file-loaded'](); room.finish('eof')
+open(); room.loaded(); room.finish('eof')
 result(3,20,0); assert(notices[#notices]:match('^直播连接中断'))
-open(); events['file-loaded'](); events['eof-reached'](nil,true)
+open(); room.loaded(); events['eof-reached'](nil,true)
 events['playback-restart'](); assert(pending[4].cancelled)
 events['eof-reached'](nil,true)
 local before=#notices
 result(4,19,0); assert(#notices==before)
 room.finish('stop'); assert(pending[5].cancelled)
 open(); result(5,19,0); assert(#notices==before)
-props['end']='15'; events['file-loaded'](); events['eof-reached'](nil,true);room.finish('eof')
+props['end']='15'; room.loaded(); events['eof-reached'](nil,true);room.finish('eof')
 assert(#pending==5 and #notices==before)
 ''', 'playback/live-room')
+
+    def test_youtube_end_query_is_bound_to_the_playing_broadcast(self):
+        modules = ROOT / 'config/script-modules'
+        fixture = self.ytdl + '\n'.join(
+            'local ' + name + ' = ' + json.dumps((modules / file).as_posix())
+            for name, file in [('live_path', 'live-playback.lua'), ('bili_path', 'bilibili-live.lua'),
+                               ('catalog_path', 'youtube-catalog.lua')])
+        self.lua.execute(fixture + r'''
+local events, requests, messages, timers = {}, {}, {}, {}
+local id = 'rFZHOHl-L8A'
+local meta, last, proxy = {}, {}, 'http://127.0.0.1:1234'
+local mp = {
+    command_native=function() return bili_path end,
+    register_event=function(k,f) events[k]=f end, add_hook=function() end,
+    observe_property=function(k,_,f) events[k]=f end,
+    get_property=function(k) return k=='frames' and 'all' or 'none' end,
+    get_property_bool=function() return false end,
+    get_property_native=function(k)
+        if k=='user-data/mpv/ytdl/json-subprocess-result/stdout' then return 'fixture' end
+        if k=='user-data/mpv/ytdl/path' then return 'fixture/yt-dlp.exe' end
+        if k=='file-local-options/ytdl-raw-options' then return {proxy=proxy} end
+    end,
+    command_native_async=function(cmd,done)
+        last={cmd=cmd,done=done}; requests[#requests+1]=last; return #requests
+    end,
+    abort_async_command=function(handle) requests[handle].cancelled=true end,
+    add_timeout=function(n,fn)
+        assert(n==12);local timer={kill=function(self) self.killed=true end,fire=fn}
+        timers[#timers+1]=timer;return timer
+    end,
+}
+local catalog=dofile(catalog_path)
+local room=dofile(live_path).new(mp,{parse_json=function() return meta end},
+    {show=function(msg) messages[#messages+1]=msg end},ytdl_result)
+local function open(status,video)
+    events['start-file'](); room.open(nil)
+    meta={extractor_key='Youtube',id=video or id,live_status=status}
+    return room.loaded(id,catalog)
+end
+local function stop_stream()
+    events['eof-reached'](nil,true);room.finish('eof')
+end
+for _,status in ipairs({'was_live','not_live','post_live','is_upcoming'}) do
+    assert(not open(status)); stop_stream()
+end
+assert(not open('is_live','another_id_'));stop_stream()
+assert(#requests==0 and #messages==0)
+assert(open('is_live')); room.finish('stop');assert(#requests==0)
+assert(open('is_live'))
+proxy='http://127.0.0.1:4321'
+stop_stream();assert(#requests==1 and not last.cmd.playback_only)
+local args=last.cmd.args
+assert(args[1]=='fixture/yt-dlp.exe' and args[#args]=='https://www.youtube.com/watch?v='..id)
+assert(args[#args-2]=='http://127.0.0.1:1234')
+last.done(true,{status=0,stdout=id..' is_live\r\n'})
+assert(messages[1]=='直播连接中断\n可重新打开直播链接' and timers[1].killed)
+for _,status in ipairs({'post_live','was_live'}) do
+    open('is_live');room.finish('error');last.done(true,{status=0,stdout=id..' '..status..'\n'})
+    assert(messages[#messages]=='直播已结束')
+end
+open('is_live');stop_stream();last.done(true,{status=0,stdout='other_video was_live\n'})
+assert(messages[#messages]:match('^暂时无法确认直播状态'))
+open('is_live');stop_stream();local old=last;local n=#messages
+events['playback-restart']();assert(old.cancelled)
+old.done(true,{status=0,stdout=id..' was_live\n'});assert(#messages==n)
+stop_stream();local timed_out=last;timers[#timers].fire()
+assert(timed_out.cancelled and #messages==n+1 and messages[#messages]:match('^暂时无法确认直播状态'))
+timed_out.done(true,{status=0,stdout=id..' was_live\n'});assert(#messages==n+1)
+open('is_live');stop_stream();local ended=last;events['start-file']()
+ended.done(true,{status=0,stdout=id..' was_live\n'});assert(ended.cancelled and #messages==n+1)
+''', 'playback/youtube-end')
 
     def check_share_link(self, cases):
         web_resume = (ROOT / 'config/script-modules/web-resume.lua').read_text(encoding='utf-8')

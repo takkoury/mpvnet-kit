@@ -1,4 +1,4 @@
--- A watch link identifies the media; an explicit PL id identifies its optional queue.
+-- Metadata lookups for public YouTube videos and playlists.
 local M = {}
 
 local function playlist_id(value)
@@ -41,13 +41,12 @@ function M.queue_entries(source, data)
     if matches == 1 then return entries, first end
 end
 
-function M.fetch(mp, utils, id, done)
+local function query_args(mp, url, options)
     local exe = mp.get_property_native('user-data/mpv/ytdl/path')
-    if type(exe) ~= 'string' or exe == '' or not playlist_id(id) then done(nil); return end
+    if type(exe) ~= 'string' or exe == '' then return end
     local args = {exe, '--ignore-config', '--no-warnings', '--no-cache-dir', '--no-plugin-dirs',
-        '--flat-playlist', '--skip-download', '--socket-timeout', '6', '--retries', '0',
-        '--extractor-retries', '0', '--playlist-end', '10001',
-        '--print', 'playlist:{"id":%(id)j,"entries":%(entries.:.{id,title})j}'}
+        '--skip-download', '--socket-timeout', '6', '--retries', '0', '--extractor-retries', '0'}
+    for _, option in ipairs(options) do args[#args+1] = option end
     local raw = mp.get_property_native('file-local-options/ytdl-raw-options', {})
     local proxy = raw.proxy
     if proxy == nil then
@@ -59,7 +58,24 @@ function M.fetch(mp, utils, id, done)
         args[#args+1] = proxy
     end
     args[#args+1] = '--'
-    args[#args+1] = 'https://www.youtube.com/playlist?list=' .. id
+    args[#args+1] = url
+    return args
+end
+
+-- Capture the original item's extractor and proxy before mpv unloads its options.
+function M.live_status_request(mp, id)
+    local args = query_args(mp, 'https://www.youtube.com/watch?v=' .. id,
+        {'--no-playlist', '--ignore-no-formats-error', '--print', '%(id)s %(live_status)s'})
+    if args then
+        return {name='subprocess', args=args, playback_only=false, capture_stdout=true, capture_size=4096}
+    end
+end
+
+function M.fetch(mp, utils, id, done)
+    if not playlist_id(id) then done(nil); return end
+    local args = query_args(mp, 'https://www.youtube.com/playlist?list=' .. id, {'--flat-playlist',
+        '--playlist-end', '10001', '--print', 'playlist:{"id":%(id)j,"entries":%(entries.:.{id,title})j}'})
+    if not args then done(nil); return end
     local timer
     local handle = mp.command_native_async({name='subprocess', args=args, playback_only=true,
         capture_stdout=true, capture_size=2097152}, function(ok, result)

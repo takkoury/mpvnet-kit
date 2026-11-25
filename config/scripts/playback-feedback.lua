@@ -4,7 +4,7 @@ local mp = require("mp")
 local feedback_client = dofile(mp.command_native({'expand-path', '~~/script-modules/feedback.lua'})).new(mp)
 local utils = require("mp.utils")
 local ytdl_result = dofile(mp.command_native({'expand-path', '~~/script-modules/ytdl-result.lua'}))
-local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/bilibili-live.lua'})).new(mp, utils, feedback_client, ytdl_result)
+local live_room = dofile(mp.command_native({'expand-path', '~~/script-modules/live-playback.lua'})).new(mp, utils, feedback_client, ytdl_result)
 local paths = dofile(mp.command_native({'expand-path', '~~/script-modules/mpvnet-paths.lua'}))
 -- The Windows host enables defaults before mpv_initialize; enforce the user whitelist at runtime too.
 mp.set_property_bool("input-default-bindings", false)
@@ -124,7 +124,8 @@ local function capture_media_origin(loaded)
     local path = mp.get_property('path')
     local _, host, rest = web_address(path)
     if not host then return end
-    if youtube_playback_page(host, rest) then return 'youtube' end
+    local youtube_id = youtube_playback_page(host, rest)
+    if youtube_id then return 'youtube', youtube_id end
     if host == 'live.bilibili.com' then
         local path = rest:match('^[^?#]*')
         local id = path:match('^/([1-9]%d*)/?$') or path:match('^/blanc/([1-9]%d*)/?$')
@@ -636,7 +637,7 @@ end)
 mp.add_hook('on_load', 50, function()
     local source, room_id = capture_media_origin(false)
     failure_source = source
-    live_room.open(room_id)
+    live_room.open(source == 'live' and room_id or nil)
 end)
 local function youtube_live_error(id)
     local delay = ytdl_result.match_error(mp, 'youtube', id, '^This live event will begin in (.+)%.$')
@@ -698,7 +699,9 @@ mp.register_event("end-file", function(event)
     playback_entry_id, failure_source, youtube_live_hint = nil, nil, nil
 end)
 mp.register_event("file-loaded", function()
-    failure_source = capture_media_origin(true)
+    local source, id = capture_media_origin(true)
+    failure_source = source
+    if live_room.loaded(source == 'youtube' and id, youtube_catalog) then failure_source = 'live' end
     if reload_marks and mp.get_property("path") == reload_marks.path then
         mark = reload_marks.mark
         mp.commandv("no-osd", "set", "ab-loop-count", reload_marks.count)

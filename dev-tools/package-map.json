@@ -158,6 +158,12 @@
       "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
     },
     {
+      "source": "config/script-modules/live-playback.lua",
+      "destination": "config/script-modules/live-playback.lua",
+      "component": "author",
+      "origin": "mpvnet-kit authors; MIT; scope in LICENSES.md"
+    },
+    {
       "source": "config/script-modules/network-resume.lua",
       "destination": "config/script-modules/network-resume.lua",
       "component": "author",
